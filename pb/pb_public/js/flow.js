@@ -31,6 +31,7 @@ function gateChrome(page, body) {
         <a class="${page === "year" ? "active" : ""}" data-link href="/year/2026">Year board</a>
         ${u
           ? `<a class="${page === "account" ? "active" : ""}" data-link href="/account">Account</a>
+             ${u.role === "region_admin" ? `<a class="${page === "admin" ? "active" : ""}" data-link href="/admin/teams">Teams</a>` : ""}
              <a data-link href="/start">Create</a>
              <button class="link" id="logout">Sign out</button>`
           : `<a class="${page === "login" ? "active" : ""}" data-link href="/login">Log in</a>
@@ -38,7 +39,7 @@ function gateChrome(page, body) {
       </nav>
     </header>
     <main class="wrap">${body}</main>
-    <footer class="wrap footer">${u ? escapeHtml(u.email) : "Signed out"} · GameChanger is the stats source. Coaches still approve numbers.</footer>
+    <footer class="wrap footer">${u ? escapeHtml(u.email) : "Signed out"} · Profiles are teams. Email is a login. GameChanger is optional.</footer>
   `;
 }
 
@@ -256,6 +257,74 @@ export async function accountHome() {
 
 export async function findPage() {
   return startGate("find");
+}
+
+export async function adminTeams() {
+  const u = who();
+  if (!u || u.role !== "region_admin") {
+    flowRoot().innerHTML = gateChrome("admin", `<section class="card"><p>Site admin only.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
+    return;
+  }
+  const res = await fetch("/api/admin/clubs", { headers: { Authorization: flowPb.authStore.token } });
+  if (!res.ok) {
+    flowRoot().innerHTML = gateChrome("admin", `<section class="card empty">Could not load team profiles.</section>`);
+    return;
+  }
+  const data = await res.json();
+  flowRoot().innerHTML = gateChrome("admin", `
+    <section class="hero">
+      <h1>Team profiles</h1>
+      <p>Admin is by team, not by email. A login can attach later. GameChanger is optional — leave it blank if they score on paper.</p>
+    </section>
+    <section class="card">
+      <h2>Add a team</h2>
+      <form class="form wide" id="club-new">
+        <label>Team name <input name="name" required placeholder="Hawks 10U"></label>
+        <label>Age group <input name="ages" placeholder="10U"></label>
+        <label>GameChanger URL (optional) <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…"></label>
+        <label>Contact email <input name="contact_email" type="email"></label>
+        <label>Notes <input name="notes" placeholder="No GC this season; scorebook at the field"></label>
+        <button class="btn" type="submit">Save team</button>
+        <p class="error" id="club-err" hidden></p>
+      </form>
+    </section>
+    <section class="grid">${(data.clubs || []).map((c) => `
+      <form class="card form wide" data-club="${c.id}">
+        <h3>${escapeHtml(c.name)}</h3>
+        <p class="muted">${c.gc_linked ? "GameChanger linked" : "No GameChanger — stats from this host only"} · ${escapeHtml(c.slug)}</p>
+        <label>Name <input name="name" value="${escapeHtml(c.name)}" required></label>
+        <label>Age <input name="ages" value="${escapeHtml(c.ages)}"></label>
+        <label>GameChanger URL <input name="gamechanger_url" type="url" value="${escapeHtml(c.gamechanger_url)}"></label>
+        <label>Contact email <input name="contact_email" type="email" value="${escapeHtml(c.contact_email)}"></label>
+        <label>Notes <input name="notes" value="${escapeHtml(c.notes)}"></label>
+        <button class="btn ghost" type="submit">Update</button>
+      </form>`).join("") || `<div class="card empty">No team profiles yet.</div>`}
+    </section>
+  `);
+  const send = async (id, form) => {
+    const body = Object.fromEntries(new FormData(form));
+    const res2 = await fetch(id ? "/api/admin/clubs/" + id : "/api/admin/clubs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: flowPb.authStore.token },
+      body: JSON.stringify(body),
+    });
+    if (!res2.ok) {
+      const err = document.getElementById("club-err");
+      if (err) { err.hidden = false; err.textContent = await res2.text(); }
+      return;
+    }
+    adminTeams();
+  };
+  document.getElementById("club-new").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    send("", ev.target);
+  });
+  flowRoot().querySelectorAll("[data-club]").forEach((form) => {
+    form.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      send(form.dataset.club, form);
+    });
+  });
 }
 
 export async function yearPage(year) {

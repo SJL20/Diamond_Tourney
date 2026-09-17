@@ -145,6 +145,27 @@ routerAdd("GET", "/api/account/home", (e) => {
   return e.json(200, host.accountHome(e.app, e.auth));
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/admin/clubs", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, { clubs: host.listClubs(e.app) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/admin/clubs", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, { club: host.saveClub(e.app, e.requestInfo().body || {}) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/admin/clubs/{id}", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, { club: host.saveClub(e.app, e.requestInfo().body || {}, e.request.pathValue("id")) });
+}, $apis.requireAuth());
+
 routerAdd("GET", "/api/year/{year}/board", (e) => {
   const year = require(__hooks + "/year.js");
   return e.json(200, year.yearBoard(e.app, e.request.pathValue("year")));

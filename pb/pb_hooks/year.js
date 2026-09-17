@@ -10,10 +10,12 @@ function clubSlug(name) {
 
 function upsertClub(app, data) {
   const url = data.gamechanger_url || "";
-  const gcTeamRef = String(data.gc_team_ref || "").replace(/\/+$/, "") || (function () {
+  const fromUrl = (function () {
     const m = String(url).match(/^https?:\/\/([^?#]+)/i);
     return m ? m[1].replace(/\/+$/, "") : "";
   })();
+  const baseSlug = clubSlug(data.name || fromUrl || data.gc_team_ref);
+  const gcTeamRef = String(data.gc_team_ref || fromUrl || ("manual:" + baseSlug)).replace(/\/+$/, "");
   if (!gcTeamRef) return null;
   let rec;
   try {

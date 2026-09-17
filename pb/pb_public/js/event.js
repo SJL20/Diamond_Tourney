@@ -398,19 +398,19 @@ export async function eventSignup(slug) {
   eventRoot().innerHTML = eventChrome(ev, "sign up", `
     <section class="hero">
       <h1>Sign up · ${escapeHtml(ev.name)}</h1>
-      <p>${ev.signup_open ? "Director or team can add a roster. A GameChanger team URL is required. That is the stats source." : "Signup is closed."}</p>
+      <p>${ev.signup_open ? "Director or team can add a roster. GameChanger is optional — the team profile exists either way. If they have a public GC page, link it so this host can pull that page later." : "Signup is closed."}</p>
     </section>
     ${ev.signup_open ? `<section class="card">
       <form class="form wide" id="signup-form">
         <label>Team name <input name="team_name" required placeholder="Hawks 10U"></label>
         <label>Pool (optional) <input name="pool" placeholder="A"></label>
-        <label>GameChanger team URL
-          <input name="gamechanger_url" type="url" required placeholder="https://web.gc.com/team/…">
+        <label>GameChanger team URL (optional)
+          <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…">
         </label>
         <label>Contact name <input name="contact_name" ${director ? "" : "required"}></label>
         <label>Contact email <input name="contact_email" type="email"></label>
         ${director ? `<label class="check"><input type="checkbox" name="as_director" checked> I am the director adding this team</label>` : ""}
-        <button class="btn" type="submit">Link GameChanger and join</button>
+        <button class="btn" type="submit">Join the tournament</button>
         <p class="error" id="signup-err" hidden></p>
       </form>
     </section>` : `<section class="card empty">The director closed signup.</section>`}

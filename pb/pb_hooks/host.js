@@ -145,12 +145,12 @@ function upsertEventTeam(app, event, data) {
   }
   rec.set("name", data.name);
   if (data.pool) rec.set("pool", data.pool);
-  rec.set("gamechanger_url", data.gamechanger_url);
+  rec.set("gamechanger_url", data.gamechanger_url || "");
   rec.set("gc_team_ref", gcRef(data.gamechanger_url));
   rec.set("contact_name", data.contact_name || "");
   rec.set("contact_email", data.contact_email || "");
   rec.set("signed_up_by", data.signed_up_by || "team");
-  rec.set("gc_sync_status", "linked");
+  rec.set("gc_sync_status", isGameChangerUrl(data.gamechanger_url) ? "linked" : "unlinked");
   if (data.account) rec.set("account", data.account);
   try {
     const year = require(__hooks + "/year.js");
@@ -195,21 +195,22 @@ function createEvent(app, body, auth) {
   if (auth) rec.set("created_by", auth.id);
   app.save(rec);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
-  return { event: eventJson(rec), note: tm.note || "Tournament is live. Teams must link GameChanger to sign up." };
+  return { event: eventJson(rec), note: tm.note || "Tournament is live. Teams can join with or without GameChanger." };
 }
 
 function signupTeam(app, event, body, auth) {
   if (!event.get("signup_open")) throw new BadRequestError("Signup is closed for this event");
   const name = (body.team_name || body.name || "").trim();
   if (!name) throw new BadRequestError("Team name is required");
-  if (!isGameChangerUrl(body.gamechanger_url)) {
-    throw new BadRequestError("A GameChanger team URL is required (gc.com or web.gc.com). Stats pull from that link.");
+  const gcUrl = (body.gamechanger_url || "").trim();
+  if (gcUrl && !isGameChangerUrl(gcUrl)) {
+    throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
   }
   const director = auth && (auth.get("role") === "event_td" || auth.get("role") === "region_admin");
   const team = upsertEventTeam(app, event, {
     name: name,
     pool: body.pool || "",
-    gamechanger_url: body.gamechanger_url,
+    gamechanger_url: gcUrl,
     contact_name: body.contact_name || (auth ? auth.email() : ""),
     contact_email: body.contact_email || (auth ? auth.email() : ""),
     signed_up_by: director && (body.as_director === true || body.as_director === "true" || body.as_director === "director") ? "director" : "team",
@@ -339,6 +340,45 @@ function publicRoster(app, event) {
   return teams.map(teamJson);
 }
 
+function clubJson(rec) {
+  return {
+    id: rec.id,
+    name: rec.get("name"),
+    slug: rec.get("slug"),
+    ages: rec.get("ages") || "",
+    gamechanger_url: rec.get("gamechanger_url") || "",
+    gc_linked: isGameChangerUrl(rec.get("gamechanger_url")),
+    gc_team_ref: rec.get("gc_team_ref") || "",
+    notes: rec.get("notes") || "",
+    contact_email: rec.get("contact_email") || "",
+  };
+}
+
+function listClubs(app) {
+  return app.findRecordsByFilter("club_teams", "", "name", 200, 0).map(clubJson);
+}
+
+function saveClub(app, body, id) {
+  const name = (body.name || "").trim();
+  if (!name && !id) throw new BadRequestError("Team name is required");
+  const gcUrl = (body.gamechanger_url || "").trim();
+  if (gcUrl && !isGameChangerUrl(gcUrl)) {
+    throw new BadRequestError("GameChanger URL must be gc.com or web.gc.com, or leave it blank.");
+  }
+  const year = require(__hooks + "/year.js");
+  let rec;
+  if (id) rec = app.findRecordById("club_teams", id);
+  else rec = year.upsertClub(app, { name: name, gamechanger_url: gcUrl, ages: body.ages || "" });
+  if (name) rec.set("name", name);
+  if (body.ages != null) rec.set("ages", body.ages);
+  rec.set("gamechanger_url", gcUrl);
+  if (gcUrl) rec.set("gc_team_ref", gcRef(gcUrl));
+  if (body.notes != null) rec.set("notes", body.notes);
+  if (body.contact_email != null) rec.set("contact_email", body.contact_email);
+  app.save(rec);
+  return clubJson(rec);
+}
+
 function applySettings(app, event, body) {
   if (body.signup_open != null) event.set("signup_open", !!body.signup_open);
   if (body.auto_sync != null) event.set("auto_sync", !!body.auto_sync);
@@ -362,4 +402,6 @@ module.exports = {
   registerAccount: registerAccount,
   searchEvents: searchEvents,
   accountHome: accountHome,
+  listClubs: listClubs,
+  saveClub: saveClub,
 };

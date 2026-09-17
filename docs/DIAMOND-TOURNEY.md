@@ -16,7 +16,11 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 
 1. **Wedge (door 3):** “You already have a schedule.” Paste the Excel / Tourney Machine / legal-pad grid. Get a public link, live standings with real tiebreakers, and a bracket that fills itself. That is `/directors/import` and `/t/{slug}`.
 2. **Stats justify the price.** Season team books stay behind login. **Tournament** batting, pitching, awards, and weekend lines are public — after a coach confirms the box.
-3. **Coach-supplied uploads only.** Screenshot or scorebook photo. No GameChanger scrape (TOS). Same rule as outline §7.
+3. **Coach-supplied data only.** Screenshot, scorebook photo, CSV, or a public GameChanger URL the coach pastes. **No GameChanger scrape, no login into GC, no unofficial API.** Same rule as outline §7.
+
+## Identity (team, not email)
+
+Site admin manages **team profiles** (`/admin/teams`). Email is only a login that can attach to a team. A team can exist with no GameChanger — year totals still follow that club. GameChanger, when present, is an optional public-page link, not the team’s identity.
 4. **Pricing (not billed yet):** The Sheet free ≤8 teams; Tournament $79/event; Organization $399/year. Per event, not a February-cancelled monthly plan.
 5. **Narrow to softball and baseball.** Youth ERA base 7, RA/RS tiebreaks, finish-the-inning later. Do not generalize.
 

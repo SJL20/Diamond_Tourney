@@ -22,6 +22,7 @@ Open http://127.0.0.1:8097
 | `/start` | Create a tournament (native or Tourney Machine) after login |
 | `/find` | Search public weekends and join with GameChanger |
 | `/year/2026` | Series leaderboard — same club across weekends |
+| `/admin/teams` | Site admin team profiles (region admin). GameChanger optional. |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger URL required |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
 

@@ -78,11 +78,10 @@ class HostedSignupTests(unittest.TestCase):
         self.assertTrue(created["event"]["signup_open"])
         self.assertEqual(created["event"]["source"], "native")
 
-        with self.assertRaises(RuntimeError) as missing:
-            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-                "team_name": "Orphans",
-            })
-        self.assertIn("GameChanger", str(missing.exception))
+        paper = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+            "team_name": "Orphans",
+        })
+        self.assertFalse(paper["team"]["gc_linked"])
 
         with self.assertRaises(RuntimeError) as bad:
             request(BASE, "POST", f"/api/events/{slug}/signup", None, {
@@ -198,6 +197,31 @@ class AccountAndYearTests(unittest.TestCase):
         self.assertTrue(any(e["slug"] == "central-saturday" for e in board["events"]))
         self.assertTrue(board["hitting"])
         self.assertEqual(board["hitting"][0]["name_key"], "Maeve D #4")
+
+    def test_signup_without_gamechanger_and_admin_team(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        ev = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Paper Book Open",
+            "slug": "paper-book-open",
+        })
+        slug = ev["event"]["slug"]
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+            "team_name": "Clipboards 10U",
+            "contact_name": "Coach Lee",
+        })
+        self.assertFalse(joined["team"]["gc_linked"])
+        self.assertTrue(joined["team"]["club"])
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        clubs = request(BASE, "GET", "/api/admin/clubs", owner)
+        self.assertTrue(any(c["name"] == "Clipboards 10U" for c in clubs["clubs"]))
+        saved = request(BASE, "POST", "/api/admin/clubs", owner, {
+            "name": "Riverside 12U",
+            "ages": "12U",
+            "notes": "No GameChanger. Scorebook only.",
+        })
+        self.assertFalse(saved["club"]["gc_linked"])
+        self.assertEqual(saved["club"]["notes"], "No GameChanger. Scorebook only.")
 
 
 if __name__ == "__main__":
