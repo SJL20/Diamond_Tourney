@@ -134,15 +134,44 @@ function importSchedule(app, event, csv) {
   return { imported: created.length, standings: poolStandings(app, event.id) };
 }
 
+function inferSide(round, side) {
+  if (side) return side;
+  const r = String(round || "").toUpperCase();
+  if (/^(C|3RD|5TH|CONS)/.test(r)) return "consolation";
+  return "championship";
+}
+
+function loserId(g) {
+  const w = g.get("winner");
+  if (!w || g.get("status") !== "final") return "";
+  const home = g.get("home_team");
+  const away = g.get("away_team");
+  if (w === home) return away || "";
+  if (w === away) return home || "";
+  return "";
+}
+
 function advanceBracket(app, eventId) {
   const games = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 40, 0, { e: eventId });
-  const s1 = games.find(function (g) { return g.get("round") === "SF" && Number(g.get("slot")) === 1; });
-  const s2 = games.find(function (g) { return g.get("round") === "SF" && Number(g.get("slot")) === 2; });
-  const fin = games.find(function (g) { return g.get("round") === "F"; });
-  if (!fin) return;
-  if (s1 && s1.get("status") === "final" && s1.get("winner")) fin.set("home_team", s1.get("winner"));
-  if (s2 && s2.get("status") === "final" && s2.get("winner")) fin.set("away_team", s2.get("winner"));
-  app.save(fin);
+  const champ = games.filter(function (g) {
+    return inferSide(g.get("round"), g.get("side")) === "championship";
+  });
+  const s1 = champ.find(function (g) { return g.get("round") === "SF" && Number(g.get("slot")) === 1; });
+  const s2 = champ.find(function (g) { return g.get("round") === "SF" && Number(g.get("slot")) === 2; });
+  const fin = champ.find(function (g) { return g.get("round") === "F"; });
+  if (fin) {
+    if (s1 && s1.get("status") === "final" && s1.get("winner")) fin.set("home_team", s1.get("winner"));
+    if (s2 && s2.get("status") === "final" && s2.get("winner")) fin.set("away_team", s2.get("winner"));
+    app.save(fin);
+  }
+  const third = games.find(function (g) { return g.get("round") === "3RD"; });
+  if (third) {
+    const l1 = s1 ? loserId(s1) : "";
+    const l2 = s2 ? loserId(s2) : "";
+    if (l1) third.set("home_team", l1);
+    if (l2) third.set("away_team", l2);
+    app.save(third);
+  }
 }
 
 function ba(h, ab) {
@@ -253,10 +282,12 @@ function publicBoard(app, event) {
       };
     }),
     bracket: bracket.map(function (g) {
+      const round = g.get("round");
       return {
         id: g.id,
-        round: g.get("round"),
+        round: round,
         slot: g.get("slot"),
+        side: inferSide(round, g.get("side")),
         home: teamName(g.get("home_team")),
         away: teamName(g.get("away_team")),
         home_runs: g.get("home_runs"),

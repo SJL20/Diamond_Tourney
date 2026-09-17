@@ -59,6 +59,79 @@ function standingsBlock(standings) {
     </div>`).join("");
 }
 
+const ROUND_META = {
+  QF: { label: "Quarterfinals", order: 1 },
+  SF: { label: "Semifinals", order: 2 },
+  F: { label: "Championship", order: 3 },
+  CSF: { label: "Consolation semis", order: 1 },
+  CF: { label: "Consolation final", order: 2 },
+  "5TH": { label: "5th place", order: 1 },
+  "3RD": { label: "3rd place", order: 2 },
+};
+
+function gameSide(g) {
+  if (g.side) return g.side;
+  const r = String(g.round || "").toUpperCase();
+  return /^(C|3RD|5TH|CONS)/.test(r) ? "consolation" : "championship";
+}
+
+function matchCard(g) {
+  const homeWin = g.status === "final" && g.winner && g.winner === g.home;
+  const awayWin = g.status === "final" && g.winner && g.winner === g.away;
+  return `<article class="bk-match ${escapeHtml(g.status)}">
+    <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
+      <span>${escapeHtml(g.home || "TBD")}</span>
+      <b>${g.status === "final" ? g.home_runs : ""}</b>
+    </div>
+    <div class="bk-team ${awayWin ? "winner" : ""} ${g.away ? "" : "tbd"}">
+      <span>${escapeHtml(g.away || "TBD")}</span>
+      <b>${g.status === "final" ? g.away_runs : ""}</b>
+    </div>
+    <p class="bk-meta">${g.status === "final" ? "Final" : "Scheduled"}</p>
+  </article>`;
+}
+
+function renderBracketTree(games, title, blurb, showChampion) {
+  if (!games.length) return "";
+  const byRound = {};
+  for (const g of games) {
+    const r = g.round;
+    if (!byRound[r]) byRound[r] = [];
+    byRound[r].push(g);
+  }
+  for (const r of Object.keys(byRound)) {
+    byRound[r].sort((a, b) => (a.slot || 0) - (b.slot || 0));
+  }
+  const rounds = Object.keys(byRound).sort(
+    (a, b) => (ROUND_META[a]?.order || 50) - (ROUND_META[b]?.order || 50),
+  );
+  const champ = games.find((g) => g.round === "F" && g.status === "final" && g.winner);
+  return `<section class="card bk-card ${showChampion ? "champ-side" : "cons-side"}">
+    <h2>${title}</h2>
+    <p class="muted">${blurb}</p>
+    <div class="bk-viz">
+      ${rounds.map((r) => `
+        <div class="bk-round">
+          <h3>${ROUND_META[r]?.label || r}</h3>
+          <div class="bk-round-games n${byRound[r].length}">${byRound[r].map(matchCard).join("")}</div>
+        </div>`).join("")}
+      ${showChampion ? `<div class="bk-round">
+        <h3>Champion</h3>
+        <div class="bk-trophy ${champ ? "named" : "tbd"}">${escapeHtml(champ?.winner || "TBD")}</div>
+      </div>` : ""}
+    </div>
+  </section>`;
+}
+
+function bracketBoards(games) {
+  const champ = games.filter((g) => gameSide(g) === "championship");
+  const cons = games.filter((g) => gameSide(g) === "consolation");
+  return `
+    ${renderBracketTree(champ, "Championship", "Winners move right when a score is final. Locked rosters stay locked.", true)}
+    ${renderBracketTree(cons, "Consolation", "Outside the championship. These games do not feed the final.", false)}
+  `;
+}
+
 export async function eventHome(slug) {
   const board = await fetchBoard(slug);
   const ev = board.event;
@@ -68,14 +141,8 @@ export async function eventHome(slug) {
       <p class="muted">${escapeHtml(ev.ages)} · ${escapeHtml(ev.venue)} · ${escapeHtml(ev.status)}</p>
       <p>Live standings and a bracket that fills itself. Families stop walking to the fence.</p>
     </section>
-    <section class="grid two">
-      ${standingsBlock(board.standings)}
-      <div class="card">
-        <h2>Bracket</h2>
-        ${board.bracket.map((g) => `<p><b>${escapeHtml(g.round)}</b> ${escapeHtml(g.home || "TBD")} ${g.status === "final" ? g.home_runs + "–" + g.away_runs : "vs"} ${escapeHtml(g.away || "TBD")}
-          ${g.winner ? ` · <span class="badge w">${escapeHtml(g.winner)}</span>` : ""}</p>`).join("") || `<p class="empty">No bracket yet.</p>`}
-      </div>
-    </section>
+    <section class="grid two">${standingsBlock(board.standings)}</section>
+    ${bracketBoards(board.bracket)}
   `);
 }
 
@@ -87,17 +154,12 @@ export async function eventPools(slug) {
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
-    <section class="card">
-      <h2>Bracket</h2>
-      <p class="muted">Winners move forward when a score is final. Locked rosters stay locked.</p>
-      ${table(["Round", "Home", "Away", "Score", "Winner"], board.bracket.map((g) => `<tr>
-        <td>${escapeHtml(g.round)} ${g.slot || ""}</td>
-        <td>${escapeHtml(g.home || "TBD")}</td>
-        <td>${escapeHtml(g.away || "TBD")}</td>
-        <td>${g.status === "final" ? `${g.home_runs}–${g.away_runs}` : g.status}</td>
-        <td>${escapeHtml(g.winner || "")}</td>
-      </tr>`))}
-    </section>`);
+    <section class="hero">
+      <h1>Bracket</h1>
+      <p>Championship on top. Consolation sits to the side and never feeds the title game.</p>
+    </section>
+    ${board.bracket.length ? bracketBoards(board.bracket) : `<section class="card empty">No bracket games yet.</section>`}
+  `);
 }
 
 export async function eventSchedule(slug) {
