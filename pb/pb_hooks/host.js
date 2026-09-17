@@ -58,8 +58,113 @@ function parsePacket(raw) {
   return null;
 }
 
-function eventJson(rec) {
+const DOC_KINDS = ["insurance", "roster", "birth_certs", "waiver", "coach_cert", "other"];
+const DOC_LABELS = {
+  insurance: "Certificate of insurance",
+  roster: "Official roster",
+  birth_certs: "Birth certificates / age proof",
+  waiver: "Waiver / medical release",
+  coach_cert: "Coach certification / background",
+  other: "Other document",
+};
+const BODY_LABELS = {
+  usa_softball: "USA Softball",
+  usssa: "USSSA",
+  pgf: "PGF",
+  triple_crown: "Triple Crown",
+  rec: "Rec / house",
+  other: "Other",
+};
+
+function truthy(v) {
+  return v === true || v === "true" || v === "on" || v === "1" || v === 1;
+}
+
+function requiredDocKinds(event) {
+  const out = [];
+  if (truthy(event.get("require_insurance"))) out.push("insurance");
+  if (truthy(event.get("require_roster"))) out.push("roster");
+  if (truthy(event.get("require_birth_certs"))) out.push("birth_certs");
+  if (truthy(event.get("require_waiver"))) out.push("waiver");
+  if (truthy(event.get("require_coach_cert"))) out.push("coach_cert");
+  return out;
+}
+
+function fileUrl(app, collectionName, rec, field) {
+  const name = rec.get(field);
+  if (!name) return "";
+  const file = Array.isArray(name) ? name[0] : name;
+  if (!file) return "";
+  try {
+    const col = app.findCollectionByNameOrId(collectionName);
+    return "/api/files/" + col.id + "/" + rec.id + "/" + encodeURIComponent(file);
+  } catch (err) {
+    return "";
+  }
+}
+
+function docJson(app, rec) {
+  return {
+    id: rec.id,
+    kind: rec.get("kind"),
+    label: DOC_LABELS[rec.get("kind")] || rec.get("kind"),
+    status: rec.get("status") || "submitted",
+    note: rec.get("note") || "",
+    original_name: rec.get("original_name") || "",
+    url: fileUrl(app, "team_docs", rec, "file"),
+  };
+}
+
+function teamDocs(app, teamId) {
+  try {
+    return app.findRecordsByFilter("team_docs", "event_team = {:t}", "kind", 40, 0, { t: teamId }).map(function (r) {
+      return docJson(app, r);
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
+function packetSummary(app, event, team) {
+  const required = requiredDocKinds(event);
+  const docs = teamDocs(app, team.id);
+  const have = {};
+  for (const d of docs) have[d.kind] = d;
+  const missing = required.filter(function (k) { return !have[k]; });
+  return {
+    required: required,
+    required_labels: required.map(function (k) { return DOC_LABELS[k]; }),
+    missing: missing,
+    docs: docs,
+    complete: missing.length === 0,
+    status: team.get("packet_status") || (missing.length ? "incomplete" : (required.length ? "submitted" : "submitted")),
+    note: team.get("packet_note") || "",
+  };
+}
+
+function applyGuidelines(rec, body) {
+  if (body.governing_body) rec.set("governing_body", body.governing_body);
+  if (body.governing_notes != null) rec.set("governing_notes", body.governing_notes);
+  if (body.pitch_limit_mode) rec.set("pitch_limit_mode", body.pitch_limit_mode);
+  if (body.pitch_limit_ip != null && body.pitch_limit_ip !== "") rec.set("pitch_limit_ip", Number(body.pitch_limit_ip));
+  if (body.pitch_limit_pitches != null && body.pitch_limit_pitches !== "") rec.set("pitch_limit_pitches", Number(body.pitch_limit_pitches));
+  if (body.pitch_limit_notes != null) rec.set("pitch_limit_notes", body.pitch_limit_notes);
+  if (body.game_length_minutes != null && body.game_length_minutes !== "") rec.set("game_length_minutes", Number(body.game_length_minutes));
+  if (body.innings_cap != null && body.innings_cap !== "") rec.set("innings_cap", Number(body.innings_cap));
+  if (body.mercy_rule != null) rec.set("mercy_rule", body.mercy_rule);
+  if (body.umpire_count != null && body.umpire_count !== "") rec.set("umpire_count", Number(body.umpire_count));
+  if (body.rules_notes != null) rec.set("rules_notes", body.rules_notes);
+  if (body.packet_notes != null) rec.set("packet_notes", body.packet_notes);
+  if (body.require_insurance != null) rec.set("require_insurance", truthy(body.require_insurance));
+  if (body.require_roster != null) rec.set("require_roster", truthy(body.require_roster));
+  if (body.require_birth_certs != null) rec.set("require_birth_certs", truthy(body.require_birth_certs));
+  if (body.require_waiver != null) rec.set("require_waiver", truthy(body.require_waiver));
+  if (body.require_coach_cert != null) rec.set("require_coach_cert", truthy(body.require_coach_cert));
+}
+
+function eventJson(rec, app) {
   const packet = parsePacket(rec.get("packet"));
+  const mode = rec.get("pitch_limit_mode") || "ip";
   return {
     id: rec.id,
     name: rec.get("name"),
@@ -74,6 +179,26 @@ function eventJson(rec) {
     signup_open: !!rec.get("signup_open"),
     auto_sync: !!rec.get("auto_sync"),
     pitch_limit_ip: rec.get("pitch_limit_ip") || 6,
+    pitch_limit_mode: mode,
+    pitch_limit_pitches: rec.get("pitch_limit_pitches") || 0,
+    pitch_limit_notes: rec.get("pitch_limit_notes") || "",
+    governing_body: rec.get("governing_body") || "",
+    governing_label: BODY_LABELS[rec.get("governing_body")] || rec.get("governing_body") || "",
+    governing_notes: rec.get("governing_notes") || "",
+    game_length_minutes: rec.get("game_length_minutes") || 0,
+    innings_cap: rec.get("innings_cap") || 0,
+    mercy_rule: rec.get("mercy_rule") || "",
+    umpire_count: rec.get("umpire_count") || 0,
+    rules_notes: rec.get("rules_notes") || "",
+    rules_file_url: app ? fileUrl(app, "events", rec, "rules_file") : "",
+    require_insurance: !!rec.get("require_insurance"),
+    require_roster: !!rec.get("require_roster"),
+    require_birth_certs: !!rec.get("require_birth_certs"),
+    require_waiver: !!rec.get("require_waiver"),
+    require_coach_cert: !!rec.get("require_coach_cert"),
+    required_docs: requiredDocKinds(rec),
+    required_doc_labels: requiredDocKinds(rec).map(function (k) { return DOC_LABELS[k]; }),
+    packet_notes: rec.get("packet_notes") || "",
     public: !!rec.get("public"),
     created_by: rec.get("created_by") || "",
     contact: rec.get("contact") || "",
@@ -102,6 +227,8 @@ function teamJson(rec) {
     published_t: rec.get("published_t"),
     published_rf: rec.get("published_rf"),
     published_ra: rec.get("published_ra"),
+    packet_status: rec.get("packet_status") || "",
+    packet_note: rec.get("packet_note") || "",
   };
 }
 
@@ -217,6 +344,8 @@ function createEvent(app, body, auth) {
   rec.set("signup_open", body.signup_open !== false);
   rec.set("auto_sync", true);
   rec.set("pitch_limit_ip", Number(body.pitch_limit_ip || 6));
+  rec.set("pitch_limit_mode", body.pitch_limit_mode || "ip");
+  applyGuidelines(rec, body);
   if (body.start) rec.set("start", body.start);
   if (body.end) rec.set("end", body.end);
   if (source === "tourneymachine") {
@@ -226,7 +355,7 @@ function createEvent(app, body, auth) {
   if (auth) rec.set("created_by", auth.id);
   app.save(rec);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
-  return { event: eventJson(rec), note: tm.note || "Tournament is live. Teams can join with or without GameChanger." };
+  return { event: eventJson(rec, app), note: tm.note || "Tournament is live. Teams can join with or without GameChanger." };
 }
 
 function signupTeam(app, event, body, auth) {
@@ -238,16 +367,86 @@ function signupTeam(app, event, body, auth) {
     throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
   }
   const director = auth && (auth.get("role") === "event_td" || auth.get("role") === "region_admin");
+  const asDirector = director && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
   const team = upsertEventTeam(app, event, {
     name: name,
     pool: body.pool || "",
     gamechanger_url: gcUrl,
     contact_name: body.contact_name || (auth ? auth.email() : ""),
     contact_email: body.contact_email || (auth ? auth.email() : ""),
-    signed_up_by: director && (body.as_director === true || body.as_director === "true" || body.as_director === "director") ? "director" : "team",
+    signed_up_by: asDirector ? "director" : "team",
     account: auth ? auth.id : "",
   });
-  return teamJson(team);
+  if (!team.get("packet_status")) team.set("packet_status", "incomplete");
+  app.save(team);
+  const row = teamJson(team);
+  row.packet = packetSummary(app, event, team);
+  return row;
+}
+
+function refreshPacketStatus(app, event, team) {
+  const packet = packetSummary(app, event, team);
+  if (team.get("packet_status") === "approved" && packet.complete) return packet;
+  if (packet.complete && packet.required.length) team.set("packet_status", "submitted");
+  else team.set("packet_status", packet.required.length ? "incomplete" : "submitted");
+  app.save(team);
+  packet.status = team.get("packet_status");
+  return packet;
+}
+
+function saveTeamDoc(app, event, team, data, files, auth) {
+  const kind = String(data.kind || "").trim();
+  if (DOC_KINDS.indexOf(kind) === -1) throw new BadRequestError("Unknown document type");
+  if (!files || !files.length) throw new BadRequestError("Choose a file for " + (DOC_LABELS[kind] || kind));
+  let rec;
+  try {
+    rec = app.findFirstRecordByFilter(
+      "team_docs",
+      "event_team = {:t} && kind = {:k}",
+      { t: team.id, k: kind },
+    );
+  } catch (err) {
+    rec = new Record(app.findCollectionByNameOrId("team_docs"));
+    rec.set("event", event.id);
+    rec.set("event_team", team.id);
+    rec.set("kind", kind);
+  }
+  rec.set("file", files);
+  rec.set("original_name", data.original_name || kind);
+  rec.set("status", "submitted");
+  rec.set("note", data.note || "");
+  if (auth) rec.set("uploaded_by", auth.id);
+  app.save(rec);
+  refreshPacketStatus(app, event, team);
+  return docJson(app, rec);
+}
+
+function reviewDoc(app, event, doc, body) {
+  const status = body.status;
+  if (status !== "approved" && status !== "rejected") throw new BadRequestError("status must be approved or rejected");
+  doc.set("status", status);
+  if (body.note != null) doc.set("note", body.note);
+  app.save(doc);
+  const team = app.findRecordById("event_teams", doc.get("event_team"));
+  if (status === "rejected") {
+    team.set("packet_status", "needs_fix");
+    team.set("packet_note", body.note || "Director asked for a replacement file.");
+    app.save(team);
+  } else {
+    const packet = refreshPacketStatus(app, event, team);
+    const docs = packet.docs;
+    if (packet.complete && docs.every(function (d) { return d.status === "approved" || packet.required.indexOf(d.kind) === -1; })) {
+      const req = packet.required;
+      const ok = req.every(function (k) {
+        return docs.some(function (d) { return d.kind === k && d.status === "approved"; });
+      });
+      if (ok) {
+        team.set("packet_status", "approved");
+        app.save(team);
+      }
+    }
+  }
+  return docJson(app, doc);
 }
 
 function registerAccount(app, body) {
@@ -272,7 +471,7 @@ function registerAccount(app, body) {
 function searchEvents(app, q) {
   const rows = app.findRecordsByFilter("events", "public = true", "-start", 80, 0);
   const needle = String(q || "").trim().toLowerCase();
-  return rows.map(eventJson).filter(function (ev) {
+  return rows.map(function (rec) { return eventJson(rec, app); }).filter(function (ev) {
     if (!needle) return true;
     return (ev.name + " " + ev.venue + " " + ev.ages + " " + ev.slug).toLowerCase().indexOf(needle) !== -1;
   });
@@ -281,7 +480,7 @@ function searchEvents(app, q) {
 function accountHome(app, auth) {
   let created = [];
   try {
-    created = app.findRecordsByFilter("events", "created_by = {:u}", "-id", 80, 0, { u: auth.id }).map(eventJson);
+    created = app.findRecordsByFilter("events", "created_by = {:u}", "-id", 80, 0, { u: auth.id }).map(function (rec) { return eventJson(rec, app); });
   } catch (err) {}
   const joined = [];
   const seen = {};
@@ -299,7 +498,7 @@ function accountHome(app, auth) {
       if (!evId || seen[evId]) continue;
       seen[evId] = true;
       try {
-        const row = eventJson(app.findRecordById("events", evId));
+        const row = eventJson(app.findRecordById("events", evId), app);
         row.team_name = t.get("name");
         row.gc_linked = isGameChangerUrl(t.get("gamechanger_url"));
         joined.push(row);
@@ -368,7 +567,11 @@ function syncEvent(app, event) {
 
 function publicRoster(app, event) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
-  return teams.map(teamJson);
+  return teams.map(function (t) {
+    const row = teamJson(t);
+    row.packet = packetSummary(app, event, t);
+    return row;
+  });
 }
 
 function clubJson(rec) {
@@ -415,8 +618,9 @@ function applySettings(app, event, body) {
   if (body.auto_sync != null) event.set("auto_sync", !!body.auto_sync);
   if (body.venue != null) event.set("venue", body.venue);
   if (body.ages != null) event.set("ages", body.ages);
+  applyGuidelines(event, body);
   app.save(event);
-  return eventJson(event);
+  return eventJson(event, app);
 }
 
 module.exports = {
@@ -437,4 +641,12 @@ module.exports = {
   accountHome: accountHome,
   listClubs: listClubs,
   saveClub: saveClub,
+  applyGuidelines: applyGuidelines,
+  requiredDocKinds: requiredDocKinds,
+  packetSummary: packetSummary,
+  refreshPacketStatus: refreshPacketStatus,
+  saveTeamDoc: saveTeamDoc,
+  reviewDoc: reviewDoc,
+  DOC_KINDS: DOC_KINDS,
+  DOC_LABELS: DOC_LABELS,
 };

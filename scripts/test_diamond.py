@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from lib.standings import sort_pool
-from scripts.pb_client import auth, request
+from scripts.pb_client import auth, request, request_multipart
 
 BASE = "http://127.0.0.1:8097"
 
@@ -150,6 +150,54 @@ class HostedSignupTests(unittest.TestCase):
         self.assertEqual(linked["event"]["tm_id"], "abc123xyz")
         self.assertTrue(linked["event"]["signup_open"])
 
+    def test_guidelines_and_required_packet(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Packet Classic",
+            "slug": "packet-classic",
+            "governing_body": "usa_softball",
+            "pitch_limit_mode": "ip",
+            "pitch_limit_ip": 6,
+            "require_insurance": True,
+            "require_roster": True,
+            "require_birth_certs": False,
+            "packet_notes": "Insurance and roster before first pitch.",
+        })
+        slug = created["event"]["slug"]
+        self.assertEqual(created["event"]["governing_body"], "usa_softball")
+        self.assertEqual(created["event"]["pitch_limit_mode"], "ip")
+        self.assertIn("insurance", created["event"]["required_docs"])
+        self.assertIn("roster", created["event"]["required_docs"])
+        self.assertNotIn("birth_certs", created["event"]["required_docs"])
+
+        with self.assertRaises(RuntimeError) as missing:
+            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+                "team_name": "No Packet 10U",
+                "contact_name": "Coach",
+            })
+        self.assertIn("insurance", str(missing.exception).lower())
+
+        director_later = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Late Paper 10U",
+            "as_director": True,
+        })
+        self.assertEqual(director_later["team"]["signed_up_by"], "director")
+        self.assertFalse(director_later["team"]["packet"]["complete"])
+
+        pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
+        joined = request_multipart(BASE, f"/api/events/{slug}/signup", None, {
+            "team_name": "Hawks Packet 10U",
+            "contact_name": "Coach Kim",
+        }, {
+            "insurance": ("insurance.pdf", pdf, "application/pdf"),
+            "roster": ("roster.pdf", pdf, "application/pdf"),
+        })
+        self.assertTrue(joined["team"]["packet"]["complete"])
+        self.assertEqual(joined["team"]["packet"]["status"], "submitted")
+        kinds = {d["kind"] for d in joined["team"]["packet"]["docs"]}
+        self.assertEqual(kinds, {"insurance", "roster"})
+
 
 class AccountAndYearTests(unittest.TestCase):
     def test_register_login_and_owned_event(self):
@@ -209,6 +257,10 @@ class AccountAndYearTests(unittest.TestCase):
         self.assertFalse(ev["signup_open"])
 
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        self.assertEqual(board["event"]["governing_body"], "usa_softball")
+        self.assertEqual(board["event"]["pitch_limit_mode"], "ip")
+        self.assertIn("insurance", board["event"]["required_docs"])
+        self.assertIn("roster", board["event"]["required_docs"])
         names = [t["name"] for t in board["roster"]]
         self.assertEqual(len(names), 8)
         self.assertIn("Pittsburgh Passion", names)

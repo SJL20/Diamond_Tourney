@@ -22,6 +22,36 @@ def request(base: str, method: str, path: str, token: str | None = None, body=No
         raise RuntimeError(f"{method} {path} -> {exc.code}: {detail}") from exc
 
 
+def request_multipart(base: str, path: str, token: str | None, fields: dict, files: dict | None = None):
+    boundary = "----DiamondBoundary7MA4YWxkTrZu0gW"
+    chunks = []
+    for key, value in (fields or {}).items():
+        chunks.append(f"--{boundary}\r\n".encode())
+        chunks.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode())
+        chunks.append(str(value).encode() + b"\r\n")
+    for key, (filename, content, ctype) in (files or {}).items():
+        chunks.append(f"--{boundary}\r\n".encode())
+        chunks.append(
+            f'Content-Disposition: form-data; name="{key}"; filename="{filename}"\r\n'
+            f"Content-Type: {ctype}\r\n\r\n".encode()
+        )
+        chunks.append(content if isinstance(content, bytes) else content.encode())
+        chunks.append(b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode())
+    data = b"".join(chunks)
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    if token:
+        headers["Authorization"] = token
+    req = urllib.request.Request(base.rstrip("/") + path, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+            return json.loads(raw.decode()) if raw else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode()
+        raise RuntimeError(f"POST {path} -> {exc.code}: {detail}") from exc
+
+
 def auth(base: str, email: str, password: str, collection: str = "users") -> str:
     out = request(base, "POST", f"/api/collections/{collection}/auth-with-password", None, {
         "identity": email,

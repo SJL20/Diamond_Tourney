@@ -1,3 +1,5 @@
+import { pageShell } from "./chrome.js";
+
 const flowRoot = () => document.getElementById("app");
 const flowPb = new PocketBase(location.origin);
 
@@ -22,25 +24,7 @@ function tabFromPath() {
 }
 
 function gateChrome(page, body) {
-  const u = who();
-  return `
-    <header class="wrap top">
-      <a class="brand" data-link href="/"><b>DIAMOND TOURNEY</b><span>Log in. Create an account. Find a tournament.</span></a>
-      <nav class="nav">
-        <a class="${page === "find" ? "active" : ""}" data-link href="/find">Find</a>
-        <a class="${page === "year" ? "active" : ""}" data-link href="/year/2026">Year board</a>
-        ${u
-          ? `<a class="${page === "account" ? "active" : ""}" data-link href="/account">Account</a>
-             ${u.role === "region_admin" ? `<a class="${page === "admin" ? "active" : ""}" data-link href="/admin/teams">Teams</a>` : ""}
-             <a data-link href="/start">Create</a>
-             <button class="link" id="logout">Sign out</button>`
-          : `<a class="${page === "login" ? "active" : ""}" data-link href="/login">Log in</a>
-             <a class="${page === "register" ? "active" : ""}" data-link href="/register">Create account</a>`}
-      </nav>
-    </header>
-    <main class="wrap">${body}</main>
-    <footer class="wrap footer">${u ? escapeHtml(u.email) : "Signed out"} · Profiles are teams. Email is a login. GameChanger is optional.</footer>
-  `;
+  return pageShell({ pb: flowPb, site: page, page, body });
 }
 
 function localHints() {
@@ -102,19 +86,20 @@ function renderFindResults(events) {
   }
   const featured = events.find((ev) => ev.slug === "keystone-clash-2026");
   const rest = events.filter((ev) => ev.slug !== "keystone-clash-2026");
-  const card = (ev) => `
-    <article class="card">
-      <h3>${escapeHtml(ev.name)}</h3>
-      <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${ev.source === "popup" ? "Keystone Clash popup" : ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"}</p>
-      <p>
+  const row = (ev) => `
+    <li>
+      <div>
+        <b>${escapeHtml(ev.name)}</b>
+        <span class="muted">${escapeHtml([ev.ages, ev.venue, ev.source === "popup" ? "Keystone Clash popup" : ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"].filter(Boolean).join(" · "))}</span>
+      </div>
+      <div class="list-actions">
         <a class="btn" data-link href="/t/${ev.slug}">Open board</a>
-        ${ev.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
-        ${ev.signup_open ? `<a class="btn ghost" data-link href="/t/${ev.slug}/signup">Join with GameChanger</a>` : `<span class="muted">Signup closed</span>`}
-      </p>
-    </article>`;
+        ${ev.signup_open ? `<a class="btn ghost" data-link href="/t/${ev.slug}/signup">Sign up</a>` : `<span class="muted">Signup closed</span>`}
+      </div>
+    </li>`;
   box.innerHTML = `
-    ${featured ? `<section class="hero"><h2>Featured weekend</h2>${card(featured)}</section>` : ""}
-    <section class="grid cards">${(featured ? rest : events).map(card).join("")}</section>`;
+    ${featured ? `<section class="page-head"><h2>Featured weekend</h2></section><ul class="list">${row(featured)}</ul>` : ""}
+    ${(featured ? rest : events).length ? `<ul class="list">${(featured ? rest : events).map(row).join("")}</ul>` : ""}`;
 }
 
 async function runFind(q) {
@@ -143,13 +128,13 @@ export async function startGate(forcedTab) {
   }
   const tab = forcedTab || tabFromPath();
   flowRoot().innerHTML = gateChrome(tab, `
-    <section class="hero">
+    <section class="page-head">
       <h1>Log in, create an account, or find a tournament.</h1>
-      <p>Directors open a weekend here. Teams join with a GameChanger link. Your account keeps both.</p>
+      <p class="muted">Directors open a weekend here. Teams join with a GameChanger link. One account keeps both.</p>
     </section>
     <nav class="tabs" role="tablist">
       <a class="tab ${tab === "login" ? "active" : ""}" data-link href="/login">Log in</a>
-      <a class="tab ${tab === "register" ? "active" : ""}" data-link href="/register">Create an account</a>
+      <a class="tab ${tab === "register" ? "active" : ""}" data-link href="/register">Create account</a>
       <a class="tab ${tab === "find" ? "active" : ""}" data-link href="/find">Find a tournament</a>
     </nav>
     ${tab === "login" ? `
@@ -198,18 +183,20 @@ export async function startGate(forcedTab) {
 }
 
 function eventCards(events, empty, mode) {
-  if (!events.length) return `<div class="card empty">${empty}</div>`;
-  return `<section class="grid cards">${events.map((ev) => `
-    <article class="card">
-      <h3>${escapeHtml(ev.name)}</h3>
-      <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")}${ev.team_name ? " · " + escapeHtml(ev.team_name) : ""}</p>
-      <p>
-        <a class="btn" data-link href="/t/${ev.slug}">${mode === "created" ? "Director board" : "Open board"}</a>
+  if (!events.length) return `<section class="empty">${empty}</section>`;
+  return `<ul class="list">${events.map((ev) => `
+    <li>
+      <div>
+        <b>${escapeHtml(ev.name)}</b>
+        <span class="muted">${escapeHtml([ev.ages, ev.venue, ev.team_name].filter(Boolean).join(" · "))}</span>
+      </div>
+      <div class="list-actions">
+        <a class="btn" data-link href="/t/${ev.slug}">${mode === "created" ? "Open board" : "Open board"}</a>
         ${mode === "created"
           ? `<a class="btn ghost" data-link href="/t/${ev.slug}/admin">Admin</a>`
-          : ev.signup_open ? `<a class="btn ghost" data-link href="/t/${ev.slug}/signup">Team signup</a>` : ""}
-      </p>
-    </article>`).join("")}</section>`;
+          : ev.signup_open ? `<a class="btn ghost" data-link href="/t/${ev.slug}/signup">Sign up</a>` : ""}
+      </div>
+    </li>`).join("")}</ul>`;
 }
 
 export async function accountHome() {
@@ -239,15 +226,14 @@ export async function accountHome() {
     } catch (err) {}
   }
   flowRoot().innerHTML = gateChrome("account", `
-    <section class="hero">
+    <section class="page-head">
       <h1>${escapeHtml(name)}</h1>
       <p class="muted">${escapeHtml(home.user.email)} · ${home.user.role === "team_coach" ? "Team account" : "Director account"}</p>
-      <p>Create a weekend, find one to join, or open a tournament already on this account.</p>
-      <p>
+      <div class="actions">
         <a class="btn" data-link href="/start">Create a tournament</a>
-        <a class="btn ghost" data-link href="/find">Find a tournament to join</a>
-        <a class="btn ghost" data-link href="/year/2026">2026 leaderboard</a>
-      </p>
+        <a class="btn ghost" data-link href="/find">Find a tournament</a>
+        <a class="btn ghost" data-link href="/year/2026">Year board</a>
+      </div>
     </section>
     ${book}
     <section>
@@ -278,9 +264,9 @@ export async function adminTeams() {
   }
   const data = await res.json();
   flowRoot().innerHTML = gateChrome("admin", `
-    <section class="hero">
+    <section class="page-head">
       <h1>Team profiles</h1>
-      <p>Admin is by team, not by email. A login can attach later. GameChanger is optional — leave it blank if they score on paper.</p>
+      <p class="muted">Admin is by team, not by email. A login can attach later. GameChanger is optional — leave it blank if they score on paper.</p>
     </section>
     <section class="card">
       <h2>Add a team</h2>
@@ -360,9 +346,9 @@ export async function yearPage(year) {
       <tbody>${rows.join("") || `<tr><td colspan="${headers.length}" class="empty">No qualifying lines yet.</td></tr>`}</tbody></table></div>`;
   }
   flowRoot().innerHTML = gateChrome("year", `
-    <section class="hero">
+    <section class="page-head">
       <h1>${escapeHtml(year)} series board</h1>
-      <p>Same GameChanger team across weekends stays one club. Year totals are rebuilt from final event scores and approved boxes — nothing invented.</p>
+      <p class="muted">Same club across weekends stays one row. Totals come from final event scores and approved boxes — nothing invented.</p>
       <p>${(board.events || []).map((ev) => `<a data-link href="/t/${ev.slug}">${escapeHtml(ev.name)}</a>`).join(" · ") || "No public events in this year yet."}</p>
     </section>
     <section class="card">

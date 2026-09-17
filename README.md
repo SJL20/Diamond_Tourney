@@ -13,9 +13,12 @@ bash scripts/local-server.sh
 
 That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy, then prints the Keystone Clash URLs. Do not kill a healthy listener just to “restart Preview.”
 
+Every page has a **site bar** (Find, Year, Account, Create). Tournament pages add a second **tournament bar** under it (Home, Games, Bracket, Stats, Info, Sign up, Admin). Season books use the same split: site bar, then team-book links. The two bars do not mix.
+
 | Page | What it is |
 |---|---|
-| `/t/keystone-clash-2026` | Hosted Keystone Clash board — teams, GC links, pool records, Sunday bracket |
+| `/t/{slug}` | Tournament home — site bar on top, tournament bar under it |
+| `/t/keystone-clash-2026` | Hosted Keystone Clash board — teams, GC links, pool records |
 | `/t/keystone-clash-2026/stats` | Full published hitting/pitching board, filter by team |
 | `/t/keystone-clash-2026/info` | Parking map, rules, raffle, rain-venue links |
 | `/popup/index.html` | Local copy of the original popup (standings, teams, bracket, raffle) |
@@ -25,7 +28,7 @@ That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy
 | `/` | Log in, create an account, or find a tournament |
 | `/find` | Search public weekends — Keystone Clash is featured |
 | `/year/2026` | Series leaderboard — same club across weekends |
-| `/start` | Create a tournament (native, Tourney Machine, or re-import the popup) |
+| `/start` | Create a tournament — governing body, IP/pitch cap, rules file, required team packet |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
 

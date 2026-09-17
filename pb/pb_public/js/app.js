@@ -5,6 +5,7 @@ import {
   eventSignup, eventStats, startTournament,
 } from "./event.js";
 import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
+import { pageShell } from "./chrome.js";
 
 const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
@@ -85,32 +86,7 @@ async function teamBySlug(slug) {
 }
 
 function chrome(team, page, body) {
-  const slug = team?.slug;
-  const links = slug ? [
-    ["/teams/" + slug + "/home", "Home"],
-    ["/teams/" + slug + "/roster", "Roster"],
-    ["/teams/" + slug + "/hitting", "Hitting"],
-    ["/teams/" + slug + "/pitching", "Pitching"],
-    ["/teams/" + slug + "/games", "Games"],
-  ] : [];
-  if (slug && isCoachOf(team.id)) links.push(["/teams/" + slug + "/admin/review", "Review"]);
-  const who = user() ? user().email : "signed out";
-  return `
-    <header class="wrap top">
-      <a class="brand" href="/"><b>DIAMOND TOURNEY</b><span>${team ? escapeHtml(team.name) : "Keep the clipboard. Lose the group text."}</span></a>
-      <nav class="nav">
-        ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
-        <a data-link href="/find">Find</a>
-        <a data-link href="/year/2026">Year</a>
-        <a data-link href="/t">Boards</a>
-        ${user()
-          ? `<a data-link href="/account">Account</a><a data-link href="/start">Create</a><button class="link" id="logout">Sign out</button>`
-          : `<a data-link href="/login">Log in</a><a data-link href="/register">Create account</a>`}
-      </nav>
-    </header>
-    <main class="wrap">${body}</main>
-    <footer class="wrap footer">${escapeHtml(who)} · Stats stay in staging until a coach approves.</footer>
-  `;
+  return pageShell({ pb, team, page, body });
 }
 
 function table(headers, rows, totals) {
@@ -217,15 +193,13 @@ async function home(slug) {
     `<span class="badge ${g.result.toLowerCase()}">${g.result} ${escapeHtml(g.opponent)} ${g.us_runs}-${g.them_runs}</span>`
   ).join(" ");
   app.innerHTML = chrome(team, "home", `
-    <section class="hero">
-      <h1>${escapeHtml(team.name)}</h1>
-      <p class="muted">${escapeHtml(team.age_group)} · ${escapeHtml(team.coach_name || "")}</p>
+    <section class="page-head">
       <div class="row">
         <div class="stat"><b>${team.public_record_wins || 0}-${team.public_record_losses || 0}</b><span>Season W-L</span></div>
         <div class="stat"><b>${games[0] ? escapeHtml(games[0].opponent) : "—"}</b><span>Last game</span></div>
       </div>
       <p>${escapeHtml(team.coach_note || "")}</p>
-      <p>Last five: ${last5 || "No approved games yet."}</p>
+      <p class="muted">Last five: ${last5 || "No approved games yet."}</p>
     </section>
   `);
 }
@@ -351,8 +325,9 @@ async function review(slug) {
     </article>`;
   }).join("");
   app.innerHTML = chrome(team, "review", `
-    <section class="hero"><h1>Review queue</h1>
-      <p>Bot A writes staging only. Approving copies lines into the live book and rebuilds W-L. Rejected games never touch BA or the record.</p>
+    <section class="page-head">
+      <h1>Review queue</h1>
+      <p class="muted">Staging only. Approve copies lines into the live book. Rejected games never touch BA or the record.</p>
     </section>
     <section class="grid">${cards || `<div class="card empty">Nothing in staging. Drop a GameChanger box to Bot A.</div>`}</section>
   `);

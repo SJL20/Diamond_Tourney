@@ -1,3 +1,5 @@
+import { pageShell } from "./chrome.js";
+
 const eventRoot = () => document.getElementById("app");
 const eventPb = new PocketBase(location.origin);
 
@@ -26,41 +28,95 @@ function authHeader() {
   return eventPb.authStore.token ? { Authorization: eventPb.authStore.token } : {};
 }
 
-function eventChrome(event, page, body, extraNav = []) {
-  const slug = event?.slug;
-  const links = slug ? [
-    ["/t/" + slug, "Home"],
-    ["/t/" + slug + "/pools", "Pools"],
-    ["/t/" + slug + "/bracket", "Bracket"],
-    ["/t/" + slug + "/schedule", "Schedule"],
-    ["/t/" + slug + "/leaders", "Leaders"],
-    ["/t/" + slug + "/awards", "Awards"],
-  ] : [];
-  if (slug && event?.signup_open !== false) {
-    links.push(["/t/" + slug + "/signup", "Sign up"]);
-  }
-  if (slug && event?.packet) {
-    links.push(["/t/" + slug + "/stats", "Stats"]);
-    links.push(["/t/" + slug + "/info", "Info"]);
-  }
-  if (slug && isDirector()) {
-    links.push(["/t/" + slug + "/admin", "Admin"]);
-  }
+function eventChrome(event, page, body) {
+  const site = event ? "" : (page === "create" ? "create" : page);
+  return pageShell({ pb: eventPb, site, event, page, body });
+}
+
+function setupGuidelinesFields(ev = {}) {
+  const sel = (name, value, opts) => `<select name="${name}">${opts.map(([v, l]) =>
+    `<option value="${v}" ${String(ev[name] || value) === v ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  const check = (name, label) => `<label class="check"><input type="checkbox" name="${name}" ${ev[name] ? "checked" : ""}> ${label}</label>`;
   return `
-    <header class="wrap top">
-      <a class="brand" href="/"><b>DIAMOND TOURNEY</b><span>${event ? escapeHtml(event.name) : "Keep the clipboard. Lose the group text."}</span></a>
-      <nav class="nav">
-        ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
-        ${extraNav.join("")}
-        <a data-link href="/find">Find</a>
-        <a data-link href="/year/2026">Year</a>
-        <a data-link href="/start">Create</a>
-        <a data-link href="/account">Account</a>
-      </nav>
-    </header>
-    <main class="wrap">${body}</main>
-    <footer class="wrap footer">Public board · boxes stay unverified until a coach confirms · ${escapeHtml(event?.venue || "")}</footer>
+    <details class="setup-block" open>
+      <summary>Governing body</summary>
+      <label>Sanction
+        ${sel("governing_body", "usa_softball", [
+          ["usa_softball", "USA Softball"],
+          ["usssa", "USSSA"],
+          ["pgf", "PGF"],
+          ["triple_crown", "Triple Crown"],
+          ["rec", "Rec / house"],
+          ["other", "Other"],
+        ])}
+      </label>
+      <label>Sanction number / notes <input name="governing_notes" value="${escapeHtml(ev.governing_notes || "")}" placeholder="USA Softball, finish the inning, two umpires"></label>
+    </details>
+    <details class="setup-block">
+      <summary>Pitching limits</summary>
+      <label>How you cap pitching
+        ${sel("pitch_limit_mode", ev.pitch_limit_mode || "ip", [
+          ["ip", "Innings pitched"],
+          ["pitch_count", "Pitch count"],
+          ["both", "IP and pitch count"],
+          ["none", "No posted weekend cap"],
+        ])}
+      </label>
+      <div class="form-grid two">
+        <label>Weekend IP cap <input name="pitch_limit_ip" type="number" min="0" step="0.1" value="${ev.pitch_limit_ip ?? 6}"></label>
+        <label>Weekend pitch cap <input name="pitch_limit_pitches" type="number" min="0" value="${ev.pitch_limit_pitches || ""}" placeholder="Leave blank if IP only"></label>
+      </div>
+      <label>How it is enforced <textarea name="pitch_limit_notes" rows="2" placeholder="6.0 IP for the weekend. A pitcher may finish the batter.">${escapeHtml(ev.pitch_limit_notes || "")}</textarea></label>
+    </details>
+    <details class="setup-block">
+      <summary>Game rules</summary>
+      <div class="form-grid two">
+        <label>Game length (minutes) <input name="game_length_minutes" type="number" min="0" value="${ev.game_length_minutes || 90}"></label>
+        <label>Inning cap <input name="innings_cap" type="number" min="0" value="${ev.innings_cap || 7}"></label>
+        <label>Umpires per game <input name="umpire_count" type="number" min="0" value="${ev.umpire_count || 2}"></label>
+        <label>Run / mercy rule <input name="mercy_rule" value="${escapeHtml(ev.mercy_rule || "12 after 3, 10 after 4, 8 after 5")}"></label>
+      </div>
+      <label>Rules notes <textarea name="rules_notes" rows="3">${escapeHtml(ev.rules_notes || "")}</textarea></label>
+      <label>Rules attachment (PDF or photo) <input name="rules_file" type="file" accept=".pdf,image/jpeg,image/png,image/webp"></label>
+      ${ev.rules_file_url ? `<p class="muted"><a href="${escapeHtml(ev.rules_file_url)}">Current rules file</a></p>` : ""}
+    </details>
+    <details class="setup-block">
+      <summary>Team packet</summary>
+      <p class="muted">Turn on only what this weekend requires. Birth certificates stay off unless you will check them.</p>
+      ${check("require_insurance", "Certificate of insurance")}
+      ${check("require_roster", "Official roster")}
+      ${check("require_birth_certs", "Birth certificates / age proof")}
+      ${check("require_waiver", "Waiver / medical release")}
+      ${check("require_coach_cert", "Coach certification / background")}
+      <label>Notes to coaches <textarea name="packet_notes" rows="3" placeholder="Insurance and roster before first pitch. Bring birth certificates to the plate meeting only if asked.">${escapeHtml(ev.packet_notes || "")}</textarea></label>
+    </details>
   `;
+}
+
+function guidelinesBlock(ev) {
+  if (!ev) return "";
+  const req = ev.required_doc_labels || [];
+  const pitch = ev.pitch_limit_mode === "none"
+    ? "No posted weekend pitching cap"
+    : ev.pitch_limit_mode === "pitch_count"
+      ? `${ev.pitch_limit_pitches || "—"} pitches`
+      : ev.pitch_limit_mode === "both"
+        ? `${ev.pitch_limit_ip || 6}.0 IP and ${ev.pitch_limit_pitches || "—"} pitches`
+        : `${ev.pitch_limit_ip || 6}.0 IP`;
+  return `<section class="card facts">
+    <h2>Weekend guidelines</h2>
+    ${[
+      ["Governing body", [ev.governing_label, ev.governing_notes].filter(Boolean).join(" — ")],
+      ["Pitching cap", [pitch, ev.pitch_limit_notes].filter(Boolean).join(" — ")],
+      ["Game length", ev.game_length_minutes ? ev.game_length_minutes + " minutes" : ""],
+      ["Innings", ev.innings_cap ? String(ev.innings_cap) : ""],
+      ["Umpires", ev.umpire_count ? String(ev.umpire_count) : ""],
+      ["Mercy rule", ev.mercy_rule],
+      ["Rules", ev.rules_notes],
+      ["Team must upload", req.join(", ")],
+      ["Packet notes", ev.packet_notes],
+    ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}${k === "Rules" && ev.rules_file_url ? ` · <a href="${escapeHtml(ev.rules_file_url)}">Download attachment</a>` : ""}</dd></div>`).join("")}
+  </section>`;
 }
 
 async function fetchBoard(slug) {
@@ -169,18 +225,18 @@ function bracketBoards(games) {
 
 function rosterBlock(teams) {
   if (!teams || !teams.length) {
-    return `<section class="card empty">No teams signed up yet. A team can join with or without GameChanger.</section>`;
+    return `<section class="empty">No teams signed up yet. A team can join with or without GameChanger.</section>`;
   }
   return `<section class="card">
     <h2>Teams</h2>
-    <p class="muted">Each GameChanger link is the public page the coach published. This host stores that URL. It does not scrape private GameChanger pages.</p>
-    <div class="gc-grid">${teams.map((t) => `
-      <article class="gc-card ${t.host ? "host" : ""}">
-        <b>${escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}${t.seed ? ` <span class="muted">#${t.seed}</span>` : ""}</b>
-        ${t.gc_linked && t.gamechanger_url
-          ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">Open on GameChanger</a>`
-          : `<span class="muted">No GameChanger linked</span>`}
-      </article>`).join("")}</div>
+    <p class="muted">GameChanger links are the public pages coaches published. This host stores the URL. It does not scrape private pages.</p>
+    ${table(["Team", "Seed", "GameChanger"], teams.map((t) => `<tr>
+      <td>${escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
+      <td class="num">${t.seed || "—"}</td>
+      <td>${t.gc_linked && t.gamechanger_url
+        ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">Open book</a>`
+        : `<span class="muted">Not linked</span>`}</td>
+    </tr>`))}
   </section>`;
 }
 
@@ -190,15 +246,15 @@ export async function eventHome(slug) {
   const packet = board.packet || ev.packet;
   const champ = packet?.champion;
   eventRoot().innerHTML = eventChrome(ev, "home", `
-    <section class="hero">
-      <h1>${escapeHtml(ev.name)}</h1>
-      <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.dates || packet?.dates || "")} · ${escapeHtml(ev.venue)} · ${sourceLabel(ev)}</p>
-      <p>${escapeHtml(ev.status_note || packet?.status || "Live standings and a bracket that fills itself.")}</p>
-      <p>
+    <section class="page-head">
+      <p class="lede">${escapeHtml(ev.status_note || packet?.status || "Live standings. The bracket fills when scores are final.")}</p>
+      <p class="muted">${escapeHtml([ev.dates || packet?.dates, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
+      <div class="actions">
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
-        ${ev.slug === "keystone-clash-2026" ? ` <a class="btn" data-link href="/t/${ev.slug}/stats">Full stats</a> <a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
-        ${ev.tm_url ? ` <a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Official Tourney Machine bracket</a>` : ""}
-      </p>
+        <a class="btn ghost" data-link href="/t/${ev.slug}/bracket">Open bracket</a>
+        ${ev.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
+        ${ev.tm_url ? `<a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Tourney Machine</a>` : ""}
+      </div>
     </section>
     ${champ ? `<section class="champ-banner">
       <div class="k">Champions</div>
@@ -206,10 +262,8 @@ export async function eventHome(slug) {
       <p>${escapeHtml(champ.record || "")}${champ.line ? " — " + escapeHtml(champ.line) : ""}</p>
       ${packet?.runner_up ? `<div class="ru"><span>Runner-up</span><b>${escapeHtml(packet.runner_up.team)}</b> ${escapeHtml(packet.runner_up.record || "")}</div>` : ""}
     </section>` : ""}
-    ${rosterBlock(board.roster)}
     <section class="grid two">${standingsBlock(board.standings)}</section>
-    ${packet?.bracket_note || packet?.bracket_venue ? `<p class="muted">${escapeHtml([packet.bracket_venue, packet.bracket_note].filter(Boolean).join(" — "))}</p>` : ""}
-    ${bracketBoards(board.bracket)}
+    ${rosterBlock(board.roster)}
   `);
 }
 
@@ -221,9 +275,9 @@ export async function eventPools(slug) {
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
-    <section class="hero">
+    <section class="page-head">
       <h1>Bracket</h1>
-      <p>Championship on top. Consolation sits to the side and never feeds the title game.</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.</p>
     </section>
     ${board.bracket.length ? bracketBoards(board.bracket) : `<section class="card empty">No bracket games yet.</section>`}
   `);
@@ -277,10 +331,14 @@ export async function eventLeaders(slug) {
     <td>${r.ip}</td><td>${board.event.pitch_limit_ip}.0</td>
     <td>${r.ip_outs > board.event.pitch_limit_ip * 3 ? `<span class="badge l">over</span>` : `<span class="badge w">ok</span>`}</td>
   </tr>`);
-  eventRoot().innerHTML = eventChrome(board.event, "leaders", `
-    <section class="hero">
+  eventRoot().innerHTML = eventChrome(board.event, "stats", `
+    <section class="page-head">
       <h1>Stat leaders</h1>
       <p class="muted">${escapeHtml(board.leaders.stats_note || "Qualifying minimums are 8 at-bats and 5 innings. Lines come from each team’s published scorebook.")}</p>
+      <div class="actions">
+        <a class="btn ghost" data-link href="/t/${board.event.slug}/stats">Full board</a>
+        <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
+      </div>
     </section>
     <section class="grid two">
       <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${board.leaders.min_ab || 8} AB · ranked by OPS on the popup</p>
@@ -305,10 +363,10 @@ export async function eventAwards(slug) {
   const board = await fetchBoard(slug);
   const at = board.leaders.all_tournament;
   eventRoot().innerHTML = eventChrome(board.event, "awards", `
-    <section class="hero print-sheet">
-      <h1>All-tournament · ${escapeHtml(board.event.name)}</h1>
-      <p>Picked on numbers. Not on which kid the director happened to watch.</p>
-      <p><button class="btn" onclick="window.print()">Print award sheet</button></p>
+    <section class="page-head print-sheet">
+      <h1>All-tournament</h1>
+      <p class="muted">Picked on numbers, not on which kid the director happened to watch.</p>
+      <div class="actions"><button class="btn" type="button" onclick="window.print()">Print award sheet</button></div>
     </section>
     <section class="grid two">
       <div class="card"><h2>Hitters</h2>
@@ -328,17 +386,25 @@ export async function eventAwards(slug) {
 
 export async function eventList() {
   const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
-  eventRoot().innerHTML = eventChrome(null, "", `
-    <section class="hero"><h1>Tournaments</h1>
-      <p>Public boards only. Same club across weekends rolls into the year board.</p>
-      <p><a class="btn" data-link href="/start">Create a tournament</a> <a class="btn ghost" data-link href="/year/2026">2026 leaderboard</a></p>
+  eventRoot().innerHTML = eventChrome(null, "find", `
+    <section class="page-head">
+      <h1>Tournaments</h1>
+      <p class="muted">Public boards. Same club across weekends rolls into the year board.</p>
+      <div class="actions">
+        <a class="btn" data-link href="/start">Create a tournament</a>
+        <a class="btn ghost" data-link href="/year/2026">Open year board</a>
+      </div>
     </section>
-    <section class="grid cards">${events.map((ev) => `
-      <a class="card team-card" data-link href="/t/${ev.slug}">
-        <h3>${escapeHtml(ev.name)}</h3>
-        <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${sourceLabel(ev)}</p>
-      </a>`).join("") || `<div class="card empty">No public events. <a data-link href="/start">Start one</a>.</div>`}
-    </section>`);
+    ${events.length ? `<ul class="list">${events.map((ev) => `
+      <li>
+        <div>
+          <b>${escapeHtml(ev.name)}</b>
+          <span class="muted">${escapeHtml([ev.ages, ev.venue, sourceLabel(ev)].filter(Boolean).join(" · "))}</span>
+        </div>
+        <div class="list-actions"><a class="btn" data-link href="/t/${ev.slug}">Open board</a></div>
+      </li>`).join("")}</ul>`
+      : `<section class="empty">No public events. <a data-link href="/start">Create a tournament</a> after you log in.</section>`}
+  `);
 }
 
 function directorGate() {
@@ -354,26 +420,26 @@ function directorGate() {
 }
 
 export async function startTournament() {
-  eventRoot().innerHTML = eventChrome(null, "", `
-    <section class="hero">
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
       <h1>Start a tournament</h1>
-      <p>This host is the board of record. Link a Tourney Machine page you already published, or run the event natively here. Teams then sign up with a GameChanger URL — that is where stats come from.</p>
+      <p>This host is the board of record. Pick one door. Teams sign up after you open it.</p>
     </section>
-    <section class="grid two">
-      <a class="card team-card" data-link href="/directors/new">
-        <h3>Run it here</h3>
+    <section class="choice-grid">
+      <a class="choice" data-link href="/directors/new">
         <p class="muted">Native</p>
-        <p>Name, venue, age group. Pools, bracket, and signup live on this site.</p>
+        <h3>Run it here</h3>
+        <p>Name, venue, guidelines, and the team packet. Pools and the bracket live on this site.</p>
       </a>
-      <a class="card team-card" data-link href="/directors/link-tm">
-        <h3>Link Tourney Machine</h3>
-        <p class="muted">Public TM URL</p>
-        <p>Paste the public tournament page. We store the link and refresh it from this host.</p>
+      <a class="choice" data-link href="/directors/link-tm">
+        <p class="muted">Tourney Machine</p>
+        <h3>Link a public page</h3>
+        <p>Paste the TM URL. Guidelines and uploads stay on this host.</p>
       </a>
-      <a class="card team-card" data-link href="/directors/import-popup">
-        <h3>Import Keystone Clash</h3>
-        <p class="muted">thedr21.github.io/KeystoneClash</p>
-        <p>Pull the public popup JSON — teams, GameChanger links, pool records, and the Sunday bracket.</p>
+      <a class="choice" data-link href="/directors/import-popup">
+        <p class="muted">Keystone Clash</p>
+        <h3>Import the popup</h3>
+        <p>Public JSON only — teams, GameChanger links, pool records, and Sunday scores.</p>
       </a>
     </section>
   `);
@@ -381,10 +447,10 @@ export async function startTournament() {
 
 export async function directorImportPopup() {
   if (!directorGate()) return;
-  eventRoot().innerHTML = eventChrome(null, "", `
-    <section class="hero">
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
       <h1>Import the Keystone Clash popup</h1>
-      <p>Public GitHub Pages JSON only. Teams, GameChanger URLs, published pool records, and Sunday scores. Individual Friday/Saturday pool boxes are not on that site, so they are not invented here.</p>
+      <p class="muted">Public GitHub Pages JSON only. Friday/Saturday pool boxes that are not on that site are not invented here.</p>
     </section>
     <section class="card">
       <form class="form wide" id="popup-form">
@@ -418,10 +484,14 @@ export async function eventStats(slug) {
   const pitching = board.leaders.full_pitching || [];
   const teams = [...new Set([...hitting, ...pitching].map((r) => r.team).filter(Boolean))].sort();
   eventRoot().innerHTML = eventChrome(board.event, "stats", `
-    <section class="hero">
+    <section class="page-head">
       <h1>Full stats board</h1>
       <p class="muted">${escapeHtml(board.leaders.stats_note || "Published scorebook lines. Filter by team. Qualifying line is 8 AB / 5 IP.")}</p>
-      <p><a class="btn ghost" href="/popup/stats.html">Open the original stats page</a></p>
+      <div class="actions">
+        <a class="btn ghost" data-link href="/t/${board.event.slug}/leaders">Leaders</a>
+        <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
+        ${board.event.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/stats.html">Popup stats</a>` : ""}
+      </div>
     </section>
     <section class="card">
       <div class="tabs" role="tablist">
@@ -489,16 +559,17 @@ export async function eventInfo(slug) {
   const packetHref = local ? "/popup/coaches-packet.pdf" : info.coaches_packet;
   const mapHref = local ? "/popup/parking-map.png" : info.parking_map;
   eventRoot().innerHTML = eventChrome(board.event, "info", `
-    <section class="hero">
+    <section class="page-head">
       <h1>Tournament info</h1>
-      <p>${escapeHtml(packet?.status || board.event.status_note || "")}</p>
-      ${local ? `<p>
+      <p class="muted">${escapeHtml(packet?.status || board.event.status_note || "")}</p>
+      ${local ? `<div class="actions">
         <a class="btn ghost" href="/popup/index.html">Popup home</a>
         <a class="btn ghost" href="/popup/rain-update.html">Rain / Sunday venue</a>
         <a class="btn ghost" href="/popup/raffle.html">50/50 raffle</a>
         <a class="btn ghost" href="/popup/draw.html">Draw verification</a>
-      </p>` : ""}
+      </div>` : ""}
     </section>
+    ${guidelinesBlock(board.event)}
     ${local ? `<section class="card infomap">
       <h2>Parking</h2>
       <img src="/popup/parking-map.png" alt="Aerial map of East End Park showing the main lot off Meadow St and the Field 2 lot.">
@@ -529,30 +600,42 @@ export async function eventInfo(slug) {
   `);
 }
 
+function packGuidelines(form) {
+  const fd = new FormData(form);
+  for (const k of ["require_insurance", "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert"]) {
+    fd.set(k, form.querySelector(`[name="${k}"]`)?.checked ? "true" : "false");
+  }
+  return fd;
+}
+
 export async function directorNative() {
   if (!directorGate()) return;
-  eventRoot().innerHTML = eventChrome(null, "", `
-    <section class="hero">
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
       <h1>Run it on this site</h1>
-      <p>Native tournament. After you open it, directors or teams sign up — each team must link GameChanger.</p>
+      <p class="muted">Name the weekend, then open the sections you need. Insurance and roster are on by default.</p>
     </section>
     <section class="card">
       <form class="form wide" id="native-form">
-        <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
+        <div class="form-grid two">
+          <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
+          <label>Age group <input name="ages" value="10U"></label>
+        </div>
         <label>Venue <input name="venue" placeholder="Central Park Complex"></label>
-        <label>Age group <input name="ages" value="10U"></label>
         <label>Slug (optional) <input name="slug" placeholder="labor-day-classic"></label>
+        ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
         <button class="btn" type="submit">Open signup</button>
         <p class="error" id="native-err" hidden></p>
       </form>
     </section>`);
   document.getElementById("native-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target));
+    const fd = packGuidelines(ev.target);
+    fd.set("source", "native");
     const res = await fetch("/api/events/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
-      body: JSON.stringify({ ...data, source: "native" }),
+      headers: { ...authHeader() },
+      body: fd,
     });
     if (!res.ok) {
       document.getElementById("native-err").hidden = false;
@@ -566,30 +649,34 @@ export async function directorNative() {
 
 export async function directorLinkTm() {
   if (!directorGate()) return;
-  eventRoot().innerHTML = eventChrome(null, "", `
-    <section class="hero">
-      <h1>Link a Tourney Machine site</h1>
-      <p>Public tournament URL only. We do not log into Tourney Machine. This host stores the link and refreshes the public page.</p>
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
+      <h1>Link Tourney Machine</h1>
+      <p class="muted">Public TM URL for the bracket. Guidelines and the team packet live here.</p>
     </section>
     <section class="card">
       <form class="form wide" id="tm-form">
         <label>Tourney Machine URL
-          <input name="tm_url" type="url" required placeholder="https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=…">
+          <input name="tm_url" type="url" required placeholder="https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=">
         </label>
-        <label>Name override (optional) <input name="name" placeholder="Leave blank to use the public page title"></label>
+        <div class="form-grid two">
+          <label>Name override (optional) <input name="name" placeholder="Public page title if blank"></label>
+          <label>Age group <input name="ages" value="10U"></label>
+        </div>
         <label>Venue <input name="venue"></label>
-        <label>Age group <input name="ages" value="10U"></label>
+        ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
         <button class="btn" type="submit">Link and open signup</button>
         <p class="error" id="tm-err" hidden></p>
       </form>
     </section>`);
   document.getElementById("tm-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target));
+    const fd = packGuidelines(ev.target);
+    fd.set("source", "tourneymachine");
     const res = await fetch("/api/events/create", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
-      body: JSON.stringify({ ...data, source: "tourneymachine" }),
+      headers: { ...authHeader() },
+      body: fd,
     });
     if (!res.ok) {
       document.getElementById("tm-err").hidden = false;
@@ -608,11 +695,22 @@ export async function eventSignup(slug) {
   });
   const ev = roster.event;
   const director = isDirector();
-  eventRoot().innerHTML = eventChrome(ev, "sign up", `
-    <section class="hero">
-      <h1>Sign up · ${escapeHtml(ev.name)}</h1>
-      <p>${ev.signup_open ? "Director or team can add a roster. GameChanger is optional — the team profile exists either way. If they have a public GC page, link it so this host can pull that page later." : "Signup is closed."}</p>
+  const req = ev.required_docs || [];
+  const labels = {
+    insurance: "Certificate of insurance",
+    roster: "Official roster",
+    birth_certs: "Birth certificates / age proof",
+    waiver: "Waiver / medical release",
+    coach_cert: "Coach certification / background",
+  };
+  eventRoot().innerHTML = eventChrome(ev, "signup", `
+    <section class="page-head">
+      <h1>Sign a team up</h1>
+      <p>${ev.signup_open
+        ? `GameChanger is optional. ${req.length ? "Upload the required packet below." : "The director did not require a team packet."}`
+        : "Signup is closed."}</p>
     </section>
+    ${guidelinesBlock(ev)}
     ${ev.signup_open ? `<section class="card">
       <form class="form wide" id="signup-form">
         <label>Team name <input name="team_name" required placeholder="Hawks 10U"></label>
@@ -622,7 +720,12 @@ export async function eventSignup(slug) {
         </label>
         <label>Contact name <input name="contact_name" ${director ? "" : "required"}></label>
         <label>Contact email <input name="contact_email" type="email"></label>
-        ${director ? `<label class="check"><input type="checkbox" name="as_director" checked> I am the director adding this team</label>` : ""}
+        ${req.length ? `<fieldset class="setup-block">
+          <legend>Required uploads</legend>
+          <p class="muted">${escapeHtml(ev.packet_notes || "PDF or photo. The director reviews these before first pitch.")}</p>
+          ${req.map((k) => `<label>${labels[k] || k} <input name="${k}" type="file" accept=".pdf,image/jpeg,image/png,image/webp" ${director ? "" : "required"}></label>`).join("")}
+        </fieldset>` : ""}
+        ${director ? `<label class="check"><input type="checkbox" name="as_director" checked> I am the director adding this team — collect the packet later</label>` : ""}
         <button class="btn" type="submit">Join the tournament</button>
         <p class="error" id="signup-err" hidden></p>
       </form>
@@ -633,19 +736,12 @@ export async function eventSignup(slug) {
   if (!form) return;
   form.addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
-    const raw = Object.fromEntries(new FormData(evnt.target));
-    const body = {
-      team_name: raw.team_name,
-      pool: raw.pool,
-      gamechanger_url: raw.gamechanger_url,
-      contact_name: raw.contact_name,
-      contact_email: raw.contact_email,
-      as_director: !!raw.as_director,
-    };
+    const fd = new FormData(evnt.target);
+    if (director && fd.get("as_director")) fd.set("as_director", "true");
     const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/signup", {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader() },
-      body: JSON.stringify(body),
+      headers: { ...authHeader() },
+      body: fd,
     });
     if (!res.ok) {
       document.getElementById("signup-err").hidden = false;
@@ -666,22 +762,74 @@ export async function eventAdmin(slug) {
   });
   const ev = roster.event;
   eventRoot().innerHTML = eventChrome(ev, "admin", `
-    <section class="hero">
-      <h1>Director · ${escapeHtml(ev.name)}</h1>
-      <p class="muted">${ev.source === "tourneymachine" ? "Linked Tourney Machine" : "Native host"} · signup ${ev.signup_open ? "open" : "closed"} · auto-sync ${ev.auto_sync ? "on" : "off"}</p>
-      <p>Refresh pulls the public Tourney Machine page and each team's public GameChanger page. Boxes still sit in review until a coach confirms numbers.</p>
-      <p>
-        <button class="btn" id="sync-now">Refresh GameChanger + TM</button>
-        <button class="btn ghost" id="toggle-signup">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
+    <section class="page-head">
+      <h1>Director desk</h1>
+      <p class="muted">${ev.source === "tourneymachine" ? "Linked Tourney Machine" : ev.source === "popup" ? "Imported popup" : "Native host"} · signup ${ev.signup_open ? "open" : "closed"} · auto-sync ${ev.auto_sync ? "on" : "off"}</p>
+      <p>Refresh reads public TM and GameChanger pages. Boxes stay in review until a coach confirms numbers.</p>
+      <div class="actions">
+        <button class="btn" id="sync-now" type="button">Refresh links</button>
+        <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
         <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
         <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
-        ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup">Refresh from popup</button>` : ""}
-      </p>
+        ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
+      </div>
       <p class="error" id="admin-err" hidden></p>
       <p class="muted" id="admin-note"></p>
     </section>
+    <section class="card">
+      <h2>Guidelines</h2>
+      <form class="form wide" id="guide-form">
+        ${setupGuidelinesFields(ev)}
+        <button class="btn" type="submit">Save guidelines</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Team packets</h2>
+      ${table(["Team", "Packet", "Missing", "Files"], (roster.teams || []).map((t) => {
+        const p = t.packet || {};
+        return `<tr>
+          <td>${escapeHtml(t.name)}</td>
+          <td><span class="badge ${p.status || "incomplete"}">${escapeHtml(p.status || "incomplete")}</span></td>
+          <td>${(p.missing || []).map((k) => escapeHtml(k)).join(", ") || "—"}</td>
+          <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(d.url)}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
+        </tr>`;
+      }))}
+    </section>
     ${rosterBlock(roster.teams)}
   `);
+  const guide = document.getElementById("guide-form");
+  if (guide) {
+    guide.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const fd = packGuidelines(evnt.target);
+      const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/settings", {
+        method: "POST",
+        headers: { ...authHeader() },
+        body: fd,
+      });
+      if (!res.ok) {
+        document.getElementById("admin-err").hidden = false;
+        document.getElementById("admin-err").textContent = await res.text();
+        return;
+      }
+      eventAdmin(slug);
+    });
+  }
+  eventRoot().querySelectorAll("[data-approve]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/docs/" + btn.dataset.approve + "/review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ status: "approved" }),
+      });
+      if (!res.ok) {
+        document.getElementById("admin-err").hidden = false;
+        document.getElementById("admin-err").textContent = await res.text();
+        return;
+      }
+      eventAdmin(slug);
+    });
+  });
   document.getElementById("sync-now").addEventListener("click", async (btnEv) => {
     const btn = btnEv.currentTarget;
     btn.disabled = true;
@@ -742,10 +890,10 @@ export async function directorImport() {
     eventRoot().innerHTML = eventChrome(null, "", `<section class="card"><p>Director login required.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
     return;
   }
-  eventRoot().innerHTML = eventChrome(null, "", `
-    <section class="hero">
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
       <h1>You already have a schedule</h1>
-      <p>Bring the grid from Excel, Tourney Machine, or a legal pad. Nothing to abandon.</p>
+      <p class="muted">Bring the grid from Excel, Tourney Machine, or a legal pad.</p>
     </section>
     <section class="card">
       <form class="form" id="import-form" style="max-width:none">

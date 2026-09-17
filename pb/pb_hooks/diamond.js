@@ -270,7 +270,7 @@ function publicBoard(app, event) {
   const host = require(__hooks + "/host.js");
   const packet = host.parsePacket(event.get("packet"));
   return {
-    event: host.eventJson(event),
+    event: host.eventJson(event, app),
     standings: poolStandings(app, eventId),
     schedule: schedule.map(function (g) {
       return {
