@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOCAL TEST · Keystone Clash 2026 — Standings &amp; Team Stats</title>
+<meta name="description" content="Live standings, team links and stat leaders for the Keystone Clash, September 11–13, 2026, East End Park, McDonald PA.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#101C3D;
+  --navy:#16295E;
+  --orange:#E8632A;
+  --page:#EEF1F7;
+  --card:#FFFFFF;
+  --line:#D6DCE9;
+  --muted:#6B7893;
+  --maxw:1080px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:"Archivo",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:var(--page); color:var(--ink);
+  font-size:16px; line-height:1.5;
+  font-variant-numeric:tabular-nums;
+}
+a{color:var(--navy)}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px}
+
+/* ---------- masthead ---------- */
+.mast{background:var(--navy);color:#fff;padding:34px 0 0}
+.mast h1{
+  font-family:"Archivo Black","Archivo",sans-serif;
+  font-size:clamp(2.4rem,9vw,4.6rem);
+  line-height:.9; letter-spacing:-.02em; text-transform:uppercase;
+}
+.mast h1 em{font-style:normal;color:var(--orange);display:block}
+.mastmeta{margin-top:14px;font-size:.95rem;color:#B9C6E6;line-height:1.7}
+.mastmeta strong{color:#fff;font-weight:600}
+.mastbar{
+  margin-top:24px;border-top:5px solid var(--orange);
+  display:flex;flex-wrap:wrap;gap:0;
+}
+.mastbar a{
+  flex:1 1 auto;min-width:150px;text-align:center;
+  padding:15px 16px;color:#fff;text-decoration:none;font-weight:600;font-size:.95rem;
+  border-right:1px solid rgba(255,255,255,.18);
+}
+.mastbar a:last-child{border-right:0}
+.mastbar a:hover,.mastbar a:focus-visible{background:rgba(255,255,255,.12)}
+.mastbar a.live{background:var(--orange)}
+.mastbar a.live:hover{background:#cf5320}
+
+/* ---------- status ---------- */
+.status{
+  background:#fff;border-bottom:1px solid var(--line);
+  padding:16px 0;font-size:.95rem;
+}
+.status .wrap{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--orange);flex:none;
+     transform:translateY(-1px)}
+.status p{flex:1 1 300px;margin:0}
+.status time{color:var(--muted);font-size:.85rem}
+
+/* ---------- sections ---------- */
+section{padding:40px 0}
+.shead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+       margin-bottom:6px;flex-wrap:wrap}
+.shead h2{font-size:1.5rem;letter-spacing:-.01em}
+.shead p{color:var(--muted);font-size:.9rem;max-width:52ch}
+
+/* ---------- standings ---------- */
+.pools{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px;margin-top:22px}
+.pool{background:var(--card);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.pool h3{
+  background:var(--ink);color:#fff;padding:11px 16px;font-size:1rem;font-weight:600;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.pool h3 span{font-size:.78rem;font-weight:400;color:#9FB0D8}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th{
+  text-align:right;padding:8px 8px;font-size:.72rem;font-weight:600;color:var(--muted);
+  border-bottom:1px solid var(--line);white-space:nowrap;
+}
+th:first-child,th:nth-child(2){text-align:left}
+td{padding:11px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.rank{
+  width:34px;text-align:center;padding-left:12px;
+  font-family:"Archivo Black",sans-serif;color:var(--orange);font-size:1.05rem;
+}
+td.team{text-align:left;white-space:normal;line-height:1.25;width:99%}
+td.team a{font-weight:600;text-decoration:none}
+td.team a:hover{text-decoration:underline}
+td.team small{display:block;color:var(--muted);font-size:.76rem;font-weight:400}
+td.rec{font-weight:600}
+.pool tbody tr:first-child{background:#FFF6F1}
+td.team a.host{color:var(--orange)}
+td.team a.host::after{content:"  host";font-size:.68rem;font-weight:600;color:var(--muted);letter-spacing:.06em}
+.tcard.host{border-left-color:var(--navy);background:#FBFCFE}
+.poolfoot{padding:10px 16px;font-size:.78rem;color:var(--muted);background:#F7F9FC;
+          border-top:1px solid var(--line)}
+
+/* ---------- teams ---------- */
+.teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:22px}
+.tcard{
+  background:var(--card);border:1px solid var(--line);border-left:4px solid var(--orange);
+  border-radius:4px;padding:15px 17px;display:block;text-decoration:none;color:inherit;
+}
+.tcard:hover,.tcard:focus-visible{border-color:var(--navy);border-left-color:var(--orange);
+  background:#FBFCFE}
+.tcard b{display:block;font-size:1.02rem;font-weight:600;line-height:1.25}
+.tcard span{display:block;margin-top:5px;font-size:.82rem;color:var(--muted)}
+.tcard u{display:inline-block;margin-top:9px;font-size:.82rem;color:var(--navy);
+         text-decoration:none;font-weight:600;border-bottom:2px solid var(--orange);padding-bottom:1px}
+
+/* ---------- champion ---------- */
+.champ{background:var(--ink);color:#fff;border-radius:5px;padding:26px 22px;margin-top:20px;
+  text-align:center;border-top:6px solid var(--orange)}
+.champ .k{font-size:.72rem;letter-spacing:.3em;color:var(--orange);font-weight:700}
+.champ .t{font-family:"Archivo Black",sans-serif;font-size:clamp(1.6rem,5.5vw,2.6rem);
+  line-height:1.05;margin:8px 0 6px;text-transform:uppercase;letter-spacing:-.01em}
+.champ .r{color:#B9C6E6;font-size:.92rem}
+.champ .ru{margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.18)}
+.champ .ru .k2{font-size:.66rem;letter-spacing:.26em;color:#9FB0D8;font-weight:700}
+.champ .ru .t2{font-family:"Archivo Black",sans-serif;font-size:1.15rem;margin-top:4px}
+.champ .ru .r2{color:#B9C6E6;font-size:.82rem;margin-top:2px}
+
+/* ---------- bracket ---------- */
+.rounds{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:20px}
+.rnd{background:var(--card);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.rnd h3{background:var(--ink);color:#fff;padding:10px 15px;font-size:.92rem;font-weight:600}
+.gm{padding:11px 15px;border-bottom:1px solid var(--line)}
+.gm:last-child{border-bottom:0}
+.gm .meta{font-size:.68rem;letter-spacing:.09em;color:var(--muted);font-weight:600;margin-bottom:5px}
+.gm .ln{display:flex;justify-content:space-between;gap:10px;font-size:.92rem;padding:1px 0}
+.gm .ln.w{font-weight:700}
+.gm .ln.w .sc{color:var(--orange)}
+.gm .ln.tie{color:var(--muted)}
+.sc{font-variant-numeric:tabular-nums;flex:none}
+
+/* ---------- rain plan ---------- */
+.rain{background:#FFF6F1;border:2px solid var(--orange);border-left:9px solid var(--orange);
+  border-radius:4px;padding:16px 20px;margin-top:20px}
+.rain .k{font-size:.72rem;letter-spacing:.16em;font-weight:700;color:#B8410F}
+.rain h3{font-size:1.15rem;margin:3px 0 7px}
+.rain p{font-size:.92rem;line-height:1.5;margin-bottom:7px}
+.rain p:last-child{margin-bottom:0}
+.rain b{font-weight:600}
+.rain .warn{color:#B8410F;font-weight:600}
+.rain a{font-weight:600}
+
+/* ---------- tournament info ---------- */
+.info{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px;margin-top:22px;align-items:start}
+.infomap{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:10px}
+.infomap img{width:100%;display:block;border-radius:2px}
+.infomap p{margin-top:9px;font-size:.78rem;color:var(--muted);line-height:1.45}
+.facts{background:var(--card);border:1px solid var(--line);border-radius:4px}
+.facts div{padding:13px 17px;border-bottom:1px solid var(--line)}
+.facts div:last-of-type{border-bottom:0}
+.facts dt{font-size:.74rem;font-weight:600;color:var(--muted);margin-bottom:3px}
+.facts dd{margin:0;font-size:.93rem;line-height:1.45}
+.facts dd b{font-weight:600}
+.full-rules-link{display:inline-block;margin-top:10px;font-weight:600;color:var(--navy);text-decoration:none;border-bottom:2px solid var(--orange);padding-bottom:1px}
+.full-rules-link:hover,.full-rules-link:focus-visible{color:var(--orange)}
+.actions{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px;margin-top:22px;align-items:start}
+.packet{
+  display:block;background:var(--navy);color:#fff;text-decoration:none;
+  padding:15px 18px;border-radius:4px;font-weight:600;font-size:.98rem;line-height:1.35;
+}
+.packet:hover,.packet:focus-visible{background:#0F1E48}
+.packet span{display:block;font-weight:400;font-size:.82rem;color:#B9C6E6;margin-top:3px}
+.raffle{background:var(--card);border:2px solid var(--orange);border-radius:4px;padding:16px 18px}
+.raffle h3{font-size:1.1rem;margin-bottom:5px}
+.raffle p{font-size:.88rem;line-height:1.45;color:var(--muted)}
+.raffle p b{color:var(--ink);font-weight:600}
+.pot{background:var(--ink);color:#fff;border-radius:4px;padding:14px 16px;margin:12px 0 4px;text-align:center}
+.pot .lbl{font-size:.7rem;letter-spacing:.16em;font-weight:600;color:var(--orange)}
+.pot .num{font-family:"Archivo Black","Archivo",sans-serif;font-size:2.5rem;line-height:1.02;margin:4px 0 5px;letter-spacing:-.02em}
+.pot .sub{font-size:.83rem;color:#B9C6E6;line-height:1.5}
+.pot .sub b{color:#fff;font-weight:600}
+.pot time{display:block;font-size:.72rem;color:#7C8CB8;margin-top:5px}
+.raffle .row{display:flex;gap:14px;align-items:center;margin-top:13px}
+.raffle img{width:96px;height:96px;flex:none;border:1px solid var(--line);border-radius:3px}
+.raffle ul{list-style:none;font-size:.83rem;line-height:1.5;color:var(--muted)}
+.raffle a.buy{
+  display:block;margin-top:13px;background:var(--orange);color:#fff;text-decoration:none;
+  text-align:center;padding:12px 14px;border-radius:4px;font-weight:600;font-size:.95rem;
+}
+.raffle a.buy:hover,.raffle a.buy:focus-visible{background:#cf5320}
+@media (max-width:720px){.actions{grid-template-columns:1fr}}
+@media (max-width:720px){.info{grid-template-columns:1fr}}
+
+/* ---------- leaders ---------- */
+.leaders{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px;margin-top:22px}
+.empty{
+  background:var(--card);border:1px dashed var(--line);border-radius:4px;
+  padding:28px 20px;text-align:center;color:var(--muted);font-size:.92rem;
+}
+.empty b{display:block;color:var(--ink);font-weight:600;margin-bottom:5px;font-size:1rem}
+.allstats{display:block;margin-top:18px;background:var(--ink);color:#fff;text-decoration:none;
+  padding:15px 18px;border-radius:4px;font-weight:600;font-size:.98rem;line-height:1.35}
+.allstats:hover,.allstats:focus-visible{background:#0B1531}
+.allstats span{display:block;font-weight:400;font-size:.82rem;color:#B9C6E6;margin-top:3px}
+
+/* ---------- footer ---------- */
+footer{background:var(--ink);color:#9FB0D8;padding:30px 0 40px;font-size:.85rem;line-height:1.7}
+footer strong{color:#fff}
+footer .crawler{margin-top:14px;font-size:.72rem;letter-spacing:.14em;color:#5A6A96}
+
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
+@media (max-width:520px){
+  section{padding:30px 0}
+  th,td{padding-left:6px;padding-right:6px}
+  .mastbar a{min-width:50%}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="localbar">Local test copy &mdash; data inlined from the public Keystone Clash popup. Open this file in any browser. GameChanger links go to each team&rsquo;s public page.</div>
+<style>
+.localbar{background:#E8632A;color:#fff;text-align:center;padding:10px 16px;font-size:.9rem;font-weight:600}
+</style>
+
+
+<header class="mast">
+  <div class="wrap">
+    <h1>Keystone<em>Clash</em></h1>
+    <p class="mastmeta">
+      <strong id="m-dates"></strong><br>
+      <span id="m-venue"></span>
+    </p>
+  </div>
+  <nav class="wrap mastbar" aria-label="Tournament links">
+    <a class="live" id="m-bracket" href="#">Bracket &amp; schedule</a>
+    <a href="#bracket">Bracket</a>
+    <a href="#standings">Standings</a>
+    <a href="#teams">Teams</a>
+    <a href="#info">Tournament info</a>
+    <a href="#leaders">Stat leaders</a>
+    <a href="#leaders">Full stats</a>
+  </nav>
+</header>
+
+<div class="status">
+  <div class="wrap">
+    <span class="dot" aria-hidden="true"></span>
+    <p id="m-status"></p>
+    <time id="m-updated"></time>
+  </div>
+</div>
+
+<main>
+
+<section id="bracket">
+  <div class="wrap">
+    <div class="shead">
+      <h2>Bracket</h2>
+      <p id="b-note"></p>
+    </div>
+    <div id="champ"></div>
+    <div class="rounds" id="rounds"></div>
+  </div>
+</section>
+
+<section id="standings">
+  <div class="wrap">
+    <div class="shead">
+      <h2>Standings</h2>
+      <p>One standings table for the whole field. Ranked by record, then fewest runs allowed, then run differential. Head-to-head is applied by the tournament director and may move teams from the order shown.</p>
+    </div>
+    <div class="pools" id="pools"></div>
+  </div>
+</section>
+
+<section id="teams">
+  <div class="wrap">
+    <div class="shead">
+      <h2>Teams</h2>
+      <p>Every team's GameChanger page. Scoring, lineups and live game feeds live there.</p>
+    </div>
+    <div class="teams" id="teamgrid"></div>
+  </div>
+</section>
+
+<section id="info">
+  <div class="wrap">
+    <div class="shead">
+      <h2>Tournament info</h2>
+      <p>Everything in the coaches packet, plus the parking map. Please pass the parking notes on to your families.</p>
+    </div>
+        <div class="info">
+      <div class="infomap">
+        <img src="parking-map.png" alt="Aerial map of East End Park showing the main lot off Meadow St, the smaller Field 2 lot off Chestnut St, and the two fields.">
+        <p>Both lots are marked in orange. Enter off Meadow St. Overflow parking is on East O&rsquo;Hara St.</p>
+      </div>
+      <dl class="facts">
+        <div>
+          <dt>Where</dt>
+          <dd>East End Park, 51 Meadow St, McDonald, PA 15057. Two fields.</dd>
+        </div>
+        <div>
+          <dt>Parking</dt>
+          <dd>Two small lots, and both fill fast. Overflow is on <b>East O&rsquo;Hara St</b>, a short walk to the fields. Arrive early and keep driveways and outfield access lanes clear.</dd>
+        </div>
+        <div>
+          <dt>Rules</dt>
+          <dd><b>USA Softball rules. 90 minutes, finish the inning.</b> Two umpires every game. Courtesy runner for the pitcher and catcher. Run rule 12 after 3, 10 after 4, 8 after 5. Teams may bat the whole lineup or follow USA Softball substitution rules &mdash; declare at the plate meeting. A game is official after three full innings; if rain stops play mid-inning, the score reverts to the last completed inning.<br><a class="full-rules-link" href="https://thedr21.github.io/KeystoneClash/full-rules.html">Full Rules</a></dd>
+        </div>
+        <div>
+          <dt>Format</dt>
+          <dd>Pool play Friday evening and Saturday morning. Seeds post early Saturday afternoon and bracket play begins right after &mdash; plan to stay at the complex. Semifinals and the championship are Sunday.</dd>
+        </div>
+        <div>
+          <dt>On site</dt>
+          <dd>Porta johns and hand sanitizing stations all weekend. Concessions are run by the Fort Cherry Fastpitch Association.</dd>
+        </div>
+        <div>
+          <dt>Questions</dt>
+          <dd>Derek Rocco, Artie Tortorice and Steve LaFever, Tournament Directors. Text both teams&rsquo; final scores after every game.</dd>
+        </div>
+      </dl>
+    </div>
+    <div class="actions">
+      <a class="packet" href="https://thedr21.github.io/KeystoneClash/coaches-packet.pdf">
+        Download the coaches packet (PDF)
+        <span>Location, parking map, rules and tie breakers &mdash; two pages, plus a Full Rules link on page 2.</span>
+      </a>
+      <div class="raffle">
+        <h3>50/50 raffle</h3>
+        <div class="pot" id="pot" hidden>
+          <div class="lbl">CURRENT POT</div>
+          <div class="num" id="pot-total"></div>
+          <div class="sub">Winner takes <b id="pot-half"></b><time id="pot-time"></time></div>
+        </div>
+        <p>Win half the pot. The other half goes back into Lady Dukes Softball Club &mdash; umpires, fields, equipment, and keeping entry fees affordable. <b>The pot grows every time a ticket sells.</b></p>
+        <div class="row">
+          <img src="raffle-qr.png" alt="QR code linking to the Keystone Clash 50/50 raffle ticket page.">
+          <ul>
+            <li>Buy online, or from any volunteer on site</li>
+            <li>Drawing is Sunday</li>
+            <li>Winner does not need to be present</li>
+          </ul>
+        </div>
+        <a class="buy" href="https://www.zeffy.com/en-US/ticketing/lady-dukes-keystone-clash-tournament-raffle" target="_blank" rel="noopener">Buy raffle tickets</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="leaders">
+  <div class="wrap">
+    <div class="shead">
+      <h2>Stat leaders &mdash; full tournament</h2>
+      <p>All five games, pool and bracket. Every line comes from that team's own scorebook. Qualifying minimums are 8 at-bats for hitters and 5 innings for pitchers. Hitters ranked by OPS, pitchers by ERA.</p>
+    </div>
+    <div class="leaders" id="leadergrid"></div>
+    <a class="allstats" href="#leaders">Full stats board &mdash; every player, every team
+      <span>Sort by any column, filter by team, and see the players who fell below the qualifying line.</span>
+    </a>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <strong>Keystone Clash</strong> is hosted by the Lady Dukes Softball Club, a registered 501(c)(3) nonprofit.<br>
+    Standings on this page are unofficial. The bracket on Tourney Machine is the official record.<br>
+    Questions about a score or a stat line: <span id="m-contact"></span>
+    <div class="crawler">GC SCOUT CRAWLER</div>
+  </div>
+</footer>
+
+<script>
+/* ------------------------------------------------------------------
+   EDIT HERE, OR DROP A data.json NEXT TO THIS FILE.
+   If that JSON exists it wins, so the stats pipeline can just write
+   the file and push. Same shape as the object below.
+   ------------------------------------------------------------------ */
+const DATA = {
+  "dates": "September 11\u201313, 2026",
+  "venue": "East End Park, 51 Meadow St, McDonald, PA",
+  "contact": "Derek Rocco, Artie Tortorice and Steve LaFever, Tournament Directors",
+  "updated": "2026-09-14",
+  "status": "Tournament complete. Pittsburgh Passion are your 2026 Keystone Clash champions, undefeated at 5-0, with Smash Fastpitch Shaffer finishing runner-up. Sunday's bracket was played at No Offseason in Tarentum after Saturday's rain.",
+  "bracketUrl": "https://tourneymachine.com/Public/Results/Division.aspx?IDTournament=h202607031619521870950ff4a05a84e&IDDivision=h20260703163616344456f126a2c3848",
+  "divisions": [
+    {
+      "name": "All teams",
+      "note": "Pool play complete \u2014 final standings",
+      "teams": [
+        {
+          "name": "All American Prady",
+          "gc": "https://web.gc.com/teams/SEiRB2dlKGav",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 23,
+          "ra": 2
+        },
+        {
+          "name": "FP Select Barringer",
+          "gc": "https://web.gc.com/teams/KLy7mcYt9g1D",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 5,
+          "ra": 20
+        },
+        {
+          "name": "Lady Dukes WPA 2033",
+          "gc": "https://web.gc.com/teams/Qgojbuf369Eu/2027-spring-lady-dukes-wpa-2033",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 20,
+          "ra": 5,
+          "host": true
+        },
+        {
+          "name": "Outlaws 2033 Valore",
+          "gc": "https://web.gc.com/teams/quFlJ3qtjOh1",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 6,
+          "ra": 26
+        },
+        {
+          "name": "Pittsburgh Passion",
+          "gc": "https://web.gc.com/teams/Lk2mlbKyLsGh",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 31,
+          "ra": 6
+        },
+        {
+          "name": "Pittsburgh Power Theys",
+          "gc": "https://web.gc.com/teams/CDC5rQVXNCGN",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 2,
+          "ra": 23
+        },
+        {
+          "name": "Pittsburgh Spirit Barber",
+          "gc": "https://web.gc.com/teams/HokaT0SguY8W/2027-spring-pittsburgh-spirit-12u-barber",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 8,
+          "ra": 24
+        },
+        {
+          "name": "Smash Fastpitch Shaffer",
+          "gc": "https://web.gc.com/teams/ixDuIf5R0bMq/2026-fall-smash-fastpitch-12u-shaffer",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 19,
+          "ra": 8
+        }
+      ]
+    }
+  ],
+  "leaders": {
+    "hitting": [
+      {
+        "player": "Lily M #15",
+        "team": "Pittsburgh Passion",
+        "avg": ".722",
+        "ops": "1.848",
+        "h": 13,
+        "rbi": 8
+      },
+      {
+        "player": "Kacey B #5",
+        "team": "Pittsburgh Passion",
+        "avg": ".700",
+        "ops": "1.686",
+        "h": 7,
+        "rbi": 3
+      },
+      {
+        "player": "Elliette M #56",
+        "team": "Pittsburgh Passion",
+        "avg": ".667",
+        "ops": "1.655",
+        "h": 10,
+        "rbi": 10
+      },
+      {
+        "player": "A Glomb #1",
+        "team": "Lady Dukes WPA 2033",
+        "avg": ".500",
+        "ops": "1.533",
+        "h": 7,
+        "rbi": 4
+      },
+      {
+        "player": "Kendal C #00",
+        "team": "Outlaws 2033 Valore",
+        "avg": ".625",
+        "ops": "1.500",
+        "h": 5,
+        "rbi": 1
+      },
+      {
+        "player": "Kendall C #18",
+        "team": "All American Prady",
+        "avg": ".500",
+        "ops": "1.443",
+        "h": 7,
+        "rbi": 3
+      }
+    ],
+    "pitching": [
+      {
+        "player": "Avry G #37",
+        "team": "All American Prady",
+        "era": "0.00",
+        "ip": "6.0",
+        "k": 10
+      },
+      {
+        "player": "M Porter #14",
+        "team": "Lady Dukes WPA 2033",
+        "era": "0.00",
+        "ip": "6.0",
+        "k": 2
+      },
+      {
+        "player": "Avery T #7",
+        "team": "Pittsburgh Spirit Barber",
+        "era": "0.00",
+        "ip": "6.0",
+        "k": 2
+      },
+      {
+        "player": "Brooke K #20",
+        "team": "All American Prady",
+        "era": "0.00",
+        "ip": "5.0",
+        "k": 3
+      },
+      {
+        "player": "A Glomb #1",
+        "team": "Lady Dukes WPA 2033",
+        "era": "1.00",
+        "ip": "7.0",
+        "k": 7
+      }
+    ]
+  },
+  "raffle": {
+    "raised": 470.0,
+    "updated": "2026-09-17T18:59:16+00:00",
+    "url": "https://www.zeffy.com/en-US/ticketing/lady-dukes-keystone-clash-tournament-raffle"
+  },
+  "bracket": {
+    "venue": "No Offseason, Tarentum \u2014 Sunday, September 13",
+    "note": "Sunday moved indoors to turf after Saturday's rain. Four fields, three rounds.",
+    "rounds": [
+      {
+        "label": "Round 1 \u2014 2:00 PM",
+        "games": [
+          {
+            "id": "B1",
+            "field": "Field 1",
+            "a": "All American Prady",
+            "as": 4,
+            "b": "Outlaws 2033 Valore",
+            "bs": 7
+          },
+          {
+            "id": "B2",
+            "field": "Field 3",
+            "a": "Smash Fastpitch Shaffer",
+            "as": 7,
+            "b": "FP Select Barringer",
+            "bs": 6
+          },
+          {
+            "id": "B3",
+            "field": "Field 5",
+            "a": "Pittsburgh Passion",
+            "as": 17,
+            "b": "Pittsburgh Power Theys",
+            "bs": 3
+          },
+          {
+            "id": "B4",
+            "field": "Field 6",
+            "a": "Lady Dukes WPA 2033",
+            "as": 4,
+            "b": "Pittsburgh Spirit Barber",
+            "bs": 3
+          }
+        ]
+      },
+      {
+        "label": "Round 2 \u2014 4:00 PM",
+        "games": [
+          {
+            "id": "B5",
+            "field": "Field 1",
+            "a": "Outlaws 2033 Valore",
+            "as": 1,
+            "b": "Smash Fastpitch Shaffer",
+            "bs": 6
+          },
+          {
+            "id": "B6",
+            "field": "Field 3",
+            "a": "Pittsburgh Passion",
+            "as": 10,
+            "b": "Lady Dukes WPA 2033",
+            "bs": 6
+          },
+          {
+            "id": "B8",
+            "field": "Field 5",
+            "a": "All American Prady",
+            "as": 9,
+            "b": "FP Select Barringer",
+            "bs": 0
+          },
+          {
+            "id": "B9",
+            "field": "Field 6",
+            "a": "Pittsburgh Power Theys",
+            "as": 6,
+            "b": "Pittsburgh Spirit Barber",
+            "bs": 11
+          }
+        ]
+      },
+      {
+        "label": "Round 3 \u2014 5:45 PM",
+        "games": [
+          {
+            "id": "B7",
+            "field": "Field 1",
+            "a": "Smash Fastpitch Shaffer",
+            "as": 5,
+            "b": "Pittsburgh Passion",
+            "bs": 8
+          },
+          {
+            "id": "B10",
+            "field": "Field 5",
+            "a": "Outlaws 2033 Valore",
+            "as": 3,
+            "b": "Lady Dukes WPA 2033",
+            "bs": 5
+          },
+          {
+            "id": "B11",
+            "field": "Field 6",
+            "a": "All American Prady",
+            "as": 5,
+            "b": "Pittsburgh Spirit Barber",
+            "bs": 3
+          },
+          {
+            "id": "B12",
+            "field": "Field 3",
+            "a": "FP Select Barringer",
+            "as": 2,
+            "b": "Pittsburgh Power Theys",
+            "bs": 2
+          }
+        ]
+      }
+    ],
+    "champion": {
+      "team": "Pittsburgh Passion",
+      "record": "3-0 in bracket play, 5-0 overall",
+      "line": "Undefeated across the whole weekend."
+    },
+    "runnerUp": {
+      "team": "Smash Fastpitch Shaffer",
+      "record": "2-1 in bracket play"
+    }
+  }
+};
+
+/* ---------------------------------------------------------------- */
+
+const el = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function played(t){ return (t.w||0)+(t.l||0)+(t.t||0); }
+function pct(t){ const g = played(t); return g ? ((t.w||0) + (t.t||0)*0.5) / g : 0; }
+
+function rankTeams(teams){
+  return [...teams].sort((a,b) =>
+    pct(b) - pct(a) ||                       // record
+    (a.ra||0) - (b.ra||0) ||                 // fewest runs allowed
+    ((b.rf||0)-(b.ra||0)) - ((a.rf||0)-(a.ra||0)) ||  // run differential
+    (b.rf||0) - (a.rf||0) ||                 // runs scored
+    a.name.localeCompare(b.name)
+  );
+}
+
+function renderStandings(d){
+  el('pools').innerHTML = d.divisions.map(div => {
+    const any = div.teams.some(t => played(t) > 0);
+    const rows = rankTeams(div.teams).map((t,i) => `
+      <tr>
+        <td class="rank">${any ? i+1 : '&ndash;'}</td>
+        <td class="team">
+          <a class="${t.host?'host':''}" href="${esc(t.gc)}" target="_blank" rel="noopener">${esc(t.name)}</a>
+        </td>
+        <td class="rec">${t.w||0}&ndash;${t.l||0}${t.t ? '&ndash;'+t.t : ''}</td>
+        <td>${t.rf||0}</td>
+        <td>${t.ra||0}</td>
+        <td>${((t.rf||0)-(t.ra||0)) > 0 ? '+' : ''}${(t.rf||0)-(t.ra||0)}</td>
+      </tr>`).join('');
+    return `
+      <div class="pool">
+        <h3>${esc(div.name)}<span>${esc(div.note||'')}</span></h3>
+        <div class="scroll">
+          <table>
+            <thead><tr>
+              <th scope="col"><span class="sr">#</span></th>
+              <th scope="col">Team</th><th scope="col">Rec</th>
+              <th scope="col">RS</th><th scope="col">RA</th><th scope="col">Diff</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        ${any ? '' : '<p class="poolfoot">No games scored yet. Order is alphabetical until Friday night.</p>'}
+      </div>`;
+  }).join('');
+}
+
+function renderTeams(d){
+  el('teamgrid').innerHTML = d.divisions.flatMap(div =>
+    div.teams.map(t => `
+      <a class="tcard ${t.host?'host':''}" href="${esc(t.gc)}" target="_blank" rel="noopener">
+        <b>${esc(t.name)}</b>
+        <u>Open on GameChanger</u>
+      </a>`)
+  ).join('');
+}
+
+function leaderTable(title, rows, cols){
+  if(!rows.length){
+    return `<div class="empty"><b>${esc(title)}</b>Nothing to show yet. Leaders post once games are scored.</div>`;
+  }
+  const head = cols.map(c => `<th scope="col">${esc(c.label)}</th>`).join('');
+  const body = rows.map((r,i) => `
+    <tr>
+      <td class="rank">${i+1}</td>
+      <td class="team"><b>${esc(r.player)}</b><small>${esc(r.team)}</small></td>
+      ${cols.map(c => `<td>${esc(r[c.key] ?? '')}</td>`).join('')}
+    </tr>`).join('');
+  return `
+    <div class="pool">
+      <h3>${esc(title)}</h3>
+      <div class="scroll">
+        <table>
+          <thead><tr><th></th><th scope="col">Player</th>${head}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderLeaders(d){
+  el('leadergrid').innerHTML =
+    leaderTable('Hitting', d.leaders.hitting || [], [
+      {key:'avg',label:'AVG'},{key:'ops',label:'OPS'},{key:'h',label:'H'},{key:'rbi',label:'RBI'}
+    ]) +
+    leaderTable('Pitching', d.leaders.pitching || [], [
+      {key:'era',label:'ERA'},{key:'ip',label:'IP'},{key:'k',label:'K'}
+    ]);
+}
+
+function renderRaffle(d){
+  const box = el('pot');
+  const r = d.raffle || {};
+  const pot = Number(r.raised);
+  if(!(pot > 0)){ box.hidden = true; return; }   // hide until the first sale
+  const usd = n => n.toLocaleString('en-US',
+    { style:'currency', currency:'USD', maximumFractionDigits:0 });
+  el('pot-total').textContent = usd(pot);
+  el('pot-half').textContent  = usd(Math.floor(pot / 2));
+  const t = el('pot-time');
+  if(r.updated){
+    const when = new Date(r.updated);
+    t.textContent = 'as of ' + when.toLocaleTimeString('en-US',
+      { hour:'numeric', minute:'2-digit' }) + ' on ' +
+      when.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+    t.setAttribute('datetime', r.updated);
+  } else { t.textContent = ''; }
+  box.hidden = false;
+}
+
+function renderBracket(d){
+  const b = d.bracket;
+  const host = el('rounds');
+  if(!b || !b.rounds){ host.innerHTML=''; return; }
+  el('b-note').textContent = [b.venue, b.note].filter(Boolean).join(' — ');
+  const c = b.champion;
+  el('champ').innerHTML = c ? `
+    <div class="champ">
+      <div class="k">CHAMPIONS</div>
+      <div class="t">${esc(c.team)}</div>
+      <div class="r">${esc(c.record || '')}${c.line ? ' &mdash; ' + esc(c.line) : ''}</div>
+      ${b.runnerUp ? `<div class="ru">
+        <div class="k2">RUNNER-UP</div>
+        <div class="t2">${esc(b.runnerUp.team)}</div>
+        <div class="r2">${esc(b.runnerUp.record || '')}</div>
+      </div>` : ''}
+    </div>` : '';
+  host.innerHTML = b.rounds.map(r => `
+    <div class="rnd">
+      <h3>${esc(r.label)}</h3>
+      ${r.games.map(g => {
+        const tie = g.as === g.bs;
+        const aw = !tie && g.as > g.bs, bw = !tie && g.bs > g.as;
+        const line = (n,s,win) => `<div class="ln ${win?'w':''} ${tie?'tie':''}">
+            <span>${esc(n)}</span><span class="sc">${s}</span></div>`;
+        return `<div class="gm">
+          <div class="meta">${esc(g.id)} &middot; ${esc(g.field)}${tie?' &middot; TIE':''}</div>
+          ${line(g.a,g.as,aw)}${line(g.b,g.bs,bw)}</div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+function render(d){
+  el('m-dates').textContent   = d.dates;
+  el('m-venue').textContent   = d.venue;
+  el('m-status').textContent  = d.status;
+  el('m-contact').textContent = d.contact;
+  el('m-bracket').href        = d.bracketUrl;
+  const u = new Date(d.updated + 'T12:00:00');
+  el('m-updated').textContent = 'Updated ' + u.toLocaleDateString('en-US',
+    { month:'short', day:'numeric', year:'numeric' });
+  el('m-updated').setAttribute('datetime', d.updated);
+  renderStandings(d); renderTeams(d); renderLeaders(d); renderRaffle(d); renderBracket(d);
+}
+
+render(DATA);
+</script>
+</body>
+</html>

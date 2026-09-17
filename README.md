@@ -17,6 +17,8 @@ Open http://127.0.0.1:8097
 
 Keystone Clash 2026 is imported from the public popup at https://thedr21.github.io/KeystoneClash/ (`testdata/keystone/data.json` and `stats.json`). Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger.
 
+**Local HTML copy (no server):** open `testdata/keystone/keystone-clash-local.html` in a browser, or http://127.0.0.1:8097/keystone-clash.html while PocketBase is running. Data is inlined, so `file://` works.
+
 | Page | What it is |
 |---|---|
 | `/` | Log in, create an account, or find a tournament. Logged-in users land on their account. |
