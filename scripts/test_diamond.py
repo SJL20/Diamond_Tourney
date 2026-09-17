@@ -112,7 +112,8 @@ class HostedSignupTests(unittest.TestCase):
         names = [t["name"] for t in roster["teams"]]
         self.assertIn("Northside 10U", names)
         self.assertIn("West End 10U", names)
-        self.assertTrue(all(t["gc_linked"] for t in roster["teams"]))
+        self.assertTrue(any(t["name"] == "Orphans" and not t["gc_linked"] for t in roster["teams"]))
+        self.assertTrue(any(t["name"] == "Northside 10U" and t["gc_linked"] for t in roster["teams"]))
 
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertTrue(board["event"]["signup_open"])
