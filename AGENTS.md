@@ -2,7 +2,7 @@
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md` before changing anything.
 
-Public tournament product name: **Diamond Tourney**. Season books stay behind login. Door-three wedge: import a schedule the director already has. Do not scrape GameChanger.
+Public tournament product name: **Diamond Tourney**. Season books stay behind login. Door-three wedge: import a schedule the director already has. Do not scrape GameChanger. The Keystone Clash weekend is imported from the public popup JSON at https://thedr21.github.io/KeystoneClash/ — store published GC URLs and posted scores; do not invent Friday/Saturday pool boxes that page does not list.
 
 You are a Cursor Cloud Agent (Grok). The owner does not write HTML or SQL. You do.
 

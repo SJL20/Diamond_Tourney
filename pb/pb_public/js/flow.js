@@ -103,7 +103,7 @@ function renderFindResults(events) {
   box.innerHTML = `<section class="grid cards">${events.map((ev) => `
     <article class="card">
       <h3>${escapeHtml(ev.name)}</h3>
-      <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"}</p>
+      <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${ev.source === "popup" ? "Keystone Clash popup" : ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"}</p>
       <p>
         <a class="btn" data-link href="/t/${ev.slug}">Open board</a>
         ${ev.signup_open ? `<a class="btn ghost" data-link href="/t/${ev.slug}/signup">Join with GameChanger</a>` : `<span class="muted">Signup closed</span>`}

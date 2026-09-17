@@ -39,6 +39,9 @@ function eventChrome(event, page, body, extraNav = []) {
   if (slug && event?.signup_open !== false) {
     links.push(["/t/" + slug + "/signup", "Sign up"]);
   }
+  if (slug && event?.packet) {
+    links.push(["/t/" + slug + "/info", "Info"]);
+  }
   if (slug && isDirector()) {
     links.push(["/t/" + slug + "/admin", "Admin"]);
   }
@@ -68,12 +71,15 @@ async function fetchBoard(slug) {
 function standingsBlock(standings) {
   return (standings || []).map((pool) => `
     <div class="card">
-      <h2>Pool ${escapeHtml(pool.name)}</h2>
+      <h2>${pool.name === "All teams" ? "Pool standings" : "Pool " + escapeHtml(pool.name)}</h2>
+      ${pool.note ? `<p class="muted">${escapeHtml(pool.note)}</p>` : ""}
       ${table(["#", "Team", "W", "L", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
-        <td>${t.seed}</td><td>${escapeHtml(t.name)}</td><td>${t.w}</td><td>${t.l}</td>
-        <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff}</td>
+        <td>${t.seed}</td>
+        <td>${t.gamechanger_url ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">${escapeHtml(t.name)}</a>` : escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
+        <td>${t.w}</td><td>${t.l}</td>
+        <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
-      <p class="muted">Tiebreak: wins, then losses, then head-to-head, then runs allowed, then runs scored.</p>
+      <p class="muted">Tiebreak: record, then fewest runs allowed, then run differential. Official seeds follow Tourney Machine — the director may apply head-to-head.</p>
     </div>`).join("");
 }
 
@@ -82,10 +88,18 @@ const ROUND_META = {
   SF: { label: "Semifinals", order: 2 },
   F: { label: "Championship", order: 3 },
   CSF: { label: "Consolation semis", order: 1 },
-  CF: { label: "Consolation final", order: 2 },
+  CF: { label: "Consolation championship", order: 3 },
   "5TH": { label: "5th place", order: 1 },
   "3RD": { label: "3rd place", order: 2 },
+  "7TH": { label: "7th place", order: 2 },
 };
+
+function sourceLabel(ev) {
+  if (!ev) return "Hosted";
+  if (ev.source === "popup") return "Keystone Clash popup";
+  if (ev.source === "tourneymachine") return "Tourney Machine";
+  return "Hosted";
+}
 
 function gameSide(g) {
   if (g.side) return g.side;
@@ -94,9 +108,11 @@ function gameSide(g) {
 }
 
 function matchCard(g) {
-  const homeWin = g.status === "final" && g.winner && g.winner === g.home;
-  const awayWin = g.status === "final" && g.winner && g.winner === g.away;
-  return `<article class="bk-match ${escapeHtml(g.status)}">
+  const tie = !!(g.tie || (g.status === "final" && g.home_runs === g.away_runs && g.home && g.away));
+  const homeWin = !tie && g.status === "final" && g.winner && g.winner === g.home;
+  const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
+  const meta = [g.game_id, g.field, g.time, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
+  return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""}">
     <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
       <span>${escapeHtml(g.home || "TBD")}</span>
       <b>${g.status === "final" ? g.home_runs : ""}</b>
@@ -105,7 +121,7 @@ function matchCard(g) {
       <span>${escapeHtml(g.away || "TBD")}</span>
       <b>${g.status === "final" ? g.away_runs : ""}</b>
     </div>
-    <p class="bk-meta">${g.status === "final" ? "Final" : "Scheduled"}</p>
+    <p class="bk-meta">${escapeHtml(meta.join(" · "))}</p>
   </article>`;
 }
 
@@ -152,35 +168,46 @@ function bracketBoards(games) {
 
 function rosterBlock(teams) {
   if (!teams || !teams.length) {
-    return `<section class="card empty">No teams signed up yet. Every team needs a GameChanger link.</section>`;
+    return `<section class="card empty">No teams signed up yet. A team can join with or without GameChanger.</section>`;
   }
   return `<section class="card">
-    <h2>Signed-up teams</h2>
-    <p class="muted">Stats come from the GameChanger page each team linked. The host pulls that public page. No bot sits in the middle.</p>
-    ${table(["Team", "Pool", "GameChanger", "Signed up by"], teams.map((t) => `<tr>
-      <td>${escapeHtml(t.name)}</td>
-      <td>${escapeHtml(t.pool || "—")}</td>
-      <td>${t.gc_linked ? `<span class="badge linked">linked</span>` : `<span class="badge unlinked">missing</span>`}</td>
-      <td>${escapeHtml(t.signed_up_by || "—")}</td>
-    </tr>`))}
+    <h2>Teams</h2>
+    <p class="muted">Each GameChanger link is the public page the coach published. This host stores that URL. It does not scrape private GameChanger pages.</p>
+    <div class="gc-grid">${teams.map((t) => `
+      <article class="gc-card ${t.host ? "host" : ""}">
+        <b>${escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}${t.seed ? ` <span class="muted">#${t.seed}</span>` : ""}</b>
+        ${t.gc_linked && t.gamechanger_url
+          ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">Open on GameChanger</a>`
+          : `<span class="muted">No GameChanger linked</span>`}
+      </article>`).join("")}</div>
   </section>`;
 }
 
 export async function eventHome(slug) {
   const board = await fetchBoard(slug);
   const ev = board.event;
+  const packet = board.packet || ev.packet;
+  const champ = packet?.champion;
   eventRoot().innerHTML = eventChrome(ev, "home", `
     <section class="hero">
       <h1>${escapeHtml(ev.name)}</h1>
-      <p class="muted">${escapeHtml(ev.ages)} · ${escapeHtml(ev.venue)} · ${escapeHtml(ev.status)} · ${ev.source === "tourneymachine" ? "Tourney Machine linked" : "Hosted here"}</p>
-      <p>Live standings and a bracket that fills itself. Families stop walking to the fence.</p>
+      <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.dates || packet?.dates || "")} · ${escapeHtml(ev.venue)} · ${sourceLabel(ev)}</p>
+      <p>${escapeHtml(ev.status_note || packet?.status || "Live standings and a bracket that fills itself.")}</p>
       <p>
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
-        ${ev.tm_url ? ` <a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Tourney Machine page</a>` : ""}
+        ${ev.tm_url ? ` <a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Official Tourney Machine bracket</a>` : ""}
+        ${ev.source_url ? ` <a class="btn ghost" href="${escapeHtml(ev.source_url)}" target="_blank" rel="noopener">Original popup</a>` : ""}
       </p>
     </section>
+    ${champ ? `<section class="champ-banner">
+      <div class="k">Champions</div>
+      <div class="t">${escapeHtml(champ.team)}</div>
+      <p>${escapeHtml(champ.record || "")}${champ.line ? " — " + escapeHtml(champ.line) : ""}</p>
+      ${packet?.runner_up ? `<div class="ru"><span>Runner-up</span><b>${escapeHtml(packet.runner_up.team)}</b> ${escapeHtml(packet.runner_up.record || "")}</div>` : ""}
+    </section>` : ""}
     ${rosterBlock(board.roster)}
     <section class="grid two">${standingsBlock(board.standings)}</section>
+    ${packet?.bracket_note || packet?.bracket_venue ? `<p class="muted">${escapeHtml([packet.bracket_venue, packet.bracket_note].filter(Boolean).join(" — "))}</p>` : ""}
     ${bracketBoards(board.bracket)}
   `);
 }
@@ -203,40 +230,70 @@ export async function eventBracket(slug) {
 
 export async function eventSchedule(slug) {
   const board = await fetchBoard(slug);
+  const packet = board.packet || board.event.packet;
+  const rows = [
+    ...board.schedule.map((g) => ({
+      date: g.date, time: g.time, field: "", game_id: "",
+      home: g.home, away: g.away, home_runs: g.home_runs, away_runs: g.away_runs, status: g.status,
+    })),
+    ...board.bracket.map((g) => ({
+      date: g.date, time: g.time, field: g.field, game_id: g.game_id,
+      home: g.home, away: g.away, home_runs: g.home_runs, away_runs: g.away_runs, status: g.status,
+    })),
+  ].sort((a, b) => String(a.date + a.time + a.game_id).localeCompare(String(b.date + b.time + b.game_id)));
   eventRoot().innerHTML = eventChrome(board.event, "schedule", `
     <section class="card">
       <h2>Schedule</h2>
-      ${table(["Time", "Home", "Away", "Score", "Status"], board.schedule.map((g) => `<tr>
-        <td>${escapeHtml(g.date)} ${escapeHtml(g.time)}</td>
+      ${packet?.info?.pool_note ? `<p class="muted">${escapeHtml(packet.info.pool_note)}</p>` : ""}
+      ${packet?.bracket_venue ? `<p class="muted">${escapeHtml(packet.bracket_venue)}${packet.bracket_note ? " — " + escapeHtml(packet.bracket_note) : ""}</p>` : ""}
+      ${rows.length ? table(["When", "Field", "Home", "Away", "Score", ""], rows.map((g) => `<tr>
+        <td>${escapeHtml(g.date || "")} ${escapeHtml(g.time || "")}</td>
+        <td>${escapeHtml([g.game_id, g.field].filter(Boolean).join(" · "))}</td>
         <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
         <td>${g.status === "final" ? `${g.home_runs}–${g.away_runs}` : "—"}</td>
         <td>${escapeHtml(g.status)}</td>
-      </tr>`))}
+      </tr>`)) : `<p class="empty">No scored games on the public board yet.</p>`}
     </section>`);
 }
 
 export async function eventLeaders(slug) {
   const board = await fetchBoard(slug);
-  const hit = board.leaders.hitting.map((r) => `<tr>
-    <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
-    <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg_display}</td>
+  const publishedHit = board.leaders.published_hitting || [];
+  const publishedPit = board.leaders.published_pitching || [];
+  const fullHit = board.leaders.full_hitting || [];
+  const hit = (publishedHit.length ? publishedHit : board.leaders.hitting).map((r) => `<tr>
+    <td>${escapeHtml(r.player || r.name_key)}</td><td>${escapeHtml(r.team)}</td>
+    <td>${r.ab ?? ""}</td><td>${r.h ?? ""}</td><td>${r.rbi ?? ""}</td>
+    <td>${r.avg || r.avg_display || ""}</td><td>${r.ops || ""}</td>
   </tr>`);
-  const pit = board.leaders.pitching.map((r) => `<tr>
-    <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
-    <td>${r.ip}</td><td>${r.er}</td><td>${r.so}</td><td>${r.era_display}</td>
+  const pit = (publishedPit.length ? publishedPit : board.leaders.pitching).map((r) => `<tr>
+    <td>${escapeHtml(r.player || r.name_key)}</td><td>${escapeHtml(r.team)}</td>
+    <td>${r.ip ?? ""}</td><td>${r.k ?? r.so ?? ""}</td><td>${r.era || r.era_display || ""}</td>
   </tr>`);
+  const full = fullHit.filter((r) => r.q !== false).concat(fullHit.filter((r) => r.q === false));
   const counts = board.leaders.pitch_counts.map((r) => `<tr>
     <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
     <td>${r.ip}</td><td>${board.event.pitch_limit_ip}.0</td>
     <td>${r.ip_outs > board.event.pitch_limit_ip * 3 ? `<span class="badge l">over</span>` : `<span class="badge w">ok</span>`}</td>
   </tr>`);
   eventRoot().innerHTML = eventChrome(board.event, "leaders", `
-    <section class="grid two">
-      <div class="card"><h2>Hitting leaders</h2><p class="muted">Min 8 AB</p>
-        ${table(["Player", "Team", "AB", "H", "RBI", "AVG"], hit)}</div>
-      <div class="card"><h2>Pitching leaders</h2><p class="muted">Min 3.0 IP · youth ERA base 7</p>
-        ${table(["Player", "Team", "IP", "ER", "SO", "ERA"], pit)}</div>
+    <section class="hero">
+      <h1>Stat leaders</h1>
+      <p class="muted">${escapeHtml(board.leaders.stats_note || "Qualifying minimums are 8 at-bats and 5 innings. Lines come from each team’s published scorebook.")}</p>
     </section>
+    <section class="grid two">
+      <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${board.leaders.min_ab || 8} AB · ranked by OPS on the popup</p>
+        ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS"], hit)}</div>
+      <div class="card"><h2>Pitching leaders</h2><p class="muted">Min ${board.leaders.min_ip || 5} IP · ERA as published</p>
+        ${table(["Player", "Team", "IP", "K", "ERA"], pit)}</div>
+    </section>
+    ${full.length ? `<section class="card"><h2>Full published hitting board</h2>
+      <p class="muted">Every line the popup posted. Qualifiers first.</p>
+      ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], full.map((r) => `<tr>
+        <td>${escapeHtml(r.player)}</td><td>${escapeHtml(r.team)}</td>
+        <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
+        <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
+      </tr>`))}</section>` : ""}
     <section class="card"><h2>Pitching counts</h2>
       <p class="muted">Weekend limit ${board.event.pitch_limit_ip}.0 IP. Tracked in one place, not forty texts.</p>
       ${table(["Player", "Team", "IP used", "Limit", ""], counts)}
@@ -278,7 +335,7 @@ export async function eventList() {
     <section class="grid cards">${events.map((ev) => `
       <a class="card team-card" data-link href="/t/${ev.slug}">
         <h3>${escapeHtml(ev.name)}</h3>
-        <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"}</p>
+        <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${sourceLabel(ev)}</p>
       </a>`).join("") || `<div class="card empty">No public events. <a data-link href="/start">Start one</a>.</div>`}
     </section>`);
 }
@@ -312,7 +369,80 @@ export async function startTournament() {
         <p class="muted">Public TM URL</p>
         <p>Paste the public tournament page. We store the link and refresh it from this host.</p>
       </a>
+      <a class="card team-card" data-link href="/directors/import-popup">
+        <h3>Import Keystone Clash</h3>
+        <p class="muted">thedr21.github.io/KeystoneClash</p>
+        <p>Pull the public popup JSON — teams, GameChanger links, pool records, and the Sunday bracket.</p>
+      </a>
     </section>
+  `);
+}
+
+export async function directorImportPopup() {
+  if (!directorGate()) return;
+  eventRoot().innerHTML = eventChrome(null, "", `
+    <section class="hero">
+      <h1>Import the Keystone Clash popup</h1>
+      <p>Public GitHub Pages JSON only. Teams, GameChanger URLs, published pool records, and Sunday scores. Individual Friday/Saturday pool boxes are not on that site, so they are not invented here.</p>
+    </section>
+    <section class="card">
+      <form class="form wide" id="popup-form">
+        <label>Popup URL
+          <input name="url" type="url" value="https://thedr21.github.io/KeystoneClash/" required>
+        </label>
+        <button class="btn" type="submit">Import / refresh</button>
+        <p class="error" id="popup-err" hidden></p>
+      </form>
+    </section>`);
+  document.getElementById("popup-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target));
+    const res = await fetch("/api/events/import-popup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      document.getElementById("popup-err").hidden = false;
+      document.getElementById("popup-err").textContent = await res.text();
+      return;
+    }
+    goEvent("/t/keystone-clash-2026");
+  });
+}
+
+export async function eventInfo(slug) {
+  const board = await fetchBoard(slug);
+  const packet = board.packet || board.event.packet;
+  const info = packet?.info || {};
+  const raffle = packet?.raffle;
+  eventRoot().innerHTML = eventChrome(board.event, "info", `
+    <section class="hero">
+      <h1>Tournament info</h1>
+      <p>${escapeHtml(packet?.status || board.event.status_note || "")}</p>
+    </section>
+    <section class="card facts">
+      ${[
+        ["Dates", packet?.dates || "September 11–13, 2026"],
+        ["Where", info.where || board.event.venue],
+        ["Parking", info.parking],
+        ["Rules", info.rules],
+        ["Format", info.format],
+        ["On site", info.on_site],
+        ["Questions", info.questions || board.event.contact],
+      ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}
+      <p>
+        ${info.full_rules ? `<a href="${escapeHtml(info.full_rules)}" target="_blank" rel="noopener">Full rules</a>` : ""}
+        ${info.coaches_packet ? ` · <a href="${escapeHtml(info.coaches_packet)}" target="_blank" rel="noopener">Coaches packet (PDF)</a>` : ""}
+        ${info.parking_map ? ` · <a href="${escapeHtml(info.parking_map)}" target="_blank" rel="noopener">Parking map</a>` : ""}
+      </p>
+    </section>
+    ${raffle ? `<section class="card raffle-card">
+      <h2>50/50 raffle</h2>
+      <p>Winner takes half. The other half goes back to Lady Dukes Softball Club.</p>
+      <p class="pot">${Number(raffle.raised) > 0 ? `$${Number(raffle.raised).toFixed(0)} in the pot` : "Tickets on sale"}</p>
+      ${info.raffle_buy ? `<p><a class="btn" href="${escapeHtml(info.raffle_buy)}" target="_blank" rel="noopener">Buy raffle tickets</a></p>` : ""}
+    </section>` : ""}
   `);
 }
 
@@ -462,6 +592,7 @@ export async function eventAdmin(slug) {
         <button class="btn ghost" id="toggle-signup">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
         <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
         <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+        ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup">Refresh from popup</button>` : ""}
       </p>
       <p class="error" id="admin-err" hidden></p>
       <p class="muted" id="admin-note"></p>
@@ -501,6 +632,25 @@ export async function eventAdmin(slug) {
     }
     eventAdmin(slug);
   });
+  const refresh = document.getElementById("refresh-popup");
+  if (refresh) {
+    refresh.addEventListener("click", async () => {
+      refresh.disabled = true;
+      const res = await fetch("/api/events/import-popup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ url: ev.source_url || "https://thedr21.github.io/KeystoneClash/" }),
+      });
+      refresh.disabled = false;
+      if (!res.ok) {
+        document.getElementById("admin-err").hidden = false;
+        document.getElementById("admin-err").textContent = await res.text();
+        return;
+      }
+      const out = await res.json();
+      document.getElementById("admin-note").textContent = "Popup refresh · " + out.teams + " teams · " + out.games + " Sunday games";
+    });
+  }
 }
 
 export async function directorImport() {

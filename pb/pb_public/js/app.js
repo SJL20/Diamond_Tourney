@@ -1,7 +1,7 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
-  directorImport, directorLinkTm, directorNative, eventAdmin, eventAwards,
-  eventBracket, eventHome, eventLeaders, eventList, eventPools, eventSchedule,
+  directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
+  eventBracket, eventHome, eventInfo, eventLeaders, eventList, eventPools, eventSchedule,
   eventSignup, startTournament,
 } from "./event.js";
 import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
@@ -21,6 +21,7 @@ const ROUTES = [
   [/^\/directors\/new\/?$/, "native"],
   [/^\/directors\/link-tm\/?$/, "linktm"],
   [/^\/directors\/import\/?$/, "import"],
+  [/^\/directors\/import-popup\/?$/, "importpopup"],
   [/^\/t\/?$/, "events"],
   [/^\/t\/([^/]+)\/pools\/?$/, "epools"],
   [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
@@ -28,6 +29,7 @@ const ROUTES = [
   [/^\/t\/([^/]+)\/leaders\/?$/, "eleaders"],
   [/^\/t\/([^/]+)\/awards\/?$/, "eawards"],
   [/^\/t\/([^/]+)\/signup\/?$/, "esignup"],
+  [/^\/t\/([^/]+)\/info\/?$/, "einfo"],
   [/^\/t\/([^/]+)\/admin\/?$/, "eadmin"],
   [/^\/t\/([^/]+)\/?$/, "ehome"],
   [/^\/teams\/?$/, "teams"],
@@ -394,6 +396,7 @@ async function render() {
     if (name === "native") return directorNative();
     if (name === "linktm") return directorLinkTm();
     if (name === "import") return directorImport();
+    if (name === "importpopup") return directorImportPopup();
     if (name === "events") return eventList();
     if (name === "ehome") return eventHome(params[0]);
     if (name === "epools") return eventPools(params[0]);
@@ -402,6 +405,7 @@ async function render() {
     if (name === "eleaders") return eventLeaders(params[0]);
     if (name === "eawards") return eventAwards(params[0]);
     if (name === "esignup") return eventSignup(params[0]);
+    if (name === "einfo") return eventInfo(params[0]);
     if (name === "eadmin") return eventAdmin(params[0]);
     if (name === "publicTeam") return publicTeam(params[0]);
     if (name === "home") return home(params[0]);

@@ -65,6 +65,14 @@ function compareTeams(a, b, games) {
 
 function poolStandings(app, eventId) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: eventId });
+  const published = teams.some(function (t) {
+    return Number(t.get("published_w") || 0) + Number(t.get("published_l") || 0) + Number(t.get("published_t") || 0) > 0;
+  });
+  if (published) {
+    try {
+      return require(__hooks + "/keystone.js").publishedStandings(teams);
+    } catch (err) {}
+  }
   const games = app.findRecordsByFilter(
     "event_schedule",
     "event = {:e} && status = 'final'",
@@ -137,7 +145,7 @@ function importSchedule(app, event, csv) {
 function inferSide(round, side) {
   if (side) return side;
   const r = String(round || "").toUpperCase();
-  if (/^(C|3RD|5TH|CONS)/.test(r)) return "consolation";
+  if (/^(C|3RD|5TH|7TH|CONS)/.test(r)) return "consolation";
   return "championship";
 }
 
@@ -259,20 +267,10 @@ function publicBoard(app, event) {
     if (!id) return "";
     try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
   }
+  const host = require(__hooks + "/host.js");
+  const packet = host.parsePacket(event.get("packet"));
   return {
-    event: {
-      name: event.get("name"),
-      slug: event.get("slug"),
-      venue: event.get("venue"),
-      ages: event.get("ages"),
-      status: event.get("status"),
-      pitch_limit_ip: event.get("pitch_limit_ip") || 6,
-      source: event.get("source") || "native",
-      tm_url: event.get("tm_url") || "",
-      signup_open: !!event.get("signup_open"),
-      auto_sync: !!event.get("auto_sync"),
-      created_by: event.get("created_by") || "",
-    },
+    event: host.eventJson(event),
     standings: poolStandings(app, eventId),
     schedule: schedule.map(function (g) {
       return {
@@ -288,8 +286,11 @@ function publicBoard(app, event) {
     }),
     bracket: bracket.map(function (g) {
       const round = g.get("round");
+      const hr = Number(g.get("home_runs") || 0);
+      const ar = Number(g.get("away_runs") || 0);
       return {
         id: g.id,
+        game_id: g.get("game_id") || "",
         round: round,
         slot: g.get("slot"),
         side: inferSide(round, g.get("side")),
@@ -299,12 +300,40 @@ function publicBoard(app, event) {
         away_runs: g.get("away_runs"),
         winner: teamName(g.get("winner")),
         status: g.get("status"),
+        field: g.get("field_name") || "",
+        time: g.get("time") || "",
+        date: g.get("date") || "",
+        tie: g.get("status") === "final" && hr === ar,
       };
     }),
-    leaders: eventLeaders(app, eventId),
+    leaders: (function () {
+      const computed = eventLeaders(app, eventId);
+      if (!packet) return computed;
+      const hit = (packet.leaders && packet.leaders.hitting) || [];
+      const pit = (packet.leaders && packet.leaders.pitching) || [];
+      if (hit.length) {
+        computed.published_hitting = hit;
+        computed.all_tournament.hitters = hit.slice(0, 8).map(function (r) {
+          return { name_key: r.player, team: r.team, avg_display: r.avg, rbi: r.rbi, ops: r.ops, h: r.h };
+        });
+      }
+      if (pit.length) {
+        computed.published_pitching = pit;
+        computed.all_tournament.pitchers = pit.slice(0, 5).map(function (r) {
+          return { name_key: r.player, team: r.team, ip: r.ip, era_display: r.era, so: r.k };
+        });
+      }
+      computed.stats_note = packet.stats_note || "";
+      computed.min_ab = packet.min_ab || 8;
+      computed.min_ip = packet.min_ip || 5;
+      computed.full_hitting = packet.stats_hitting || [];
+      computed.full_pitching = packet.stats_pitching || [];
+      return computed;
+    })(),
+    packet: packet,
     roster: (function () {
       try {
-        return require(__hooks + "/host.js").publicRoster(app, event);
+        return host.publicRoster(app, event);
       } catch (err) {
         return [];
       }

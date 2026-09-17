@@ -15,6 +15,8 @@ Cloud Agents use `.cursor/environment.json`: `install` fetches the binary, `star
 
 Open http://127.0.0.1:8097
 
+Keystone Clash 2026 is imported from the public popup at https://thedr21.github.io/KeystoneClash/ (`testdata/keystone/data.json` and `stats.json`). Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger.
+
 | Page | What it is |
 |---|---|
 | `/` | Log in, create an account, or find a tournament. Logged-in users land on their account. |
@@ -25,6 +27,7 @@ Open http://127.0.0.1:8097
 | `/admin/teams` | Site admin team profiles (region admin). GameChanger optional. |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger URL required |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
+| `/t/keystone-clash-2026` | Keystone Clash 2026 — teams, GameChanger links, pool records, Sunday bracket from the public popup |
 
 | Role | Email | Password |
 |---|---|---|

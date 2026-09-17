@@ -1,0 +1,309 @@
+{
+  "dates": "September 11–13, 2026",
+  "venue": "East End Park, 51 Meadow St, McDonald, PA",
+  "contact": "Derek Rocco, Artie Tortorice and Steve LaFever, Tournament Directors",
+  "updated": "2026-09-14",
+  "status": "Tournament complete. Pittsburgh Passion are your 2026 Keystone Clash champions, undefeated at 5-0, with Smash Fastpitch Shaffer finishing runner-up. Sunday's bracket was played at No Offseason in Tarentum after Saturday's rain.",
+  "bracketUrl": "https://tourneymachine.com/Public/Results/Division.aspx?IDTournament=h202607031619521870950ff4a05a84e&IDDivision=h20260703163616344456f126a2c3848",
+  "divisions": [
+    {
+      "name": "All teams",
+      "note": "Pool play complete — final standings",
+      "teams": [
+        {
+          "name": "All American Prady",
+          "gc": "https://web.gc.com/teams/SEiRB2dlKGav",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 23,
+          "ra": 2
+        },
+        {
+          "name": "FP Select Barringer",
+          "gc": "https://web.gc.com/teams/KLy7mcYt9g1D",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 5,
+          "ra": 20
+        },
+        {
+          "name": "Lady Dukes WPA 2033",
+          "gc": "https://web.gc.com/teams/Qgojbuf369Eu/2027-spring-lady-dukes-wpa-2033",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 20,
+          "ra": 5,
+          "host": true
+        },
+        {
+          "name": "Outlaws 2033 Valore",
+          "gc": "https://web.gc.com/teams/quFlJ3qtjOh1",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 6,
+          "ra": 26
+        },
+        {
+          "name": "Pittsburgh Passion",
+          "gc": "https://web.gc.com/teams/Lk2mlbKyLsGh",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 31,
+          "ra": 6
+        },
+        {
+          "name": "Pittsburgh Power Theys",
+          "gc": "https://web.gc.com/teams/CDC5rQVXNCGN",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 2,
+          "ra": 23
+        },
+        {
+          "name": "Pittsburgh Spirit Barber",
+          "gc": "https://web.gc.com/teams/HokaT0SguY8W/2027-spring-pittsburgh-spirit-12u-barber",
+          "w": 0,
+          "l": 2,
+          "t": 0,
+          "rf": 8,
+          "ra": 24
+        },
+        {
+          "name": "Smash Fastpitch Shaffer",
+          "gc": "https://web.gc.com/teams/ixDuIf5R0bMq/2026-fall-smash-fastpitch-12u-shaffer",
+          "w": 2,
+          "l": 0,
+          "t": 0,
+          "rf": 19,
+          "ra": 8
+        }
+      ]
+    }
+  ],
+  "leaders": {
+    "hitting": [
+      {
+        "player": "Lily M #15",
+        "team": "Pittsburgh Passion",
+        "avg": ".722",
+        "ops": "1.848",
+        "h": 13,
+        "rbi": 8
+      },
+      {
+        "player": "Kacey B #5",
+        "team": "Pittsburgh Passion",
+        "avg": ".700",
+        "ops": "1.686",
+        "h": 7,
+        "rbi": 3
+      },
+      {
+        "player": "Elliette M #56",
+        "team": "Pittsburgh Passion",
+        "avg": ".667",
+        "ops": "1.655",
+        "h": 10,
+        "rbi": 10
+      },
+      {
+        "player": "A Glomb #1",
+        "team": "Lady Dukes WPA 2033",
+        "avg": ".500",
+        "ops": "1.533",
+        "h": 7,
+        "rbi": 4
+      },
+      {
+        "player": "Kendal C #00",
+        "team": "Outlaws 2033 Valore",
+        "avg": ".625",
+        "ops": "1.500",
+        "h": 5,
+        "rbi": 1
+      },
+      {
+        "player": "Kendall C #18",
+        "team": "All American Prady",
+        "avg": ".500",
+        "ops": "1.443",
+        "h": 7,
+        "rbi": 3
+      }
+    ],
+    "pitching": [
+      {
+        "player": "Avry G #37",
+        "team": "All American Prady",
+        "era": "0.00",
+        "ip": "6.0",
+        "k": 10
+      },
+      {
+        "player": "M Porter #14",
+        "team": "Lady Dukes WPA 2033",
+        "era": "0.00",
+        "ip": "6.0",
+        "k": 2
+      },
+      {
+        "player": "Avery T #7",
+        "team": "Pittsburgh Spirit Barber",
+        "era": "0.00",
+        "ip": "6.0",
+        "k": 2
+      },
+      {
+        "player": "Brooke K #20",
+        "team": "All American Prady",
+        "era": "0.00",
+        "ip": "5.0",
+        "k": 3
+      },
+      {
+        "player": "A Glomb #1",
+        "team": "Lady Dukes WPA 2033",
+        "era": "1.00",
+        "ip": "7.0",
+        "k": 7
+      }
+    ]
+  },
+  "raffle": {
+    "raised": 470.0,
+    "updated": "2026-09-17T18:59:16+00:00",
+    "url": "https://www.zeffy.com/en-US/ticketing/lady-dukes-keystone-clash-tournament-raffle"
+  },
+  "bracket": {
+    "venue": "No Offseason, Tarentum — Sunday, September 13",
+    "note": "Sunday moved indoors to turf after Saturday's rain. Four fields, three rounds.",
+    "rounds": [
+      {
+        "label": "Round 1 — 2:00 PM",
+        "games": [
+          {
+            "id": "B1",
+            "field": "Field 1",
+            "a": "All American Prady",
+            "as": 4,
+            "b": "Outlaws 2033 Valore",
+            "bs": 7
+          },
+          {
+            "id": "B2",
+            "field": "Field 3",
+            "a": "Smash Fastpitch Shaffer",
+            "as": 7,
+            "b": "FP Select Barringer",
+            "bs": 6
+          },
+          {
+            "id": "B3",
+            "field": "Field 5",
+            "a": "Pittsburgh Passion",
+            "as": 17,
+            "b": "Pittsburgh Power Theys",
+            "bs": 3
+          },
+          {
+            "id": "B4",
+            "field": "Field 6",
+            "a": "Lady Dukes WPA 2033",
+            "as": 4,
+            "b": "Pittsburgh Spirit Barber",
+            "bs": 3
+          }
+        ]
+      },
+      {
+        "label": "Round 2 — 4:00 PM",
+        "games": [
+          {
+            "id": "B5",
+            "field": "Field 1",
+            "a": "Outlaws 2033 Valore",
+            "as": 1,
+            "b": "Smash Fastpitch Shaffer",
+            "bs": 6
+          },
+          {
+            "id": "B6",
+            "field": "Field 3",
+            "a": "Pittsburgh Passion",
+            "as": 10,
+            "b": "Lady Dukes WPA 2033",
+            "bs": 6
+          },
+          {
+            "id": "B8",
+            "field": "Field 5",
+            "a": "All American Prady",
+            "as": 9,
+            "b": "FP Select Barringer",
+            "bs": 0
+          },
+          {
+            "id": "B9",
+            "field": "Field 6",
+            "a": "Pittsburgh Power Theys",
+            "as": 6,
+            "b": "Pittsburgh Spirit Barber",
+            "bs": 11
+          }
+        ]
+      },
+      {
+        "label": "Round 3 — 5:45 PM",
+        "games": [
+          {
+            "id": "B7",
+            "field": "Field 1",
+            "a": "Smash Fastpitch Shaffer",
+            "as": 5,
+            "b": "Pittsburgh Passion",
+            "bs": 8
+          },
+          {
+            "id": "B10",
+            "field": "Field 5",
+            "a": "Outlaws 2033 Valore",
+            "as": 3,
+            "b": "Lady Dukes WPA 2033",
+            "bs": 5
+          },
+          {
+            "id": "B11",
+            "field": "Field 6",
+            "a": "All American Prady",
+            "as": 5,
+            "b": "Pittsburgh Spirit Barber",
+            "bs": 3
+          },
+          {
+            "id": "B12",
+            "field": "Field 3",
+            "a": "FP Select Barringer",
+            "as": 2,
+            "b": "Pittsburgh Power Theys",
+            "bs": 2
+          }
+        ]
+      }
+    ],
+    "champion": {
+      "team": "Pittsburgh Passion",
+      "record": "3-0 in bracket play, 5-0 overall",
+      "line": "Undefeated across the whole weekend."
+    },
+    "runnerUp": {
+      "team": "Smash Fastpitch Shaffer",
+      "record": "2-1 in bracket play"
+    }
+  }
+}

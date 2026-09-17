@@ -229,6 +229,19 @@ routerAdd("GET", "/api/event/{slug}/board", (e) => {
   return e.json(200, diamond.publicBoard(e.app, event));
 });
 
+routerAdd("POST", "/api/events/import-popup", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const keystone = require(__hooks + "/keystone.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const body = e.requestInfo().body || {};
+  const url = body.url || keystone.DEFAULT_POPUP;
+  if (url && !keystone.isKeystonePopupUrl(url) && url !== keystone.DEFAULT_POPUP && url !== keystone.DEFAULT_POPUP + "/") {
+    throw new BadRequestError("Only the public Keystone Clash popup can be imported.");
+  }
+  const result = keystone.importPopup(e.app, url || keystone.DEFAULT_POPUP);
+  return e.json(200, result);
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/event/import-schedule", (e) => {
   const sb = require(__hooks + "/softball.js");
   const diamond = require(__hooks + "/diamond.js");

@@ -122,6 +122,43 @@ function yearBoard(app, year) {
       addTeamGame(teams, home.id, home, hr, ar);
       addTeamGame(teams, away.id, away, ar, hr);
     }
+    const bracket = app.findRecordsByFilter(
+      "bracket_games",
+      "event = {:e} && status = 'final'",
+      "",
+      80,
+      0,
+      { e: ev.id },
+    );
+    for (const g of bracket) {
+      const home = etById[g.get("home_team")];
+      const away = etById[g.get("away_team")];
+      if (!home || !away) continue;
+      const hr = Number(g.get("home_runs") || 0);
+      const ar = Number(g.get("away_runs") || 0);
+      addTeamGame(teams, home.id, home, hr, ar);
+      addTeamGame(teams, away.id, away, ar, hr);
+    }
+    if (ev.get("source") === "popup") {
+      for (const t of roster) {
+        const meta = etById[t.id];
+        if (!meta) continue;
+        const w = Number(t.get("published_w") || 0);
+        const l = Number(t.get("published_l") || 0);
+        const ties = Number(t.get("published_t") || 0);
+        const rs = Number(t.get("published_rf") || 0);
+        const ra = Number(t.get("published_ra") || 0);
+        if (w + l + ties === 0) continue;
+        if (!teams[meta.id]) {
+          teams[meta.id] = { id: meta.id, name: meta.name, slug: meta.slug, gc_linked: meta.gc, w: 0, l: 0, t: 0, rs: 0, ra: 0, events: 0 };
+        }
+        teams[meta.id].w += w;
+        teams[meta.id].l += l;
+        teams[meta.id].t += ties;
+        teams[meta.id].rs += rs;
+        teams[meta.id].ra += ra;
+      }
+    }
 
     const leaders = require(__hooks + "/diamond.js").eventLeaders(app, ev.id);
     for (const r of leaders.hitting) {

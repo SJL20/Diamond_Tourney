@@ -134,6 +134,44 @@ label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; }
 .badge.linked { background: #d9f3e6; color: var(--win); }
 .badge.unlinked { background: #f8d7d0; color: var(--loss); }
+.badge.host { background: #ffe0c2; color: var(--navy); }
+
+.gc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.gc-card {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--dirt);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.gc-card.host { border-left-color: var(--navy); background: #fbfcfe; }
+.gc-card b { display: block; margin-bottom: 8px; }
+.gc-card a { color: var(--navy); font-weight: 600; }
+
+.champ-banner {
+  background: var(--navy);
+  color: #fff;
+  border-radius: 16px;
+  padding: 22px;
+  margin: 0 0 16px;
+  text-align: center;
+  border-top: 6px solid var(--dirt);
+}
+.champ-banner .k { font-size: 0.72rem; letter-spacing: 0.28em; text-transform: uppercase; color: #e8a87c; font-weight: 700; }
+.champ-banner .t { font-family: "Oswald", sans-serif; font-size: clamp(1.6rem, 5vw, 2.4rem); margin: 6px 0; letter-spacing: 0.02em; }
+.champ-banner .ru { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.18); font-size: 0.92rem; }
+.champ-banner .ru span { display: block; font-size: 0.68rem; letter-spacing: 0.2em; text-transform: uppercase; color: #9fb0d8; }
+
+.facts div { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.facts dt { font-size: 0.74rem; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+.facts dd { margin: 0; line-height: 1.45; }
+.raffle-card .pot { font-family: "Oswald", sans-serif; font-size: 2rem; margin: 8px 0; }
+.bk-match.tie .bk-team { color: var(--muted); }
 input, select, textarea {
   width: 100%;
   padding: 10px 12px;

@@ -321,6 +321,8 @@ module.exports = {
   outsToIp: outsToIp,
   battingAverage: battingAverage,
   era: era,
+  bytesToString: bytesToString,
+  parsePayload: parsePayload,
   makeDedupKey: makeDedupKey,
   findPlayer: findPlayer,
   applyStaging: applyStaging,

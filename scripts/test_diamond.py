@@ -197,7 +197,62 @@ class AccountAndYearTests(unittest.TestCase):
         self.assertIn("Hawks 10U", names)
         self.assertTrue(any(e["slug"] == "central-saturday" for e in board["events"]))
         self.assertTrue(board["hitting"])
-        self.assertEqual(board["hitting"][0]["name_key"], "Maeve D #4")
+        hit_names = [r["name_key"] for r in board["hitting"]]
+        self.assertIn("Maeve D #4", hit_names)
+
+    def test_keystone_clash_from_popup(self):
+        found = request(BASE, "GET", "/api/events/search?q=keystone")
+        slugs = [e["slug"] for e in found["events"]]
+        self.assertIn("keystone-clash-2026", slugs)
+        ev = next(e for e in found["events"] if e["slug"] == "keystone-clash-2026")
+        self.assertEqual(ev["source"], "popup")
+        self.assertFalse(ev["signup_open"])
+
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        names = [t["name"] for t in board["roster"]]
+        self.assertEqual(len(names), 8)
+        self.assertIn("Pittsburgh Passion", names)
+        self.assertIn("Lady Dukes WPA 2033", names)
+        passion = next(t for t in board["roster"] if t["name"] == "Pittsburgh Passion")
+        self.assertTrue(passion["gc_linked"])
+        self.assertIn("web.gc.com/teams/Lk2mlbKyLsGh", passion["gamechanger_url"])
+        dukes = next(t for t in board["roster"] if t["name"] == "Lady Dukes WPA 2033")
+        self.assertTrue(dukes["host"])
+
+        pool = board["standings"][0]["teams"]
+        self.assertEqual(pool[0]["name"], "All American Prady")
+        self.assertEqual(pool[0]["seed"], 1)
+        self.assertEqual(pool[0]["w"], 2)
+        self.assertEqual(pool[2]["name"], "Pittsburgh Passion")
+
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertEqual(final["winner"], "Pittsburgh Passion")
+        self.assertEqual(final["home_runs"] + 0, final["home_runs"])
+        self.assertTrue(final["winner"] in (final["home"], final["away"]))
+        self.assertIn(8, (final["home_runs"], final["away_runs"]))
+        self.assertIn(5, (final["home_runs"], final["away_runs"]))
+
+        seventh = next(g for g in board["bracket"] if g["round"] == "7TH")
+        self.assertTrue(seventh["tie"])
+        self.assertEqual(seventh["side"], "consolation")
+
+        self.assertEqual(board["packet"]["champion"]["team"], "Pittsburgh Passion")
+        self.assertTrue(board["leaders"]["published_hitting"])
+        self.assertEqual(board["leaders"]["published_hitting"][0]["player"], "Lily M #15")
+
+        year = request(BASE, "GET", "/api/year/2026/board")
+        year_names = [t["name"] for t in year["teams"]]
+        self.assertIn("Pittsburgh Passion", year_names)
+        top = next(t for t in year["teams"] if t["name"] == "Pittsburgh Passion")
+        self.assertEqual(top["w"], 5)
+
+    def test_popup_import_rejects_other_sites(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", "/api/events/import-popup", td, {
+                "url": "https://example.com/not-keystone",
+            })
+        self.assertIn("Keystone", str(bad.exception))
 
     def test_signup_without_gamechanger_and_admin_team(self):
         td = auth(BASE, "td@local.test", "EventTd1!")

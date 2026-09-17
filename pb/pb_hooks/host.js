@@ -40,7 +40,26 @@ function isTourneyMachineUrl(url) {
   return parseHost(url) === "tourneymachine.com";
 }
 
+function parsePacket(raw) {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    try { return JSON.parse(raw); } catch (err) { return null; }
+  }
+  if (typeof raw === "object") {
+    if (raw.dates || raw.status || raw.info) return raw;
+    if (raw.length !== undefined && typeof raw[0] === "number") {
+      try {
+        return JSON.parse(require(__hooks + "/softball.js").bytesToString(raw));
+      } catch (err) {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 function eventJson(rec) {
+  const packet = parsePacket(rec.get("packet"));
   return {
     id: rec.id,
     name: rec.get("name"),
@@ -51,11 +70,16 @@ function eventJson(rec) {
     source: rec.get("source") || "native",
     tm_url: rec.get("tm_url") || "",
     tm_id: rec.get("tm_id") || "",
+    source_url: rec.get("source_url") || "",
     signup_open: !!rec.get("signup_open"),
     auto_sync: !!rec.get("auto_sync"),
     pitch_limit_ip: rec.get("pitch_limit_ip") || 6,
     public: !!rec.get("public"),
     created_by: rec.get("created_by") || "",
+    contact: rec.get("contact") || "",
+    status_note: rec.get("status_note") || "",
+    dates: packet ? packet.dates : "",
+    packet: packet,
   };
 }
 
@@ -66,11 +90,18 @@ function teamJson(rec) {
     slug: rec.get("slug"),
     club: rec.get("club") || "",
     pool: rec.get("pool") || "",
+    seed: rec.get("seed") || 0,
     gamechanger_url: rec.get("gamechanger_url") || "",
     gc_linked: isGameChangerUrl(rec.get("gamechanger_url")),
     gc_sync_status: rec.get("gc_sync_status") || (rec.get("gamechanger_url") ? "linked" : "unlinked"),
     signed_up_by: rec.get("signed_up_by") || "",
     gc_last_error: rec.get("gc_last_error") || "",
+    host: !!rec.get("is_host"),
+    published_w: rec.get("published_w"),
+    published_l: rec.get("published_l"),
+    published_t: rec.get("published_t"),
+    published_rf: rec.get("published_rf"),
+    published_ra: rec.get("published_ra"),
   };
 }
 
@@ -394,6 +425,8 @@ module.exports = {
   isTourneyMachineUrl: isTourneyMachineUrl,
   eventJson: eventJson,
   teamJson: teamJson,
+  writeLog: writeLog,
+  parsePacket: parsePacket,
   createEvent: createEvent,
   signupTeam: signupTeam,
   syncEvent: syncEvent,
