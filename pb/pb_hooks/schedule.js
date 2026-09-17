@@ -41,10 +41,16 @@ function datesBetween(start, end) {
 }
 
 function parseAvail(raw) {
-  if (!raw) return [];
+  if (raw == null || raw === "") return [];
   let rows = raw;
   if (typeof raw === "string") {
     try { rows = JSON.parse(raw); } catch (err) { return []; }
+  } else if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "number") {
+    try {
+      let s = "";
+      for (let i = 0; i < raw.length; i++) s += String.fromCharCode(raw[i]);
+      rows = JSON.parse(s);
+    } catch (err) { return []; }
   }
   if (!rows || rows.length === undefined) return [];
   const out = [];
