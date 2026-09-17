@@ -1,7 +1,8 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
-  directorImport, eventAwards, eventBracket, eventHome, eventLeaders,
-  eventList, eventPools, eventSchedule,
+  directorImport, directorLinkTm, directorNative, eventAdmin, eventAwards,
+  eventBracket, eventHome, eventLeaders, eventList, eventPools, eventSchedule,
+  eventSignup, startTournament,
 } from "./event.js";
 
 const pb = new PocketBase(location.origin);
@@ -9,6 +10,9 @@ const app = document.getElementById("app");
 
 const ROUTES = [
   [/^\/login\/?$/, "login"],
+  [/^\/start\/?$/, "start"],
+  [/^\/directors\/new\/?$/, "native"],
+  [/^\/directors\/link-tm\/?$/, "linktm"],
   [/^\/directors\/import\/?$/, "import"],
   [/^\/t\/?$/, "events"],
   [/^\/t\/([^/]+)\/pools\/?$/, "epools"],
@@ -16,6 +20,8 @@ const ROUTES = [
   [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
   [/^\/t\/([^/]+)\/leaders\/?$/, "eleaders"],
   [/^\/t\/([^/]+)\/awards\/?$/, "eawards"],
+  [/^\/t\/([^/]+)\/signup\/?$/, "esignup"],
+  [/^\/t\/([^/]+)\/admin\/?$/, "eadmin"],
   [/^\/t\/([^/]+)\/?$/, "ehome"],
   [/^\/teams\/?$/, "teams"],
   [/^\/teams\/([^/]+)\/home\/?$/, "home"],
@@ -85,6 +91,7 @@ function chrome(team, page, body) {
       <nav class="nav">
         ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
         <a data-link href="/t">Tournaments</a>
+        <a data-link href="/start">Start</a>
         ${user() ? `<button class="link" id="logout">Sign out</button>` : `<a data-link href="/login">Log in</a>`}
       </nav>
     </header>
@@ -118,20 +125,32 @@ async function landing() {
       <p>Diamond Tourney is the public weekend board. Region team books stay behind a coach login. Use as much of it as you want.</p>
     </section>
     <section class="grid cards">
-      <a class="card team-card" data-link href="/directors/import">
-        <h3>You already have a schedule</h3>
-        <p class="muted">START HERE · door three</p>
-        <p>Paste the Excel / Tourney Machine / legal-pad grid. Get a link, live standings, and a bracket that fills itself.</p>
+      <a class="card team-card" data-link href="/start">
+        <h3>Start a tournament</h3>
+        <p class="muted">Native or Tourney Machine</p>
+        <p>Open one on this host, or paste a public Tourney Machine URL. Teams then sign up with GameChanger.</p>
+      </a>
+      <a class="card team-card" data-link href="/t/central-saturday/signup">
+        <h3>Sign a team up</h3>
+        <p class="muted">Director or coach</p>
+        <p>A GameChanger team URL is required. That public page is the stats source. No bot in the loop.</p>
       </a>
       <a class="card team-card" data-link href="/t/central-saturday">
         <h3>Just look at a live board</h3>
         <p class="muted">Central Saturday · 10U</p>
-        <p>Pools, bracket, leaders, and a print-ready award sheet.</p>
+        <p>Pools, championship tree, consolation games, and a print-ready award sheet.</p>
+      </a>
+    </section>
+    <section class="grid cards">
+      <a class="card team-card" data-link href="/directors/import">
+        <h3>You already have a schedule</h3>
+        <p class="muted">Door three · paste a grid</p>
+        <p>Excel, Tourney Machine export, or a legal pad. Live standings and a bracket that fills itself.</p>
       </a>
       <a class="card team-card" data-link href="/login">
         <h3>Season team book</h3>
         <p class="muted">Coach login</p>
-        <p>Approve GameChanger boxes. Nothing publishes unverified.</p>
+        <p>Approve staged boxes. Nothing publishes unverified.</p>
       </a>
     </section>
     <section class="card">
@@ -174,6 +193,8 @@ async function login() {
       if (u.role === "team_coach" && u.team) {
         const team = await pb.collection("teams").getOne(u.team);
         go("/teams/" + team.slug + "/home");
+      } else if (u.role === "event_td" || u.role === "region_admin") {
+        go("/start");
       } else {
         go("/");
       }
@@ -439,6 +460,9 @@ async function render() {
   try {
     if (name === "login") return login();
     if (name === "landing" || name === "teams") return landing();
+    if (name === "start") return startTournament();
+    if (name === "native") return directorNative();
+    if (name === "linktm") return directorLinkTm();
     if (name === "import") return directorImport();
     if (name === "events") return eventList();
     if (name === "ehome") return eventHome(params[0]);
@@ -447,6 +471,8 @@ async function render() {
     if (name === "eschedule") return eventSchedule(params[0]);
     if (name === "eleaders") return eventLeaders(params[0]);
     if (name === "eawards") return eventAwards(params[0]);
+    if (name === "esignup") return eventSignup(params[0]);
+    if (name === "eadmin") return eventAdmin(params[0]);
     if (name === "publicTeam") return publicTeam(params[0]);
     if (name === "home") return home(params[0]);
     if (name === "roster") return roster(params[0]);

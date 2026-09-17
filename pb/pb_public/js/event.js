@@ -17,6 +17,15 @@ function goEvent(href) {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+function isDirector() {
+  const u = eventPb.authStore.record;
+  return u && (u.role === "region_admin" || u.role === "event_td");
+}
+
+function authHeader() {
+  return eventPb.authStore.token ? { Authorization: eventPb.authStore.token } : {};
+}
+
 function eventChrome(event, page, body, extraNav = []) {
   const slug = event?.slug;
   const links = slug ? [
@@ -27,12 +36,19 @@ function eventChrome(event, page, body, extraNav = []) {
     ["/t/" + slug + "/leaders", "Leaders"],
     ["/t/" + slug + "/awards", "Awards"],
   ] : [];
+  if (slug && event?.signup_open !== false) {
+    links.push(["/t/" + slug + "/signup", "Sign up"]);
+  }
+  if (slug && isDirector()) {
+    links.push(["/t/" + slug + "/admin", "Admin"]);
+  }
   return `
     <header class="wrap top">
       <a class="brand" href="/"><b>DIAMOND TOURNEY</b><span>${event ? escapeHtml(event.name) : "Keep the clipboard. Lose the group text."}</span></a>
       <nav class="nav">
         ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
         ${extraNav.join("")}
+        <a data-link href="/start">Start</a>
         <a data-link href="/">Region books</a>
       </nav>
     </header>
@@ -132,15 +148,36 @@ function bracketBoards(games) {
   `;
 }
 
+function rosterBlock(teams) {
+  if (!teams || !teams.length) {
+    return `<section class="card empty">No teams signed up yet. Every team needs a GameChanger link.</section>`;
+  }
+  return `<section class="card">
+    <h2>Signed-up teams</h2>
+    <p class="muted">Stats come from the GameChanger page each team linked. The host pulls that public page. No bot sits in the middle.</p>
+    ${table(["Team", "Pool", "GameChanger", "Signed up by"], teams.map((t) => `<tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td>${escapeHtml(t.pool || "—")}</td>
+      <td>${t.gc_linked ? `<span class="badge linked">linked</span>` : `<span class="badge unlinked">missing</span>`}</td>
+      <td>${escapeHtml(t.signed_up_by || "—")}</td>
+    </tr>`))}
+  </section>`;
+}
+
 export async function eventHome(slug) {
   const board = await fetchBoard(slug);
   const ev = board.event;
   eventRoot().innerHTML = eventChrome(ev, "home", `
     <section class="hero">
       <h1>${escapeHtml(ev.name)}</h1>
-      <p class="muted">${escapeHtml(ev.ages)} · ${escapeHtml(ev.venue)} · ${escapeHtml(ev.status)}</p>
+      <p class="muted">${escapeHtml(ev.ages)} · ${escapeHtml(ev.venue)} · ${escapeHtml(ev.status)} · ${ev.source === "tourneymachine" ? "Tourney Machine linked" : "Hosted here"}</p>
       <p>Live standings and a bracket that fills itself. Families stop walking to the fence.</p>
+      <p>
+        ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
+        ${ev.tm_url ? ` <a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Tourney Machine page</a>` : ""}
+      </p>
     </section>
+    ${rosterBlock(board.roster)}
     <section class="grid two">${standingsBlock(board.standings)}</section>
     ${bracketBoards(board.bracket)}
   `);
@@ -233,13 +270,234 @@ export async function eventList() {
   const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
   eventRoot().innerHTML = eventChrome(null, "", `
     <section class="hero"><h1>Tournaments</h1>
-      <p>Public boards only. Season books stay behind a coach login.</p></section>
+      <p>Public boards only. Season books stay behind a coach login.</p>
+      <p><a class="btn" data-link href="/start">Start a tournament</a></p>
+    </section>
     <section class="grid cards">${events.map((ev) => `
       <a class="card team-card" data-link href="/t/${ev.slug}">
         <h3>${escapeHtml(ev.name)}</h3>
-        <p class="muted">${escapeHtml(ev.ages)} · ${escapeHtml(ev.venue)}</p>
-      </a>`).join("") || `<div class="card empty">No public events.</div>`}
+        <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"}</p>
+      </a>`).join("") || `<div class="card empty">No public events. <a data-link href="/start">Start one</a>.</div>`}
     </section>`);
+}
+
+function directorGate() {
+  if (isDirector()) return true;
+  eventRoot().innerHTML = eventChrome(null, "", `
+    <section class="card">
+      <h2>Director login required</h2>
+      <p>Starting a tournament is a director action. Teams sign up on the public form after you open the event.</p>
+      <p><a class="btn" data-link href="/login">Log in</a></p>
+    </section>`);
+  return false;
+}
+
+export async function startTournament() {
+  eventRoot().innerHTML = eventChrome(null, "", `
+    <section class="hero">
+      <h1>Start a tournament</h1>
+      <p>This host is the board of record. Link a Tourney Machine page you already published, or run the event natively here. Teams then sign up with a GameChanger URL — that is where stats come from.</p>
+    </section>
+    <section class="grid two">
+      <a class="card team-card" data-link href="/directors/new">
+        <h3>Run it here</h3>
+        <p class="muted">Native</p>
+        <p>Name, venue, age group. Pools, bracket, and signup live on this site.</p>
+      </a>
+      <a class="card team-card" data-link href="/directors/link-tm">
+        <h3>Link Tourney Machine</h3>
+        <p class="muted">Public TM URL</p>
+        <p>Paste the public tournament page. We store the link and refresh it from this host.</p>
+      </a>
+    </section>
+  `);
+}
+
+export async function directorNative() {
+  if (!directorGate()) return;
+  eventRoot().innerHTML = eventChrome(null, "", `
+    <section class="hero">
+      <h1>Run it on this site</h1>
+      <p>Native tournament. After you open it, directors or teams sign up — each team must link GameChanger.</p>
+    </section>
+    <section class="card">
+      <form class="form wide" id="native-form">
+        <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
+        <label>Venue <input name="venue" placeholder="Central Park Complex"></label>
+        <label>Age group <input name="ages" value="10U"></label>
+        <label>Slug (optional) <input name="slug" placeholder="labor-day-classic"></label>
+        <button class="btn" type="submit">Open signup</button>
+        <p class="error" id="native-err" hidden></p>
+      </form>
+    </section>`);
+  document.getElementById("native-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target));
+    const res = await fetch("/api/events/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({ ...data, source: "native" }),
+    });
+    if (!res.ok) {
+      document.getElementById("native-err").hidden = false;
+      document.getElementById("native-err").textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    goEvent("/t/" + out.event.slug + "/admin");
+  });
+}
+
+export async function directorLinkTm() {
+  if (!directorGate()) return;
+  eventRoot().innerHTML = eventChrome(null, "", `
+    <section class="hero">
+      <h1>Link a Tourney Machine site</h1>
+      <p>Public tournament URL only. We do not log into Tourney Machine. This host stores the link and refreshes the public page.</p>
+    </section>
+    <section class="card">
+      <form class="form wide" id="tm-form">
+        <label>Tourney Machine URL
+          <input name="tm_url" type="url" required placeholder="https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=…">
+        </label>
+        <label>Name override (optional) <input name="name" placeholder="Leave blank to use the public page title"></label>
+        <label>Venue <input name="venue"></label>
+        <label>Age group <input name="ages" value="10U"></label>
+        <button class="btn" type="submit">Link and open signup</button>
+        <p class="error" id="tm-err" hidden></p>
+      </form>
+    </section>`);
+  document.getElementById("tm-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const data = Object.fromEntries(new FormData(ev.target));
+    const res = await fetch("/api/events/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({ ...data, source: "tourneymachine" }),
+    });
+    if (!res.ok) {
+      document.getElementById("tm-err").hidden = false;
+      document.getElementById("tm-err").textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    goEvent("/t/" + out.event.slug + "/admin");
+  });
+}
+
+export async function eventSignup(slug) {
+  const roster = await fetch("/api/events/" + encodeURIComponent(slug) + "/roster").then((r) => {
+    if (!r.ok) throw new Error("Event not found");
+    return r.json();
+  });
+  const ev = roster.event;
+  const director = isDirector();
+  eventRoot().innerHTML = eventChrome(ev, "sign up", `
+    <section class="hero">
+      <h1>Sign up · ${escapeHtml(ev.name)}</h1>
+      <p>${ev.signup_open ? "Director or team can add a roster. A GameChanger team URL is required. That is the stats source." : "Signup is closed."}</p>
+    </section>
+    ${ev.signup_open ? `<section class="card">
+      <form class="form wide" id="signup-form">
+        <label>Team name <input name="team_name" required placeholder="Hawks 10U"></label>
+        <label>Pool (optional) <input name="pool" placeholder="A"></label>
+        <label>GameChanger team URL
+          <input name="gamechanger_url" type="url" required placeholder="https://web.gc.com/team/…">
+        </label>
+        <label>Contact name <input name="contact_name" ${director ? "" : "required"}></label>
+        <label>Contact email <input name="contact_email" type="email"></label>
+        ${director ? `<label class="check"><input type="checkbox" name="as_director" checked> I am the director adding this team</label>` : ""}
+        <button class="btn" type="submit">Link GameChanger and join</button>
+        <p class="error" id="signup-err" hidden></p>
+      </form>
+    </section>` : `<section class="card empty">The director closed signup.</section>`}
+    ${rosterBlock(roster.teams)}
+  `);
+  const form = document.getElementById("signup-form");
+  if (!form) return;
+  form.addEventListener("submit", async (evnt) => {
+    evnt.preventDefault();
+    const raw = Object.fromEntries(new FormData(evnt.target));
+    const body = {
+      team_name: raw.team_name,
+      pool: raw.pool,
+      gamechanger_url: raw.gamechanger_url,
+      contact_name: raw.contact_name,
+      contact_email: raw.contact_email,
+      as_director: !!raw.as_director,
+    };
+    const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      document.getElementById("signup-err").hidden = false;
+      document.getElementById("signup-err").textContent = await res.text();
+      return;
+    }
+    goEvent("/t/" + slug);
+  });
+}
+
+export async function eventAdmin(slug) {
+  if (!directorGate()) return;
+  const roster = await fetch("/api/events/" + encodeURIComponent(slug) + "/roster", {
+    headers: authHeader(),
+  }).then((r) => {
+    if (!r.ok) throw new Error("Event not found");
+    return r.json();
+  });
+  const ev = roster.event;
+  eventRoot().innerHTML = eventChrome(ev, "admin", `
+    <section class="hero">
+      <h1>Director · ${escapeHtml(ev.name)}</h1>
+      <p class="muted">${ev.source === "tourneymachine" ? "Linked Tourney Machine" : "Native host"} · signup ${ev.signup_open ? "open" : "closed"} · auto-sync ${ev.auto_sync ? "on" : "off"}</p>
+      <p>Refresh pulls the public Tourney Machine page and each team's public GameChanger page. Boxes still sit in review until a coach confirms numbers.</p>
+      <p>
+        <button class="btn" id="sync-now">Refresh GameChanger + TM</button>
+        <button class="btn ghost" id="toggle-signup">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
+        <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
+        <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+      </p>
+      <p class="error" id="admin-err" hidden></p>
+      <p class="muted" id="admin-note"></p>
+    </section>
+    ${rosterBlock(roster.teams)}
+  `);
+  document.getElementById("sync-now").addEventListener("click", async (btnEv) => {
+    const btn = btnEv.currentTarget;
+    btn.disabled = true;
+    const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: "{}",
+    });
+    btn.disabled = false;
+    const note = document.getElementById("admin-note");
+    const err = document.getElementById("admin-err");
+    if (!res.ok) {
+      err.hidden = false;
+      err.textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    note.textContent = "Refresh finished · " + (out.results || []).map((r) => (r.team || r.kind) + " " + (r.ok ? "ok" : "miss")).join(", ");
+    eventAdmin(slug);
+  });
+  document.getElementById("toggle-signup").addEventListener("click", async () => {
+    const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({ signup_open: !ev.signup_open }),
+    });
+    if (!res.ok) {
+      document.getElementById("admin-err").hidden = false;
+      document.getElementById("admin-err").textContent = await res.text();
+      return;
+    }
+    eventAdmin(slug);
+  });
 }
 
 export async function directorImport() {

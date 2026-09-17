@@ -110,6 +110,11 @@ tr.total { font-weight: 700; background: #f3eee4; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .form { display: grid; gap: 10px; max-width: 360px; }
+.form.wide { max-width: 560px; }
+label.check { display: flex; align-items: center; gap: 8px; }
+label.check input { width: auto; }
+.badge.linked { background: #d9f3e6; color: var(--win); }
+.badge.unlinked { background: #f8d7d0; color: var(--loss); }
 input, select, textarea {
   width: 100%;
   padding: 10px 12px;

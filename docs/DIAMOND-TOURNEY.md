@@ -24,9 +24,9 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 
 | Door | Status in this repo |
 |---|---|
-| You already have a schedule | **Live** — CSV import + public board |
-| Just build it | Format + field count → schedule (next) |
-| Run the whole thing | Registration / paid / seed (Phase 4) |
+| You already have a schedule | **Live** — CSV import + public board (`/directors/import`) |
+| Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
+| Team signup | **Live** — director or team, GameChanger URL required (`/t/{slug}/signup`). Hosted sync reads those public pages. No bot required. |
 
 ## Tiebreak (outline §6, confirmed by the deck)
 

@@ -133,6 +133,51 @@ routerAdd("POST", "/api/bot/publish", (e) => {
   });
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/create", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const auth = sb.requireRole(e, ["region_admin", "event_td"]);
+  const body = e.requestInfo().body || {};
+  const result = host.createEvent(e.app, body, auth);
+  return e.json(200, result);
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/signup", (e) => {
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const body = e.requestInfo().body || {};
+  const team = host.signupTeam(e.app, event, body, e.auth);
+  return e.json(200, { team: team, event: event.get("slug") });
+});
+
+routerAdd("POST", "/api/events/{slug}/sync", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const results = host.syncEvent(e.app, event);
+  return e.json(200, { event: event.get("slug"), results: results });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/settings", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const updated = host.applySettings(e.app, event, e.requestInfo().body || {});
+  return e.json(200, { event: updated });
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/events/{slug}/roster", (e) => {
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
+  return e.json(200, {
+    event: host.eventJson(event),
+    teams: host.publicRoster(e.app, event),
+  });
+});
+
 routerAdd("GET", "/api/event/{slug}/board", (e) => {
   const diamond = require(__hooks + "/diamond.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
@@ -156,6 +201,9 @@ routerAdd("POST", "/api/event/import-schedule", (e) => {
     event.set("public", true);
     event.set("status", "live");
     event.set("format", "imported");
+    event.set("source", "native");
+    event.set("signup_open", true);
+    event.set("auto_sync", true);
     event.set("venue", body.venue || "");
     event.set("ages", body.ages || "10U");
     event.set("pitch_limit_ip", 6);
@@ -201,6 +249,14 @@ routerAdd("POST", "/api/bot/event-update", (e) => {
   diamond.advanceBracket(e.app, event.id);
   return e.json(200, { ok: true, event: event.get("slug"), standings: diamond.poolStandings(e.app, event.id) });
 }, $apis.requireAuth());
+
+cronAdd("hosted-gc-tm-sync", "15 */2 * * *", () => {
+  const host = require(__hooks + "/host.js");
+  const events = $app.findRecordsByFilter("events", "auto_sync = true && status = 'live'", "", 80, 0);
+  for (const ev of events) {
+    try { host.syncEvent($app, ev); } catch (err) {}
+  }
+});
 
 onRecordUpdateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();

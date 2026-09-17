@@ -267,6 +267,10 @@ function publicBoard(app, event) {
       ages: event.get("ages"),
       status: event.get("status"),
       pitch_limit_ip: event.get("pitch_limit_ip") || 6,
+      source: event.get("source") || "native",
+      tm_url: event.get("tm_url") || "",
+      signup_open: !!event.get("signup_open"),
+      auto_sync: !!event.get("auto_sync"),
     },
     standings: poolStandings(app, eventId),
     schedule: schedule.map(function (g) {
@@ -297,6 +301,13 @@ function publicBoard(app, event) {
       };
     }),
     leaders: eventLeaders(app, eventId),
+    roster: (function () {
+      try {
+        return require(__hooks + "/host.js").publicRoster(app, event);
+      } catch (err) {
+        return [];
+      }
+    })(),
   };
 }
 

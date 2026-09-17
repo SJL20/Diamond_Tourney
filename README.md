@@ -1,8 +1,8 @@
 # Diamond Tourney + Region books
 
-Public tournament boards (“keep the clipboard, lose the group text”) and login-only season stat books on one PocketBase box. Coaches approve staged GameChanger ingest before anything goes live.
+Wholly hosted tournament site: start an event natively or by linking a Tourney Machine page, teams sign up with a GameChanger URL, and this host pulls those public pages. Season team books stay behind a coach login. Bots are optional leftovers for screenshot ingest — they are not required to run a weekend.
 
-Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md` (partner deck notes).
+Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md`.
 
 ## Run locally
 
@@ -11,14 +11,22 @@ bash scripts/install-pocketbase.sh
 bash scripts/start-pocketbase.sh
 ```
 
-Open http://127.0.0.1:8097 — live demo event: http://127.0.0.1:8097/t/central-saturday
+Open http://127.0.0.1:8097
+
+| Page | What it is |
+|---|---|
+| `/start` | Director starts a tournament (native or Tourney Machine URL) |
+| `/t/{slug}/signup` | Director or team signs up — GameChanger URL required |
+| `/t/{slug}/admin` | Director refresh of public GC / TM pages |
+| `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
 
 | Role | Email | Password |
 |---|---|---|
 | region admin | owner@local.test | RegionAdmin1! |
+| event director | td@local.test | EventTd1! |
 | demo coach | coach.demo@local.test | CoachDemo1! |
 | Hawks 10U coach | coach.hawks@local.test | CoachHawks1! |
-| bot | bot@local.test | BotStaging1! |
+| bot (optional) | bot@local.test | BotStaging1! |
 
 Admin UI: http://127.0.0.1:8097/_/
 

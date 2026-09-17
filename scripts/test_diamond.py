@@ -63,5 +63,92 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(pool_a["teams"][0]["w"], 2)
 
 
+class HostedSignupTests(unittest.TestCase):
+    def test_native_create_and_gc_required(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Hosted Native Open",
+            "slug": "hosted-native-open",
+            "venue": "North Fields",
+            "ages": "10U",
+        })
+        slug = created["event"]["slug"]
+        self.assertTrue(created["event"]["signup_open"])
+        self.assertEqual(created["event"]["source"], "native")
+
+        with self.assertRaises(RuntimeError) as missing:
+            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+                "team_name": "Orphans",
+            })
+        self.assertIn("GameChanger", str(missing.exception))
+
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+                "team_name": "Orphans",
+                "gamechanger_url": "https://example.com/not-gc",
+            })
+        self.assertIn("GameChanger", str(bad.exception))
+
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+            "team_name": "Northside 10U",
+            "pool": "A",
+            "gamechanger_url": "https://web.gc.com/team/northside-10u",
+            "contact_name": "Coach Kim",
+            "contact_email": "kim@local.test",
+        })
+        self.assertTrue(joined["team"]["gc_linked"])
+        self.assertEqual(joined["team"]["signed_up_by"], "team")
+
+        director_add = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "West End 10U",
+            "pool": "B",
+            "gamechanger_url": "https://gc.com/team/west-end-10u",
+            "as_director": True,
+        })
+        self.assertEqual(director_add["team"]["signed_up_by"], "director")
+
+        roster = request(BASE, "GET", f"/api/events/{slug}/roster")
+        names = [t["name"] for t in roster["teams"]]
+        self.assertIn("Northside 10U", names)
+        self.assertIn("West End 10U", names)
+        self.assertTrue(all(t["gc_linked"] for t in roster["teams"]))
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertTrue(board["event"]["signup_open"])
+        self.assertGreaterEqual(len(board["roster"]), 2)
+
+        synced = request(BASE, "POST", f"/api/events/{slug}/sync", td, {})
+        self.assertTrue(any(r.get("kind") == "gamechanger" for r in synced["results"]))
+
+        closed = request(BASE, "POST", f"/api/events/{slug}/settings", td, {"signup_open": False})
+        self.assertFalse(closed["event"]["signup_open"])
+        with self.assertRaises(RuntimeError) as shut:
+            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+                "team_name": "Late Team",
+                "gamechanger_url": "https://gc.com/team/late",
+            })
+        self.assertIn("closed", str(shut.exception).lower())
+
+    def test_tm_link_rejects_non_tm(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", "/api/events/create", td, {
+                "source": "tourneymachine",
+                "tm_url": "https://example.com/tournament",
+            })
+        self.assertIn("tourneymachine", str(bad.exception).lower())
+
+        linked = request(BASE, "POST", "/api/events/create", td, {
+            "source": "tourneymachine",
+            "name": "Linked Classic",
+            "slug": "linked-classic",
+            "tm_url": "https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=abc123xyz",
+        })
+        self.assertEqual(linked["event"]["source"], "tourneymachine")
+        self.assertEqual(linked["event"]["tm_id"], "abc123xyz")
+        self.assertTrue(linked["event"]["signup_open"])
+
+
 if __name__ == "__main__":
     unittest.main()
