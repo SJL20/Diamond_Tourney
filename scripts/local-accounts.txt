@@ -1,0 +1,19 @@
+Local / Cloud Agent fallback accounts (not for production)
+
+Superuser (PocketBase admin UI /_/)
+  admin@local.test / SoftballAdmin1!
+
+region_admin
+  owner@local.test / RegionAdmin1!
+
+bot (staging writes only)
+  bot@local.test / BotStaging1!
+
+team_coach — Demo (FAKE)
+  coach.demo@local.test / CoachDemo1!
+
+team_coach — Hawks 10U (Phase 1 sample)
+  coach.hawks@local.test / CoachHawks1!
+
+team_coach — Rivals 10U (ACL fixture)
+  coach.rivals@local.test / CoachRivals1!

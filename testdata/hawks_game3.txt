@@ -1,0 +1,16 @@
+TEAM: Hawks 10U
+OPPONENT: Eastside Pride
+DATE: 2026-09-14
+SCORE: 3-9
+
+HITTING
+Name # AB R H RBI BB SO
+Evelynn M 17 3 0 0 0 0 2
+Mia A 3 3 1 1 0 0 0
+Ava B 8 3 0 0 0 0 1
+Sofia P 5 2 1 1 1 1 0
+Zoe N 21 2 0 0 0 0 1
+
+PITCHING
+Name # IP H R ER BB SO P S
+Nora D 14 3.0 8 7 6 3 1 62 31

@@ -1,0 +1,14 @@
+services:
+  pocketbase:
+    build: .
+    ports:
+      - "8097:8080"
+    environment:
+      PB_ADMIN_EMAIL: ${PB_ADMIN_EMAIL:-admin@local.test}
+      PB_ADMIN_PASSWORD: ${PB_ADMIN_PASSWORD:-SoftballAdmin1!}
+      BOT_B_WEBHOOK_URL: ${BOT_B_WEBHOOK_URL:-}
+      BOT_B_WEBHOOK_KEY: ${BOT_B_WEBHOOK_KEY:-}
+    volumes:
+      - pb_data:/data
+volumes:
+  pb_data:

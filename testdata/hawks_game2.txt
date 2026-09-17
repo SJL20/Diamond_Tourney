@@ -1,0 +1,20 @@
+TEAM: Hawks 10U
+OPPONENT: Lakeview Storm
+DATE: 2026-09-13
+SCORE: 6-2
+
+HITTING
+Name # AB R H RBI BB SO
+Sofia P 5 3 0 1 0 0 0
+Mia A 3 3 1 1 1 0 1
+Harper Q 12 2 1 1 0 1 0
+Zoe N 21 3 1 0 0 0 1
+Lily C 7 3 1 2 2 0 0
+Evelynn M 17 3 1 2 2 0 0
+Ava B 8 2 1 0 0 1 0
+Chloe B 9 2 0 0 0 0 1
+
+PITCHING
+Name # IP H R ER BB SO P S
+Ava B 8 1.2 2 1 1 0 2 29 19
+Nora D 14 2.1 3 1 1 1 3 38 24

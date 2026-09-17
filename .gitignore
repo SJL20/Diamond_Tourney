@@ -1,0 +1,9 @@
+pb/pb_data/
+tools/
+*.zip
+.DS_Store
+.env
+.env.local
+__pycache__/
+*.pyc
+node_modules/

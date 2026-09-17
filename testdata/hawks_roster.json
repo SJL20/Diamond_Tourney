@@ -1,0 +1,14 @@
+[
+  {"display_name": "Mia Alvarez", "jersey": "3", "positions": "2B", "bats": "R", "throws": "R"},
+  {"display_name": "Evelynn Moore", "jersey": "17", "positions": "SS", "bats": "R", "throws": "R"},
+  {"display_name": "Ava Brooks", "jersey": "8", "positions": "P, 1B", "bats": "L", "throws": "L"},
+  {"display_name": "Sofia Patel", "jersey": "5", "positions": "C", "bats": "R", "throws": "R"},
+  {"display_name": "Harper Quinn", "jersey": "12", "positions": "OF", "bats": "L", "throws": "R"},
+  {"display_name": "Zoe Nguyen", "jersey": "21", "positions": "3B", "bats": "R", "throws": "R"},
+  {"display_name": "Lily Chen", "jersey": "7", "positions": "OF", "bats": "R", "throws": "R"},
+  {"display_name": "Nora Diaz", "jersey": "14", "positions": "P, OF", "bats": "R", "throws": "R"},
+  {"display_name": "Ruby Santos", "jersey": "2", "positions": "1B", "bats": "L", "throws": "L"},
+  {"display_name": "Chloe Bennett", "jersey": "9", "positions": "OF", "bats": "R", "throws": "R"},
+  {"display_name": "Isla Romero", "jersey": "18", "positions": "2B", "bats": "R", "throws": "R"},
+  {"display_name": "Paisley Hart", "jersey": "24", "positions": "C, OF", "bats": "R", "throws": "R"}
+]

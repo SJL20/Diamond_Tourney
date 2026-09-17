@@ -1,0 +1,10 @@
+{
+  "install": "bash scripts/install-pocketbase.sh",
+  "start": "bash scripts/start-pocketbase.sh",
+  "terminals": [
+    {
+      "name": "pocketbase",
+      "command": "bash scripts/start-pocketbase.sh"
+    }
+  ]
+}

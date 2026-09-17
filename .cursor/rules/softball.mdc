@@ -1,0 +1,6 @@
+---
+description: Softball platform metric and ingest rules
+alwaysApply: true
+---
+
+Never invent stats. Never approve staging as the bot user. Player key is `Firstname LastInitial #jersey`. IP is stored as integer outs. Youth ERA uses 7 innings. Dedup games by team + date + opponent + score. Public pages never show family emails, addresses, or birthdates.
