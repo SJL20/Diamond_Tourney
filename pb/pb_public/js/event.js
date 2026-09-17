@@ -40,6 +40,7 @@ function eventChrome(event, page, body, extraNav = []) {
     links.push(["/t/" + slug + "/signup", "Sign up"]);
   }
   if (slug && event?.packet) {
+    links.push(["/t/" + slug + "/stats", "Stats"]);
     links.push(["/t/" + slug + "/info", "Info"]);
   }
   if (slug && isDirector()) {
@@ -195,8 +196,8 @@ export async function eventHome(slug) {
       <p>${escapeHtml(ev.status_note || packet?.status || "Live standings and a bracket that fills itself.")}</p>
       <p>
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
+        ${ev.slug === "keystone-clash-2026" ? ` <a class="btn" data-link href="/t/${ev.slug}/stats">Full stats</a> <a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
         ${ev.tm_url ? ` <a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Official Tourney Machine bracket</a>` : ""}
-        ${ev.source_url ? ` <a class="btn ghost" href="${escapeHtml(ev.source_url)}" target="_blank" rel="noopener">Original popup</a>` : ""}
       </p>
     </section>
     ${champ ? `<section class="champ-banner">
@@ -411,16 +412,98 @@ export async function directorImportPopup() {
   });
 }
 
+export async function eventStats(slug) {
+  const board = await fetchBoard(slug);
+  const hitting = board.leaders.full_hitting || [];
+  const pitching = board.leaders.full_pitching || [];
+  const teams = [...new Set([...hitting, ...pitching].map((r) => r.team).filter(Boolean))].sort();
+  eventRoot().innerHTML = eventChrome(board.event, "stats", `
+    <section class="hero">
+      <h1>Full stats board</h1>
+      <p class="muted">${escapeHtml(board.leaders.stats_note || "Published scorebook lines. Filter by team. Qualifying line is 8 AB / 5 IP.")}</p>
+      <p><a class="btn ghost" href="/popup/stats.html">Open the original stats page</a></p>
+    </section>
+    <section class="card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" type="button" data-stats-tab="hit">Hitting</button>
+        <button class="tab" type="button" data-stats-tab="pit">Pitching</button>
+      </div>
+      <div class="chips" id="stats-chips">
+        <button class="chip on" type="button" data-team="">All teams</button>
+        ${teams.map((t) => `<button class="chip" type="button" data-team="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("")}
+      </div>
+      <label class="check stats-opt"><input type="checkbox" id="stats-qual" checked> Qualifiers only</label>
+      <div id="stats-table"></div>
+    </section>
+  `);
+  const state = { tab: "hit", team: "", qual: true };
+  const paint = () => {
+    const rows = (state.tab === "hit" ? hitting : pitching).filter((r) => {
+      if (state.team && r.team !== state.team) return false;
+      if (state.qual && r.q === false) return false;
+      return true;
+    });
+    const box = document.getElementById("stats-table");
+    if (state.tab === "hit") {
+      box.innerHTML = table(["#", "Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+        <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${escapeHtml(r.team)}</td>
+        <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
+        <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
+      </tr>`));
+    } else {
+      box.innerHTML = table(["#", "Player", "Team", "IP", "K", "ERA", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+        <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${escapeHtml(r.team)}</td>
+        <td>${r.ip}</td><td>${r.k}</td><td>${r.era}</td>
+        <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
+      </tr>`));
+    }
+  };
+  eventRoot().querySelectorAll("[data-stats-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.tab = btn.dataset.statsTab;
+      eventRoot().querySelectorAll("[data-stats-tab]").forEach((b) => b.classList.toggle("active", b === btn));
+      paint();
+    });
+  });
+  eventRoot().querySelectorAll("#stats-chips [data-team]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.team = btn.dataset.team;
+      eventRoot().querySelectorAll("#stats-chips [data-team]").forEach((b) => b.classList.toggle("on", b === btn));
+      paint();
+    });
+  });
+  document.getElementById("stats-qual").addEventListener("change", (ev) => {
+    state.qual = ev.target.checked;
+    paint();
+  });
+  paint();
+}
+
 export async function eventInfo(slug) {
   const board = await fetchBoard(slug);
   const packet = board.packet || board.event.packet;
   const info = packet?.info || {};
   const raffle = packet?.raffle;
+  const local = board.event.slug === "keystone-clash-2026";
+  const rulesHref = local ? "/popup/full-rules.html" : info.full_rules;
+  const packetHref = local ? "/popup/coaches-packet.pdf" : info.coaches_packet;
+  const mapHref = local ? "/popup/parking-map.png" : info.parking_map;
   eventRoot().innerHTML = eventChrome(board.event, "info", `
     <section class="hero">
       <h1>Tournament info</h1>
       <p>${escapeHtml(packet?.status || board.event.status_note || "")}</p>
+      ${local ? `<p>
+        <a class="btn ghost" href="/popup/index.html">Popup home</a>
+        <a class="btn ghost" href="/popup/rain-update.html">Rain / Sunday venue</a>
+        <a class="btn ghost" href="/popup/raffle.html">50/50 raffle</a>
+        <a class="btn ghost" href="/popup/draw.html">Draw verification</a>
+      </p>` : ""}
     </section>
+    ${local ? `<section class="card infomap">
+      <h2>Parking</h2>
+      <img src="/popup/parking-map.png" alt="Aerial map of East End Park showing the main lot off Meadow St and the Field 2 lot.">
+      <p class="muted">Both lots are marked in orange. Enter off Meadow St. Overflow parking is on East O’Hara St.</p>
+    </section>` : ""}
     <section class="card facts">
       ${[
         ["Dates", packet?.dates || "September 11–13, 2026"],
@@ -432,16 +515,16 @@ export async function eventInfo(slug) {
         ["Questions", info.questions || board.event.contact],
       ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join("")}
       <p>
-        ${info.full_rules ? `<a href="${escapeHtml(info.full_rules)}" target="_blank" rel="noopener">Full rules</a>` : ""}
-        ${info.coaches_packet ? ` · <a href="${escapeHtml(info.coaches_packet)}" target="_blank" rel="noopener">Coaches packet (PDF)</a>` : ""}
-        ${info.parking_map ? ` · <a href="${escapeHtml(info.parking_map)}" target="_blank" rel="noopener">Parking map</a>` : ""}
+        ${rulesHref ? `<a href="${escapeHtml(rulesHref)}">Full rules</a>` : ""}
+        ${packetHref ? ` · <a href="${escapeHtml(packetHref)}">Coaches packet (PDF)</a>` : ""}
+        ${mapHref ? ` · <a href="${escapeHtml(mapHref)}">Parking map</a>` : ""}
       </p>
     </section>
     ${raffle ? `<section class="card raffle-card">
       <h2>50/50 raffle</h2>
       <p>Winner takes half. The other half goes back to Lady Dukes Softball Club.</p>
       <p class="pot">${Number(raffle.raised) > 0 ? `$${Number(raffle.raised).toFixed(0)} in the pot` : "Tickets on sale"}</p>
-      ${info.raffle_buy ? `<p><a class="btn" href="${escapeHtml(info.raffle_buy)}" target="_blank" rel="noopener">Buy raffle tickets</a></p>` : ""}
+      <p>${local ? `<a class="btn ghost" href="/popup/raffle.html">Raffle page</a> ` : ""}${info.raffle_buy ? `<a class="btn" href="${escapeHtml(info.raffle_buy)}" target="_blank" rel="noopener">Buy raffle tickets</a>` : ""}</p>
     </section>` : ""}
   `);
 }

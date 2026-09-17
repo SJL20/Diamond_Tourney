@@ -4,32 +4,32 @@ Wholly hosted tournament site: start an event natively or by linking a Tourney M
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md`.
 
-## Run locally
+## Run locally (full server)
 
 ```bash
 bash scripts/install-pocketbase.sh
-bash scripts/start-pocketbase.sh
+bash scripts/local-server.sh
 ```
 
-Cloud Agents use `.cursor/environment.json`: `install` fetches the binary, `start` runs `scripts/ensure-pocketbase.sh` (ready, then exit), `terminals` only follow the log. Port **8097** is declared for Preview. Do not put `exec pocketbase` in `start`.
-
-Open http://127.0.0.1:8097
-
-Keystone Clash 2026 is imported from the public popup at https://thedr21.github.io/KeystoneClash/ (`testdata/keystone/data.json` and `stats.json`). Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger.
-
-**Local HTML copy (no server):** open `testdata/keystone/keystone-clash-local.html` in a browser, or http://127.0.0.1:8097/keystone-clash.html while PocketBase is running. Data is inlined, so `file://` works.
+That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy, then prints the Keystone Clash URLs. Do not kill a healthy listener just to “restart Preview.”
 
 | Page | What it is |
 |---|---|
-| `/` | Log in, create an account, or find a tournament. Logged-in users land on their account. |
-| `/account` | Tournaments you run and tournaments you joined |
-| `/start` | Create a tournament (native or Tourney Machine) after login |
-| `/find` | Search public weekends and join with GameChanger |
+| `/t/keystone-clash-2026` | Hosted Keystone Clash board — teams, GC links, pool records, Sunday bracket |
+| `/t/keystone-clash-2026/stats` | Full published hitting/pitching board, filter by team |
+| `/t/keystone-clash-2026/info` | Parking map, rules, raffle, rain-venue links |
+| `/popup/index.html` | Local copy of the original popup (standings, teams, bracket, raffle) |
+| `/popup/stats.html` | Original sortable stats board |
+| `/popup/full-rules.html` | Full USA Softball weekend rules |
+| `/popup/rain-update.html` | Sunday move to No Offseason |
+| `/` | Log in, create an account, or find a tournament |
+| `/find` | Search public weekends — Keystone Clash is featured |
 | `/year/2026` | Series leaderboard — same club across weekends |
-| `/admin/teams` | Site admin team profiles (region admin). GameChanger optional. |
-| `/t/{slug}/signup` | Director or team signs up — GameChanger URL required |
+| `/start` | Create a tournament (native, Tourney Machine, or re-import the popup) |
+| `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
-| `/t/keystone-clash-2026` | Keystone Clash 2026 — teams, GameChanger links, pool records, Sunday bracket from the public popup |
+
+Keystone Clash 2026 is imported from the public popup. Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger. Individual Friday/Saturday pool boxes are not on the popup, so they are not invented here.
 
 | Role | Email | Password |
 |---|---|---|

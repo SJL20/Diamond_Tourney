@@ -100,15 +100,21 @@ function renderFindResults(events) {
     box.innerHTML = `<div class="card empty">No public tournaments match. Create one after you log in.</div>`;
     return;
   }
-  box.innerHTML = `<section class="grid cards">${events.map((ev) => `
+  const featured = events.find((ev) => ev.slug === "keystone-clash-2026");
+  const rest = events.filter((ev) => ev.slug !== "keystone-clash-2026");
+  const card = (ev) => `
     <article class="card">
       <h3>${escapeHtml(ev.name)}</h3>
       <p class="muted">${escapeHtml(ev.ages || "")} · ${escapeHtml(ev.venue || "")} · ${ev.source === "popup" ? "Keystone Clash popup" : ev.source === "tourneymachine" ? "Tourney Machine" : "Hosted"}</p>
       <p>
         <a class="btn" data-link href="/t/${ev.slug}">Open board</a>
+        ${ev.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
         ${ev.signup_open ? `<a class="btn ghost" data-link href="/t/${ev.slug}/signup">Join with GameChanger</a>` : `<span class="muted">Signup closed</span>`}
       </p>
-    </article>`).join("")}</section>`;
+    </article>`;
+  box.innerHTML = `
+    ${featured ? `<section class="hero"><h2>Featured weekend</h2>${card(featured)}</section>` : ""}
+    <section class="grid cards">${(featured ? rest : events).map(card).join("")}</section>`;
 }
 
 async function runFind(q) {

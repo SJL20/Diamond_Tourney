@@ -172,6 +172,22 @@ label.check input { width: auto; }
 .facts dd { margin: 0; line-height: 1.45; }
 .raffle-card .pot { font-family: "Oswald", sans-serif; font-size: 2rem; margin: 8px 0; }
 .bk-match.tie .bk-team { color: var(--muted); }
+.infomap img { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--line); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--muted);
+}
+.chip.on { background: var(--dirt); color: #fff; border-color: var(--dirt); }
+.stats-opt { margin: 8px 0 12px; }
+.muted-row { color: var(--muted); }
 input, select, textarea {
   width: 100%;
   padding: 10px 12px;

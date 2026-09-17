@@ -2,7 +2,7 @@ import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.
 import {
   directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
   eventBracket, eventHome, eventInfo, eventLeaders, eventList, eventPools, eventSchedule,
-  eventSignup, startTournament,
+  eventSignup, eventStats, startTournament,
 } from "./event.js";
 import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
 
@@ -27,6 +27,7 @@ const ROUTES = [
   [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
   [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
   [/^\/t\/([^/]+)\/leaders\/?$/, "eleaders"],
+  [/^\/t\/([^/]+)\/stats\/?$/, "estats"],
   [/^\/t\/([^/]+)\/awards\/?$/, "eawards"],
   [/^\/t\/([^/]+)\/signup\/?$/, "esignup"],
   [/^\/t\/([^/]+)\/info\/?$/, "einfo"],
@@ -403,6 +404,7 @@ async function render() {
     if (name === "ebracket") return eventBracket(params[0]);
     if (name === "eschedule") return eventSchedule(params[0]);
     if (name === "eleaders") return eventLeaders(params[0]);
+    if (name === "estats") return eventStats(params[0]);
     if (name === "eawards") return eventAwards(params[0]);
     if (name === "esignup") return eventSignup(params[0]);
     if (name === "einfo") return eventInfo(params[0]);

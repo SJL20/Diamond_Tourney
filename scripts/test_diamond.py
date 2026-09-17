@@ -246,6 +246,24 @@ class AccountAndYearTests(unittest.TestCase):
         top = next(t for t in year["teams"] if t["name"] == "Pittsburgh Passion")
         self.assertEqual(top["w"], 5)
 
+    def test_local_popup_server_pages(self):
+        import urllib.request
+        for path in (
+            "/popup/index.html",
+            "/popup/data.json",
+            "/popup/stats.html",
+            "/popup/stats.json",
+            "/popup/full-rules.html",
+            "/popup/rain-update.html",
+            "/popup/raffle.html",
+            "/t/keystone-clash-2026",
+            "/t/keystone-clash-2026/stats",
+        ):
+            with urllib.request.urlopen(BASE + path, timeout=10) as resp:
+                self.assertEqual(resp.status, 200, path)
+                body = resp.read()
+                self.assertGreater(len(body), 200, path)
+
     def test_popup_import_rejects_other_sites(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
         with self.assertRaises(RuntimeError) as bad:
