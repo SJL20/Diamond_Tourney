@@ -1,6 +1,7 @@
 {
+  "name": "Diamond Tourney",
   "install": "bash scripts/install-pocketbase.sh",
-  "start": "bash scripts/start-pocketbase.sh",
+  "start": "bash scripts/ensure-pocketbase.sh",
   "ports": [
     {
       "name": "Diamond Tourney",
@@ -10,7 +11,8 @@
   "terminals": [
     {
       "name": "pocketbase",
-      "command": "bash scripts/start-pocketbase.sh"
+      "command": "bash scripts/ensure-pocketbase.sh --attach",
+      "description": "PocketBase logs. Public board http://127.0.0.1:8097 — start already made it healthy."
     }
   ]
 }

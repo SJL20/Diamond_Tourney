@@ -11,6 +11,8 @@ bash scripts/install-pocketbase.sh
 bash scripts/start-pocketbase.sh
 ```
 
+Cloud Agents use `.cursor/environment.json`: `install` fetches the binary, `start` runs `scripts/ensure-pocketbase.sh` (ready, then exit), `terminals` only follow the log. Port **8097** is declared for Preview. Do not put `exec pocketbase` in `start`.
+
 Open http://127.0.0.1:8097
 
 | Page | What it is |
