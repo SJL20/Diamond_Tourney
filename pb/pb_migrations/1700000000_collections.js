@@ -65,7 +65,6 @@ migrate((app) => {
       { name: "body", type: "editor" },
       { name: "published_at", type: "date" },
       { name: "public", type: "bool" },
-      { name: "team", type: "relation", collectionId: "", maxSelect: 1 },
     ],
   });
   app.save(posts);
@@ -112,8 +111,11 @@ migrate((app) => {
   app.save(teams);
 
   const postsFresh = app.findCollectionByNameOrId("posts");
-  const teamField = postsFresh.fields.getByName("team");
-  teamField.collectionId = teams.id;
+  postsFresh.fields.add(new RelationField({
+    name: "team",
+    collectionId: teams.id,
+    maxSelect: 1,
+  }));
   app.save(postsFresh);
 
   const users = app.findCollectionByNameOrId("users");
@@ -180,7 +182,6 @@ migrate((app) => {
       { name: "status", type: "select", maxSelect: 1, values: ["staged", "approved", "rejected"] },
       { name: "source_ref", type: "text" },
       { name: "dedup_key", type: "text" },
-      { name: "staging", type: "relation", collectionId: "", maxSelect: 1 },
     ],
     indexes: ["CREATE UNIQUE INDEX idx_team_games_dedup ON team_games (dedup_key)"],
   });
@@ -251,8 +252,11 @@ migrate((app) => {
   app.save(stagingGames);
 
   const tg = app.findCollectionByNameOrId("team_games");
-  const stagingRel = tg.fields.getByName("staging");
-  stagingRel.collectionId = stagingGames.id;
+  tg.fields.add(new RelationField({
+    name: "staging",
+    collectionId: stagingGames.id,
+    maxSelect: 1,
+  }));
   app.save(tg);
 
   const events = new Collection({

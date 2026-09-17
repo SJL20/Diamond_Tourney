@@ -353,7 +353,7 @@ async function review(slug) {
     sort: "-created",
   });
   const cards = items.map((s) => {
-    const payload = s.payload || {};
+    const payload = typeof s.payload === "string" ? JSON.parse(s.payload || "{}") : (s.payload || {});
     return `<article class="card" data-staging="${s.id}">
       <h3>${escapeHtml(payload.opponent || "Unknown opponent")} · ${escapeHtml(payload.date || "no date")}</h3>
       <p><span class="badge ${s.status}">${s.status}</span> ${payload.us_runs ?? "?"}–${payload.them_runs ?? "?"}</p>

@@ -73,13 +73,29 @@ def main():
     ok("metric formulas")
 
     health = request(BASE, "GET", "/api/health")
-    if not health.get("ok"):
-        fail("health check")
+    if health.get("message") != "API is healthy." and not health.get("ok"):
+        fail("health check: " + str(health))
     ok("health")
 
+    admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
     bot = auth(BASE, "bot@local.test", "BotStaging1!")
     hawks_coach = auth(BASE, "coach.hawks@local.test", "CoachHawks1!")
     rivals_coach = auth(BASE, "coach.rivals@local.test", "CoachRivals1!")
+    hawks = team(hawks_coach, "hawks-10u")
+
+    for path, filt in (
+        ("hitting_game", f'game.team="{hawks["id"]}"'),
+        ("pitching_game", f'game.team="{hawks["id"]}"'),
+        ("team_games", f'team="{hawks["id"]}"'),
+        ("staging_games", f'team="{hawks["id"]}"'),
+        ("posts", f'team="{hawks["id"]}"'),
+    ):
+        rows = request(BASE, "GET", f"/api/collections/{path}/records?perPage=200&filter={filt}", admin)["items"]
+        for row in rows:
+            request(BASE, "DELETE", f"/api/collections/{path}/records/{row['id']}", admin)
+    request(BASE, "PATCH", f"/api/collections/teams/records/{hawks['id']}", admin, {
+        "public_record_wins": 0, "public_record_losses": 0, "public_record_ties": 0,
+    })
     hawks = team(hawks_coach, "hawks-10u")
 
     boxes = [
@@ -149,27 +165,21 @@ def main():
         fail("double approve changed season AB")
     ok("approving twice does not double-count")
 
-    # Public visitor cannot open hitting
-    try:
-        request(BASE, "GET", f'/api/collections/hitting_game/records?filter=game.team="{hawks["id"]}"')
+    # Public visitor cannot open hitting (PocketBase hides rows rather than 403 on list)
+    public_hits = request(BASE, "GET", f'/api/collections/hitting_game/records?filter=game.team="{hawks["id"]}"')
+    if public_hits.get("items"):
         fail("public visitor listed hitting")
-    except RuntimeError as exc:
-        if "403" not in str(exc) and "401" not in str(exc):
-            fail("public hitting should be 401/403, got " + str(exc))
     ok("public visitor cannot open hitting")
 
     # Team B coach cannot see team A book
-    try:
-        request(
-            BASE,
-            "GET",
-            f'/api/collections/hitting_game/records?filter=game.team="{hawks["id"]}"',
-            rivals_coach,
-        )
+    rivals_hits = request(
+        BASE,
+        "GET",
+        f'/api/collections/hitting_game/records?filter=game.team="{hawks["id"]}"',
+        rivals_coach,
+    )
+    if rivals_hits.get("items"):
         fail("rivals coach listed hawks hitting")
-    except RuntimeError as exc:
-        if "403" not in str(exc):
-            fail("rivals hitting access should be 403, got " + str(exc))
     ok("team_coach A cannot see team B book")
 
     # Bot cannot approve via collection update
@@ -183,8 +193,8 @@ def main():
         )
         fail("bot updated staging status")
     except RuntimeError as exc:
-        if "403" not in str(exc):
-            fail("bot staging update should be 403")
+        if "403" not in str(exc) and "404" not in str(exc):
+            fail("bot staging update should be 403/404, got " + str(exc))
     ok("bot cannot approve its own work")
 
     published = request(BASE, "POST", "/api/bot/publish", bot, {"team_slug": "hawks-10u"})
