@@ -15,6 +15,17 @@ That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy
 
 Every page has a **site bar** (Find, Year, Account, Create). Tournament pages add a second **tournament bar** under it (Home, Games, Bracket, Stats, Info, Sign up, Admin). Season books use the same split: site bar, then team-book links. The two bars do not mix.
 
+## How to create the schedule
+
+1. **Log in** as a director (`td@local.test` / `EventTd1!` locally) and open **Create → Run it here**.
+2. Name the weekend, then fill **Venue, address, and fields**. Each diamond needs a name. Add a street address and/or GPS so the public board can link a map. A field without its own pin inherits the park.
+3. Pick a **bracket type**: pool then single-elim, pool only, single-elim, or double-elim.
+4. Open signup. Put teams in the same pool letter (`A`, `B`) so pool play can pair them.
+5. On **Admin**, save fields if you added more, then **Build pool schedule**. That fills round-robin games per field without double-booking a team or a diamond. **Draw bracket from standings** (or auto-schedule does it when the format is not pool-only).
+6. **Rain desk** posts a public banner and can delay times, move a day, postpone games, or close a wet field and reassign.
+
+Games on the public **Games** tab are grouped by field. A delay keeps the original first-pitch time on the row.
+
 | Page | What it is |
 |---|---|
 | `/t/{slug}` | Tournament home — site bar on top, tournament bar under it |
@@ -28,7 +39,8 @@ Every page has a **site bar** (Find, Year, Account, Create). Tournament pages ad
 | `/` | Log in, create an account, or find a tournament |
 | `/find` | Search public weekends — Keystone Clash is featured |
 | `/year/2026` | Series leaderboard — same club across weekends |
-| `/start` | Create a tournament — governing body, IP/pitch cap, rules file, required team packet |
+| `/start` | Create a tournament — fields + GPS/address, bracket type, guidelines, team packet |
+| `/t/{slug}/admin` | Director desk — fields, auto-schedule per diamond, rain delay/move/postpone, packets |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
 

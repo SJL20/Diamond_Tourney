@@ -136,6 +136,19 @@ function importSchedule(app, event, csv) {
     if (row.away_runs !== "" && row.away_runs != null) rec.set("away_runs", Number(row.away_runs));
     rec.set("status", row.status || (row.home_runs !== "" && row.home_runs != null ? "final" : "scheduled"));
     if (row.notes) rec.set("notes", row.notes);
+    if (row.pool) rec.set("pool", row.pool);
+    if (row.field || row.field_name) {
+      try {
+        const schedule = require(__hooks + "/schedule.js");
+        const field = schedule.resolveField(app, event, { field: row.field || row.field_name });
+        if (field) {
+          rec.set("field", field.id);
+          rec.set("field_name", field.get("name"));
+        }
+      } catch (err) {
+        rec.set("field_name", row.field || row.field_name);
+      }
+    }
     app.save(rec);
     created.push(rec.id);
   }
@@ -261,29 +274,19 @@ function eventLeaders(app, eventId) {
 
 function publicBoard(app, event) {
   const eventId = event.id;
-  const schedule = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 200, 0, { e: eventId });
   const bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 40, 0, { e: eventId });
   function teamName(id) {
     if (!id) return "";
     try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
   }
   const host = require(__hooks + "/host.js");
+  const scheduleMod = require(__hooks + "/schedule.js");
   const packet = host.parsePacket(event.get("packet"));
   return {
     event: host.eventJson(event, app),
+    fields: scheduleMod.eventFields(app, eventId),
     standings: poolStandings(app, eventId),
-    schedule: schedule.map(function (g) {
-      return {
-        id: g.id,
-        date: g.get("date"),
-        time: g.get("time"),
-        home: teamName(g.get("home")),
-        away: teamName(g.get("away")),
-        home_runs: g.get("home_runs"),
-        away_runs: g.get("away_runs"),
-        status: g.get("status"),
-      };
-    }),
+    schedule: scheduleMod.listSchedule(app, eventId),
     bracket: bracket.map(function (g) {
       const round = g.get("round");
       const hr = Number(g.get("home_runs") || 0);

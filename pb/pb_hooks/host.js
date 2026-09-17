@@ -189,14 +189,53 @@ function applyGuidelines(rec, body) {
   if (body.require_coach_cert != null) rec.set("require_coach_cert", truthy(body.require_coach_cert));
 }
 
+function dateStr(v) {
+  if (!v) return "";
+  const s = String(v);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function eventMapUrl(rec) {
+  const lat = rec.get("lat");
+  const lng = rec.get("lng");
+  const address = rec.get("address") || rec.get("venue") || "";
+  if (lat && lng) return "https://maps.google.com/?q=" + lat + "," + lng;
+  if (address) return "https://maps.google.com/?q=" + encodeURIComponent(address);
+  return "";
+}
+
+const FORMAT_LABELS = {
+  "pool-to-bracket": "Pool play, then single-elim bracket",
+  "pool-only": "Pool play only",
+  "single-elim": "Single elimination",
+  "double-elim": "Double elimination",
+  imported: "Imported / already drawn",
+};
+
 function eventJson(rec, app) {
   const packet = parsePacket(rec.get("packet"));
   const mode = rec.get("pitch_limit_mode") || "ip";
+  const format = rec.get("format") || "";
+  let fields = [];
+  if (app) {
+    try { fields = require(__hooks + "/schedule.js").eventFields(app, rec.id); } catch (err) {}
+  }
   return {
     id: rec.id,
     name: rec.get("name"),
     slug: rec.get("slug"),
     venue: rec.get("venue") || "",
+    address: rec.get("address") || "",
+    lat: rec.get("lat") || 0,
+    lng: rec.get("lng") || 0,
+    map_url: eventMapUrl(rec),
+    rain_status: rec.get("rain_status") || "clear",
+    rain_note: rec.get("rain_note") || "",
+    format: format,
+    format_label: FORMAT_LABELS[format] || format,
+    start: dateStr(rec.get("start")),
+    end: dateStr(rec.get("end")),
+    fields: fields,
     ages: rec.get("ages") || "",
     status: rec.get("status") || "",
     source: rec.get("source") || "native",
@@ -372,7 +411,10 @@ function createEvent(app, body, auth) {
   rec.set("auto_sync", true);
   rec.set("pitch_limit_ip", Number(body.pitch_limit_ip || 6));
   rec.set("pitch_limit_mode", body.pitch_limit_mode || "ip");
+  rec.set("rain_status", body.rain_status || "clear");
   applyGuidelines(rec, body);
+  const schedule = require(__hooks + "/schedule.js");
+  schedule.applyLocation(rec, body);
   if (body.start) rec.set("start", body.start);
   if (body.end) rec.set("end", body.end);
   if (source === "tourneymachine") {
@@ -381,6 +423,7 @@ function createEvent(app, body, auth) {
   }
   if (auth) rec.set("created_by", auth.id);
   app.save(rec);
+  schedule.saveEventFields(app, rec, body);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
   return { event: eventJson(rec, app), note: tm.note || "Tournament is live. Teams can join with or without GameChanger." };
 }
@@ -645,8 +688,13 @@ function applySettings(app, event, body) {
   if (body.auto_sync != null) event.set("auto_sync", !!body.auto_sync);
   if (body.venue != null) event.set("venue", body.venue);
   if (body.ages != null) event.set("ages", body.ages);
+  if (body.start) event.set("start", body.start);
+  if (body.end) event.set("end", body.end);
   applyGuidelines(event, body);
+  const schedule = require(__hooks + "/schedule.js");
+  schedule.applyLocation(event, body);
   app.save(event);
+  schedule.saveEventFields(app, event, body);
   return eventJson(event, app);
 }
 

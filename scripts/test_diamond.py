@@ -350,5 +350,105 @@ class AccountAndYearTests(unittest.TestCase):
         self.assertEqual(saved["club"]["notes"], "No GameChanger. Scorebook only.")
 
 
+class ScheduleTests(unittest.TestCase):
+    def test_create_fields_auto_schedule_and_rain(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "field-classic-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Field Classic",
+            "slug": slug,
+            "venue": "Harbor Complex",
+            "address": "100 Harbor Rd, Pittsburgh, PA",
+            "lat": 40.44,
+            "lng": -80.0,
+            "format": "pool-to-bracket",
+            "start": "2026-09-19",
+            "end": "2026-09-20",
+            "game_length_minutes": 75,
+            "fields": [
+                {"name": "Harbor 1", "address": "100 Harbor Rd, Pittsburgh, PA", "lat": 40.4401, "lng": -80.0001},
+                {"name": "Harbor 2", "address": "100 Harbor Rd, Pittsburgh, PA", "lat": 40.4402, "lng": -80.0002},
+            ],
+        })
+        self.assertEqual(created["event"]["address"], "100 Harbor Rd, Pittsburgh, PA")
+        self.assertEqual(created["event"]["format"], "pool-to-bracket")
+        self.assertAlmostEqual(float(created["event"]["lat"]), 40.44, places=2)
+        names = [f["name"] for f in created["event"]["fields"]]
+        self.assertIn("Harbor 1", names)
+        self.assertIn("Harbor 2", names)
+        self.assertTrue(any(f.get("map_url") for f in created["event"]["fields"]))
+        slug = created["event"]["slug"]
+
+        for name, pool in (("Harbor Hawks", "A"), ("Harbor Heat", "A"), ("River Cats", "B"), ("River Fox", "B")):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": pool,
+                "as_director": True,
+            })
+
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "start_time": "08:00",
+            "end_time": "18:00",
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        self.assertGreaterEqual(auto["games"], 2)
+        self.assertEqual(set(auto["fields"]), {"Harbor 1", "Harbor 2"})
+        seen_slots = set()
+        team_slots = set()
+        for game in auto["schedule"]:
+            if game["status"] in ("postponed", "rained_out"):
+                continue
+            slot = (game["date"], game["time"], game["field"])
+            self.assertNotIn(slot, seen_slots, f"double-booked field {slot}")
+            seen_slots.add(slot)
+            for team in (game["home"], game["away"]):
+                key = (game["date"], game["time"], team)
+                self.assertNotIn(key, team_slots, f"team double-booked {key}")
+                team_slots.add(key)
+            self.assertIn(game["field"], ("Harbor 1", "Harbor 2"))
+
+        rain = request(BASE, "POST", f"/api/events/{slug}/rain", td, {
+            "rain_status": "delay",
+            "rain_note": "Lightning. First pitch 09:00.",
+            "delay_minutes": 60,
+            "date": "2026-09-19",
+            "after_time": "08:00",
+        })
+        self.assertEqual(rain["event"]["rain_status"], "delay")
+        self.assertGreaterEqual(rain["shifted"], 1)
+        delayed = next(g for g in rain["schedule"] if g["delayed_from"])
+        self.assertEqual(delayed["delayed_from"], "08:00")
+        self.assertEqual(delayed["time"], "09:00")
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(board["event"]["rain_status"], "delay")
+        self.assertIn("Lightning", board["event"]["rain_note"])
+        self.assertTrue(any(g.get("field") for g in board["schedule"]))
+        self.assertGreaterEqual(len(board["fields"]), 2)
+        self.assertTrue(any(g["round"] == "F" for g in board["bracket"]))
+
+        moved = request(BASE, "POST", f"/api/events/{slug}/rain", td, {
+            "rain_status": "moved",
+            "rain_note": "Sunday at the indoor.",
+            "move_from": "2026-09-19",
+            "move_to": "2026-09-20",
+        })
+        self.assertGreaterEqual(moved["moved"], 1)
+        self.assertTrue(all(g["date"] == "2026-09-20" for g in moved["schedule"] if g["status"] != "final"))
+
+    def test_keystone_fields_and_rain_note(self):
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        self.assertEqual(board["event"]["address"], "51 Meadow St, McDonald, PA 15057")
+        self.assertEqual(board["event"]["rain_status"], "moved")
+        self.assertIn("No Offseason", board["event"]["rain_note"])
+        names = [f["name"] for f in board["fields"]]
+        self.assertIn("East End 1", names)
+        self.assertIn("No Offseason", names)
+
+
 if __name__ == "__main__":
     unittest.main()

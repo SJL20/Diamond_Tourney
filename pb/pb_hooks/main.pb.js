@@ -280,6 +280,70 @@ routerAdd("GET", "/api/event/{slug}/board", (e) => {
   return e.json(200, diamond.publicBoard(e.app, event));
 });
 
+routerAdd("GET", "/api/events/{slug}/plan", (e) => {
+  const schedule = require(__hooks + "/schedule.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
+  return e.json(200, schedule.plan(e.app, event));
+});
+
+routerAdd("POST", "/api/events/{slug}/fields", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const body = e.requestInfo().body || {};
+  const saved = body.name
+    ? [schedule.saveField(e.app, event, body)]
+    : schedule.saveEventFields(e.app, event, body);
+  return e.json(200, { fields: saved.length ? saved : schedule.eventFields(e.app, event.id) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/schedule/auto", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, schedule.autoSchedule(e.app, event, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/schedule/game", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, { game: schedule.addGame(e.app, event, e.requestInfo().body || {}) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/schedule/{id}", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, { game: schedule.updateGame(e.app, event, e.request.pathValue("id"), e.requestInfo().body || {}) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/rain", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, schedule.rainUpdate(e.app, event, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const body = e.requestInfo().body || {};
+  if (body.format) {
+    event.set("format", body.format);
+    e.app.save(event);
+  }
+  return e.json(200, schedule.buildBracket(e.app, event, body));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/import-popup", (e) => {
   const sb = require(__hooks + "/softball.js");
   const keystone = require(__hooks + "/keystone.js");
