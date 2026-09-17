@@ -388,7 +388,7 @@ async function review(slug) {
   if (!team) return;
   const items = await pb.collection("staging_games").getFullList({
     filter: `team="${team.id}"`,
-    sort: "-created",
+    sort: "-id",
   });
   const cards = items.map((s) => {
     const payload = typeof s.payload === "string" ? JSON.parse(s.payload || "{}") : (s.payload || {});
@@ -481,5 +481,7 @@ document.addEventListener("click", (e) => {
     go("/");
   }
 });
-window.addEventListener("popstate", render);
-render();
+window.addEventListener("popstate", () => { render().catch((err) => console.error(err)); });
+render().catch((err) => {
+  app.innerHTML = chrome(null, "", `<section class="card error"><p>Could not load this page.</p><pre>${escapeHtml(String(err?.message || err))}</pre></section>`);
+});

@@ -197,6 +197,16 @@ def main():
             fail("bot staging update should be 403/404, got " + str(exc))
     ok("bot cannot approve its own work")
 
+    queued = request(
+        BASE,
+        "GET",
+        f'/api/collections/staging_games/records?filter=team="{hawks["id"]}"&sort=-id',
+        hawks_coach,
+    )
+    if queued.get("items") is None:
+        fail("coach could not list staging queue")
+    ok("coach can open the review queue")
+
     published = request(BASE, "POST", "/api/bot/publish", bot, {"team_slug": "hawks-10u"})
     if published["record"]["wins"] != 2 or published["record"]["losses"] != 0:
         fail(f"expected 2-0 after two wins, got {published['record']}")
