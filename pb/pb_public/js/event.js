@@ -38,7 +38,43 @@ function dateInput(v) {
   return String(v).slice(0, 10);
 }
 
-function fieldRow(f = {}, i = 0) {
+function datesBetween(start, end) {
+  const out = [];
+  const first = dateInput(start);
+  if (!first) return out;
+  const last = dateInput(end) || first;
+  let cur = first;
+  for (let i = 0; i < 8; i++) {
+    out.push(cur);
+    if (cur >= last) break;
+    const d = new Date(cur + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    cur = d.toISOString().slice(0, 10);
+  }
+  return out;
+}
+
+function fieldAvailDays(f = {}, i = 0, dates = [], globalStart = "08:00", globalEnd = "18:00") {
+  if (!dates.length) {
+    return `<p class="muted">Set first and last day above to unlock per-date hours for this diamond.</p>`;
+  }
+  const byDate = {};
+  for (const row of f.availability || f.windows || []) {
+    if (row?.date) byDate[String(row.date).slice(0, 10)] = row;
+  }
+  return dates.map((d, di) => {
+    const row = byDate[d] || {};
+    const on = row.available !== false;
+    return `<div class="avail-day">
+      <label class="check"><input type="checkbox" name="field_day_${i}_${di}_on" ${on ? "checked" : ""}> ${escapeHtml(d)}</label>
+      <input type="hidden" name="field_day_${i}_${di}_date" value="${escapeHtml(d)}">
+      <label>Open <input type="time" name="field_day_${i}_${di}_start" value="${escapeHtml(row.start || globalStart)}"></label>
+      <label>Close <input type="time" name="field_day_${i}_${di}_end" value="${escapeHtml(row.end || globalEnd)}"></label>
+    </div>`;
+  }).join("");
+}
+
+function fieldRow(f = {}, i = 0, dates = [], globalStart = "08:00", globalEnd = "18:00") {
   return `<fieldset class="field-row">
     <legend>Field ${i + 1}</legend>
     <input type="hidden" name="field_id_${i}" value="${escapeHtml(f.id || "")}">
@@ -52,23 +88,62 @@ function fieldRow(f = {}, i = 0) {
       <label>Longitude <input name="field_lng_${i}" value="${f.lng || ""}" placeholder="-80.2345"></label>
     </div>
     <label class="check"><input type="checkbox" name="field_lights_${i}" ${f.lights ? "checked" : ""}> Lights</label>
+    <p class="muted">This diamond’s hours. Uncheck a day if it is dark or rented out. Times narrower than the global window are allowed; times outside it are not used.</p>
+    <div class="field-avail">${fieldAvailDays(f, i, dates, globalStart, globalEnd)}</div>
   </fieldset>`;
 }
 
-function bindFieldRows(root, startCount) {
+function weekendFromForm(root, ev = {}) {
+  const start = root.querySelector("[name=start]")?.value || dateInput(ev.start);
+  const end = root.querySelector("[name=end]")?.value || dateInput(ev.end);
+  return {
+    dates: datesBetween(start, end),
+    hoursStart: root.querySelector("[name=hours_start]")?.value || ev.hours_start || "08:00",
+    hoursEnd: root.querySelector("[name=hours_end]")?.value || ev.hours_end || "18:00",
+  };
+}
+
+function bindFieldRows(root, startCount, ev = {}) {
   let n = startCount;
   const add = root.querySelector("#add-field");
-  if (!add) return;
-  add.addEventListener("click", () => {
-    const box = root.querySelector("#field-rows");
-    box.insertAdjacentHTML("beforeend", fieldRow({}, n));
-    n += 1;
+  const paintDays = () => {
+    const { dates, hoursStart, hoursEnd } = weekendFromForm(root, ev);
+    root.querySelectorAll(".field-row").forEach((fs) => {
+      const box = fs.querySelector(".field-avail");
+      const idx = [...root.querySelectorAll(".field-row")].indexOf(fs);
+      if (!box) return;
+      const saved = {};
+      box.querySelectorAll("input[type=hidden][name$='_date']").forEach((h) => {
+        const prefix = h.name.replace(/_date$/, "");
+        saved[h.value] = {
+          date: h.value,
+          available: !!fs.querySelector(`[name="${prefix}_on"]`)?.checked,
+          start: fs.querySelector(`[name="${prefix}_start"]`)?.value,
+          end: fs.querySelector(`[name="${prefix}_end"]`)?.value,
+        };
+      });
+      box.innerHTML = fieldAvailDays({ availability: Object.values(saved) }, idx, dates, hoursStart, hoursEnd);
+    });
+  };
+  if (add) {
+    add.addEventListener("click", () => {
+      const box = root.querySelector("#field-rows");
+      const { dates, hoursStart, hoursEnd } = weekendFromForm(root, ev);
+      box.insertAdjacentHTML("beforeend", fieldRow({}, n, dates, hoursStart, hoursEnd));
+      n += 1;
+    });
+  }
+  ["start", "end", "hours_start", "hours_end"].forEach((name) => {
+    root.querySelector(`[name=${name}]`)?.addEventListener("change", paintDays);
   });
 }
 
 function setupLocationFields(ev = {}, fields = []) {
   const rows = fields.length ? fields : [{}, {}];
   const fmt = ev.format || "pool-to-bracket";
+  const hoursStart = ev.hours_start || "08:00";
+  const hoursEnd = ev.hours_end || "18:00";
+  const dates = datesBetween(ev.start, ev.end);
   return `
     <details class="setup-block" open>
       <summary>Venue, address, and fields</summary>
@@ -82,8 +157,15 @@ function setupLocationFields(ev = {}, fields = []) {
         <label>First day <input name="start" type="date" value="${dateInput(ev.start)}"></label>
         <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
       </div>
+      <div class="hours-global">
+        <p class="muted">Global availability. Every diamond inherits this window unless you narrow a day below. A field that is closed Saturday will not get Saturday games.</p>
+        <div class="form-grid two">
+          <label>First pitch <input name="hours_start" type="time" value="${escapeHtml(hoursStart)}"></label>
+          <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
+        </div>
+      </div>
       <p class="muted">Use GPS or a street address. Each diamond can have its own pin; blank fields inherit the park.</p>
-      <div id="field-rows">${rows.map((f, i) => fieldRow(f, i)).join("")}</div>
+      <div id="field-rows">${rows.map((f, i) => fieldRow(f, i, dates, hoursStart, hoursEnd)).join("")}</div>
       <button class="btn ghost" type="button" id="add-field">Add another field</button>
     </details>
     <details class="setup-block" open>
@@ -128,11 +210,17 @@ function fieldsBlock(ev, fields) {
       ["Park", ev.venue],
       ["Address", ev.address],
     ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}${ev.map_url && k === "Address" ? ` · <a href="${escapeHtml(ev.map_url)}" target="_blank" rel="noopener">Map</a>` : ""}</dd></div>`).join("")}
-    ${list.length ? `<ul class="field-list">${list.map((f) => `<li>
+    ${ev.hours_start || ev.hours_end ? `<div><dt>Global hours</dt><dd>${escapeHtml(ev.hours_start || "08:00")}–${escapeHtml(ev.hours_end || "18:00")}</dd></div>` : ""}
+    ${list.length ? `<ul class="field-list">${list.map((f) => {
+      const hours = (f.windows || []).map((w) =>
+        w.available === false ? `${w.date} closed` : (w.inherited ? "" : `${w.date} ${w.start}–${w.end}`)
+      ).filter(Boolean).join(" · ");
+      return `<li>
       <b>${escapeHtml(f.name)}</b>
-      <span class="muted">${escapeHtml([f.surface, f.lights ? "lights" : "", f.status !== "open" ? f.status : ""].filter(Boolean).join(" · "))}</span>
+      <span class="muted">${escapeHtml([f.surface, f.lights ? "lights" : "", f.status !== "open" ? f.status : "", hours].filter(Boolean).join(" · "))}</span>
       ${f.map_url ? `<a href="${escapeHtml(f.map_url)}" target="_blank" rel="noopener">Map</a>` : ""}
-    </li>`).join("")}</ul>` : ""}
+    </li>`;
+    }).join("")}</ul>` : ""}
   </section>`;
 }
 
@@ -308,41 +396,162 @@ function teamOptions(roster, selected) {
     `<option value="${escapeHtml(t.id)}" ${t.id === selected ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}`;
 }
 
-function matchCard(g, roster = []) {
+function optionList(values, selected) {
+  const list = [...values];
+  if (selected && !list.includes(selected)) list.unshift(selected);
+  return list.map((v) =>
+    `<option value="${escapeHtml(v)}" ${v === selected ? "selected" : ""}>${escapeHtml(v)}</option>`).join("");
+}
+
+function clockMinutes(raw) {
+  const s = String(raw || "").trim();
+  const ampm = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampm) {
+    let h = Number(ampm[1]);
+    const ap = ampm[3].toUpperCase();
+    if (ap === "PM" && h < 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h * 60 + Number(ampm[2]);
+  }
+  const hm = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!hm) return 0;
+  return Number(hm[1]) * 60 + Number(hm[2]);
+}
+
+function addClock(hhmm, mins) {
+  const total = ((clockMinutes(hhmm) + Number(mins || 0)) % 1440 + 1440) % 1440;
+  const h = String(Math.floor(total / 60)).padStart(2, "0");
+  const m = String(total % 60).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+function uniqueStrings(items) {
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    const v = String(item || "").trim();
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+function fieldWindowOn(field, date, ev) {
+  const gs = ev.hours_start || "08:00";
+  const ge = ev.hours_end || "18:00";
+  const win = (field.windows || []).find((w) => w.date === date);
+  if (win) return win;
+  const hit = (field.availability || []).find((w) => w.date === date);
+  if (hit) return { date, available: hit.available !== false, start: hit.start || gs, end: hit.end || ge };
+  return { date, available: true, start: gs, end: ge };
+}
+
+function slotOpen(board, fieldName, date, time) {
+  const ev = board.event || {};
+  const gameMin = Number(ev.game_length_minutes) || 90;
+  const field = (board.fields || []).find((f) => f.name === fieldName);
+  if (!field) return true;
+  const win = fieldWindowOn(field, date, ev);
+  if (!win.available) return false;
+  return clockMinutes(time) >= clockMinutes(win.start || ev.hours_start || "08:00")
+    && clockMinutes(time) + gameMin <= clockMinutes(win.end || ev.hours_end || "18:00");
+}
+
+function buildDeskPlan(board) {
+  const ev = board.event || {};
+  const games = [...(board.schedule || []), ...(board.bracket || [])];
+  const fields = uniqueStrings([
+    ...(board.fields || []).map((f) => f.name),
+    ...games.map((g) => g.field),
+  ]);
+  if (!fields.length) fields.push("Field 1", "Field 2");
+  const times = uniqueStrings(games.map((g) => g.time));
+  const span = (Number(ev.game_length_minutes) || 90) + 15;
+  let t = ev.hours_start || "08:00";
+  for (let i = 0; i < 16; i++) {
+    if (clockMinutes(t) > clockMinutes(ev.hours_end || "20:00")) break;
+    if (!times.includes(t)) times.push(t);
+    t = addClock(t, span);
+  }
+  times.sort((a, b) => clockMinutes(a) - clockMinutes(b));
+  const dates = uniqueStrings([ev.start, ev.end, ...datesBetween(ev.start, ev.end), ...games.map((g) => g.date)]);
+  const booked = new Set();
+  for (const g of games) {
+    if (g.date && g.time && g.field) booked.add(`${g.date}|${g.time}|${g.field}`);
+  }
+  const datePref = ev.end || ev.start || dates[0] || "";
+  const defaults = new Map();
+  for (const g of board.bracket || []) {
+    if (g.field && g.time && g.date) continue;
+    const day = g.date || datePref;
+    let found = null;
+    for (const tryDay of uniqueStrings([day, ...dates])) {
+      for (const time of times) {
+        for (const field of fields) {
+          const key = `${tryDay}|${time}|${field}`;
+          if (booked.has(key)) continue;
+          if (!slotOpen(board, field, tryDay, time)) continue;
+          found = { field, time, date: tryDay };
+          booked.add(key);
+          break;
+        }
+        if (found) break;
+      }
+      if (found) break;
+    }
+    defaults.set(g.id, found || { field: fields[0] || "", time: times[0] || "", date: day });
+  }
+  return { fields, times, dates, defaults, board };
+}
+
+function slotIsSet(g) {
+  return !!(g.field && g.time);
+}
+
+function matchCard(g, roster = [], plan = null) {
   const tie = !!(g.tie || (g.status === "final" && g.home_runs === g.away_runs && g.home && g.away));
   const homeWin = !tie && g.status === "final" && g.winner && g.winner === g.home;
   const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
   const fieldLabel = g.field || "—";
   const timeLabel = g.time || "—";
   const meta = [g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
+  const def = plan?.defaults.get(g.id) || {};
+  const chosenField = g.field || def.field || "";
+  const chosenTime = g.time || def.time || "";
+  const chosenDate = g.date || def.date || "";
+  const set = slotIsSet(g);
   const desk = isDirector() && g.id ? `
-    <form class="bk-desk" data-bk-desk="${escapeHtml(g.id)}">
-      <div class="form-grid two">
+    <details class="bk-desk-box" ${set ? "" : "open"}>
+      <summary>${set ? "Edit slot" : "Set field and time"}</summary>
+      <form class="bk-desk" data-bk-desk="${escapeHtml(g.id)}">
         <label>Field
-          <input name="field" list="bk-fields" value="${escapeHtml(g.field || "")}" placeholder="Harbor 1">
+          <select name="field">${optionList(plan?.fields || [], chosenField)}</select>
         </label>
         <label>Time
-          <input name="time" value="${escapeHtml(g.time || "")}" placeholder="10:00">
+          <select name="time">${optionList(plan?.times || [], chosenTime)}</select>
         </label>
-      </div>
-      <label>Date <input name="date" type="date" value="${escapeHtml(g.date || "")}"></label>
-      <div class="form-grid two">
+        <label>Date
+          ${plan?.dates?.length
+            ? `<select name="date">${optionList(plan.dates, chosenDate)}</select>`
+            : `<input name="date" type="date" value="${escapeHtml(chosenDate)}">`}
+        </label>
         <label>Home <select name="home_id">${teamOptions(roster, g.home_id)}</select></label>
         <label>Away <select name="away_id">${teamOptions(roster, g.away_id)}</select></label>
-      </div>
-      <label>Protest note <input name="protest_note" value="${escapeHtml(g.protest_note || "")}" placeholder="Seed 3 restored after protest"></label>
-      <div class="actions">
-        <button class="btn" type="submit">Save slot</button>
-        <button class="btn ghost" type="button" data-swap>Swap sides</button>
-        ${g.status === "final" ? `<button class="btn ghost" type="button" data-reopen>Reopen</button>` : ""}
-      </div>
-    </form>
+        <label>Protest note <input name="protest_note" value="${escapeHtml(g.protest_note || "")}" placeholder="After protest"></label>
+        <div class="actions">
+          <button class="btn" type="submit">Save slot</button>
+          <button class="btn ghost" type="button" data-swap>Swap sides</button>
+          ${g.status === "final" ? `<button class="btn ghost" type="button" data-reopen>Reopen</button>` : ""}
+        </div>
+      </form>
+    </details>
     ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
       <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
       <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
       <button class="btn ghost" type="submit">Final</button>
     </form>` : ""}` : "";
-  return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""}">
+  return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""} ${set ? "slot-set" : "slot-open"}">
     <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
       <span>${escapeHtml(g.home || "TBD")}</span>
       <b>${g.status === "final" ? g.home_runs : ""}</b>
@@ -360,7 +569,7 @@ function matchCard(g, roster = []) {
   </article>`;
 }
 
-function renderBracketTree(games, title, blurb, showChampion, roster) {
+function renderBracketTree(games, title, blurb, showChampion, roster, plan) {
   if (!games.length) return "";
   const byRound = {};
   for (const g of games) {
@@ -382,7 +591,7 @@ function renderBracketTree(games, title, blurb, showChampion, roster) {
       ${rounds.map((r) => `
         <div class="bk-round">
           <h3>${ROUND_META[r]?.label || r}</h3>
-          <div class="bk-round-games n${byRound[r].length}">${byRound[r].map((g) => matchCard(g, roster)).join("")}</div>
+          <div class="bk-round-games n${byRound[r].length}">${byRound[r].map((g) => matchCard(g, roster, plan)).join("")}</div>
         </div>`).join("")}
       ${showChampion ? `<div class="bk-round">
         <h3>Champion</h3>
@@ -418,12 +627,12 @@ function protestSwapForm(games) {
   </section>`;
 }
 
-function bracketBoards(games, roster) {
+function bracketBoards(games, roster, plan) {
   const champ = games.filter((g) => gameSide(g) === "championship");
   const cons = games.filter((g) => gameSide(g) === "consolation");
   return `
-    ${renderBracketTree(champ, "Championship", "Winners move right when a score is final. Field and first pitch sit on every card.", true, roster)}
-    ${renderBracketTree(cons, "Consolation", "Outside the championship. These games do not feed the final.", false, roster)}
+    ${renderBracketTree(champ, "Championship", "Winners move right when a score is final. Field and first pitch sit on every card.", true, roster, plan)}
+    ${renderBracketTree(cons, "Consolation", "Outside the championship. These games do not feed the final.", false, roster, plan)}
   `;
 }
 
@@ -448,6 +657,26 @@ function bindBracketDesk(slug, root) {
     });
   });
   root.querySelectorAll("[data-bk-desk]").forEach((form) => {
+    const dateEl = form.elements.date;
+    const fieldEl = form.elements.field;
+    const timeEl = form.elements.time;
+    const filter = () => {
+      if (!dateEl || !fieldEl || !timeEl || !root._deskPlan) return;
+      const plan = root._deskPlan;
+      const day = dateEl.value;
+      const keepField = fieldEl.value;
+      const keepTime = timeEl.value;
+      const openFields = plan.fields.filter((name) =>
+        name === keepField || plan.times.some((tm) => slotOpen(plan.board, name, day, tm)));
+      const fieldChoices = uniqueStrings(openFields.length ? openFields : plan.fields);
+      fieldEl.innerHTML = optionList(fieldChoices, fieldChoices.includes(keepField) ? keepField : fieldChoices[0]);
+      const field = fieldEl.value;
+      const openTimes = plan.times.filter((tm) => slotOpen(plan.board, field, day, tm) || tm === keepTime);
+      timeEl.innerHTML = optionList(openTimes.length ? openTimes : plan.times, openTimes.includes(keepTime) ? keepTime : (openTimes[0] || keepTime));
+    };
+    dateEl?.addEventListener("change", filter);
+    fieldEl?.addEventListener("change", filter);
+    filter();
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
       const data = Object.fromEntries(new FormData(form));
@@ -532,16 +761,16 @@ export async function eventPools(slug) {
 
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
-  const fieldNames = (board.fields || []).map((f) => f.name).filter(Boolean);
+  const plan = buildDeskPlan(board);
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head">
       <h1>Bracket</h1>
-      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game. Field number and first pitch are on every card${isDirector() ? " — directors can edit them here, or reorder seats after a protest" : ""}.</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game. Field and first pitch sit on every card${isDirector() ? ". A set game stays collapsed — open Edit slot to change it. New games default to the next open field and time" : ""}.</p>
     </section>
-    ${fieldNames.length ? `<datalist id="bk-fields">${fieldNames.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("")}</datalist>` : `<datalist id="bk-fields"></datalist>`}
-    ${board.bracket.length ? bracketBoards(board.bracket, board.roster) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
+    ${board.bracket.length ? bracketBoards(board.bracket, board.roster, plan) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
     ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
   `);
+  eventRoot()._deskPlan = plan;
   bindBracketDesk(slug, eventRoot());
 }
 
@@ -1045,7 +1274,7 @@ export async function directorNative() {
         <p class="error" id="native-err" hidden></p>
       </form>
     </section>`);
-  bindFieldRows(eventRoot(), 2);
+  bindFieldRows(eventRoot(), 2, {});
   document.getElementById("native-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = packGuidelines(ev.target);
@@ -1087,7 +1316,7 @@ export async function directorLinkTm() {
         <p class="error" id="tm-err" hidden></p>
       </form>
     </section>`);
-  bindFieldRows(eventRoot(), 2);
+  bindFieldRows(eventRoot(), 2, {});
   document.getElementById("tm-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = packGuidelines(ev.target);
@@ -1226,13 +1455,13 @@ export async function eventAdmin(slug) {
     </section>
     <section class="card">
       <h2>Auto-schedule</h2>
-      <p class="muted">Round-robin inside each pool. Teams never play two games at the same time. Open fields take the next available slot. After you draw the bracket, set field and first pitch on the Bracket cards — or reorder seats there after a protest.</p>
+      <p class="muted">Round-robin inside each pool. A diamond is only used while it is open that day. The global window is the default; a field can be darker or shorter on Saturday without closing Sunday.</p>
       <form class="form wide" id="auto-form">
         <div class="form-grid two">
           <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml([ev.start, ev.end].filter(Boolean).join("\n") || "")}</textarea></label>
           <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="2"></label>
-          <label>First pitch <input name="start_time" type="time" value="08:00"></label>
-          <label>No start after <input name="end_time" type="time" value="18:00"></label>
+          <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
+          <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
         </div>
         <label class="check"><input type="checkbox" name="consolation" checked> If you draw a bracket, include consolation games</label>
         <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed pool games</label>
@@ -1333,7 +1562,7 @@ export async function eventAdmin(slug) {
     </section>
     ${rosterBlock(teams)}
   `);
-  bindFieldRows(eventRoot(), Math.max(fields.length, 2));
+  bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 
   document.getElementById("fields-form").addEventListener("submit", async (evnt) => {

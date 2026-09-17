@@ -390,16 +390,50 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   text-transform: uppercase;
   color: var(--muted);
 }
+.bk-desk-box {
+  border-top: 1px solid var(--line);
+  background: #f7f3ea;
+}
+.bk-desk-box > summary {
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  list-style: none;
+}
+.bk-desk-box > summary::-webkit-details-marker { display: none; }
+.bk-desk-box[open] > summary { border-bottom: 1px solid var(--line); }
 .bk-desk {
   display: grid;
   gap: 6px;
   padding: 8px 12px 10px;
-  background: #f7f3ea;
-  border-top: 1px solid var(--line);
 }
-.bk-desk .form-grid { gap: 6px; }
-.bk-desk input, .bk-desk select { font-size: 0.85rem; }
-.bk-desk .actions { margin: 2px 0 0; }
+.bk-desk label { display: grid; gap: 2px; font-size: 0.72rem; min-width: 0; }
+.bk-desk input, .bk-desk select { width: 100%; min-width: 0; font-size: 0.85rem; }
+.bk-desk .actions { margin: 2px 0 0; display: grid; gap: 4px; }
+.hours-global {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef3f8;
+}
+.field-avail { display: grid; gap: 8px; margin-top: 8px; }
+.avail-day {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+@media (max-width: 720px) {
+  .avail-day { grid-template-columns: 1fr; }
+}
 .ov-kind {
   display: inline-block;
   font-size: 0.72rem;

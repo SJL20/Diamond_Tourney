@@ -240,6 +240,8 @@ function eventJson(rec, app) {
     format_label: FORMAT_LABELS[format] || format,
     start: dateStr(rec.get("start")),
     end: dateStr(rec.get("end")),
+    hours_start: rec.get("hours_start") || "08:00",
+    hours_end: rec.get("hours_end") || "18:00",
     fields: fields,
     ages: rec.get("ages") || "",
     status: rec.get("status") || "",

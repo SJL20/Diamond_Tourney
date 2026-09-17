@@ -20,10 +20,86 @@ function mapUrl(lat, lng, address) {
   return "";
 }
 
-function fieldJson(rec) {
+function dateOnly(v) {
+  return v ? String(v).slice(0, 10) : "";
+}
+
+function datesBetween(start, end) {
+  const out = [];
+  const first = dateOnly(start);
+  if (!first) return out;
+  const last = dateOnly(end) || first;
+  let cur = first;
+  for (let i = 0; i < 8; i++) {
+    out.push(cur);
+    if (cur >= last) break;
+    const d = new Date(cur + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    cur = dateOnly(d.toISOString());
+  }
+  return out;
+}
+
+function parseAvail(raw) {
+  if (!raw) return [];
+  let rows = raw;
+  if (typeof raw === "string") {
+    try { rows = JSON.parse(raw); } catch (err) { return []; }
+  }
+  if (!rows || rows.length === undefined) return [];
+  const out = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || !r.date) continue;
+    out.push({
+      date: dateOnly(r.date),
+      available: r.available !== false && r.available !== "false" && r.available !== "0",
+      start: r.start || "",
+      end: r.end || "",
+    });
+  }
+  return out;
+}
+
+function fieldWindow(event, rec, date) {
+  const gStart = (event && event.get("hours_start")) || "08:00";
+  const gEnd = (event && event.get("hours_end")) || "18:00";
+  const status = rec.get("status") || "open";
+  const closed = status === "closed" || status === "wet";
+  const avail = parseAvail(rec.get("availability"));
+  let hit = null;
+  for (let i = 0; i < avail.length; i++) {
+    if (avail[i].date === date) {
+      hit = avail[i];
+      break;
+    }
+  }
+  if (!hit) {
+    return { date: date, available: !closed, start: gStart, end: gEnd, inherited: true };
+  }
+  return {
+    date: date,
+    available: !closed && hit.available,
+    start: hit.start || gStart,
+    end: hit.end || gEnd,
+    inherited: false,
+  };
+}
+
+function fieldOpenAt(event, rec, date, time, gameMinutes) {
+  const win = fieldWindow(event, rec, date);
+  if (!win.available) return false;
+  const start = minutesOf(time);
+  const finish = start + Number(gameMinutes || 90);
+  return start >= minutesOf(win.start) && finish <= minutesOf(win.end);
+}
+
+function fieldJson(rec, event) {
   const lat = rec.get("lat");
   const lng = rec.get("lng");
   const address = rec.get("address") || "";
+  const availability = parseAvail(rec.get("availability"));
+  const days = event ? datesBetween(event.get("start"), event.get("end")) : [];
   return {
     id: rec.id,
     name: rec.get("name"),
@@ -35,12 +111,18 @@ function fieldJson(rec) {
     notes: rec.get("notes") || "",
     status: rec.get("status") || "open",
     map_url: mapUrl(lat, lng, address),
+    availability: availability,
+    windows: days.map(function (d) { return fieldWindow(event, rec, d); }),
   };
 }
 
 function eventFields(app, eventId) {
   try {
-    return app.findRecordsByFilter("fields", "event = {:e}", "name", 40, 0, { e: eventId }).map(fieldJson);
+    let event = null;
+    try { event = app.findRecordById("events", eventId); } catch (miss) {}
+    return app.findRecordsByFilter("fields", "event = {:e}", "name", 40, 0, { e: eventId }).map(function (rec) {
+      return fieldJson(rec, event);
+    });
   } catch (err) {
     return [];
   }
@@ -57,6 +139,18 @@ function parseFieldRows(body) {
   for (let i = 0; i < 16; i++) {
     const name = String(body["field_name_" + i] || "").trim();
     if (!name) continue;
+    const availability = [];
+    for (let d = 0; d < 8; d++) {
+      const date = String(body["field_day_" + i + "_" + d + "_date"] || "").trim();
+      if (!date) continue;
+      const on = body["field_day_" + i + "_" + d + "_on"];
+      availability.push({
+        date: date,
+        available: on === true || on === "true" || on === "on" || on === "1",
+        start: body["field_day_" + i + "_" + d + "_start"] || "",
+        end: body["field_day_" + i + "_" + d + "_end"] || "",
+      });
+    }
     out.push({
       id: body["field_id_" + i] || "",
       name: name,
@@ -65,6 +159,7 @@ function parseFieldRows(body) {
       lng: body["field_lng_" + i],
       surface: body["field_surface_" + i] || "",
       lights: body["field_lights_" + i],
+      availability: availability,
     });
   }
   return out;
@@ -94,8 +189,9 @@ function saveField(app, event, data) {
   if (data.notes != null) rec.set("notes", data.notes);
   if (data.status) rec.set("status", data.status);
   if (!rec.get("status")) rec.set("status", "open");
+  if (data.availability !== undefined) rec.set("availability", parseAvail(data.availability));
   app.save(rec);
-  return fieldJson(rec);
+  return fieldJson(rec, event);
 }
 
 function applyLocation(rec, body) {
@@ -106,6 +202,8 @@ function applyLocation(rec, body) {
   if (body.format) rec.set("format", body.format);
   if (body.rain_note != null) rec.set("rain_note", body.rain_note);
   if (body.rain_status) rec.set("rain_status", body.rain_status);
+  if (body.hours_start != null) rec.set("hours_start", body.hours_start);
+  if (body.hours_end != null) rec.set("hours_end", body.hours_end);
 }
 
 function saveEventFields(app, event, body) {
@@ -300,8 +398,8 @@ function autoSchedule(app, event, body) {
   let days = body.days;
   if (typeof days === "string") days = days.split(/[,\n]/).map(function (d) { return d.trim(); }).filter(Boolean);
   if (!days || !days.length) {
-    const start = event.get("start");
-    days = [start ? String(start).slice(0, 10) : "2026-09-19"];
+    days = datesBetween(event.get("start"), event.get("end"));
+    if (!days.length) days = ["2026-09-19"];
   }
   const games = poolGames(teams, body.games_per_team != null ? body.games_per_team : 2);
   if (!games.length) throw new BadRequestError("Need at least two teams in the same pool.");
@@ -312,49 +410,51 @@ function autoSchedule(app, event, body) {
       app.delete(row);
     }
   }
-  const slots = timeSlots(days, body.start_time || "08:00", body.end_time || "18:00", event.get("game_length_minutes") || 90, body.buffer_minutes || 15);
-  if (!slots.length) throw new BadRequestError("No time slots fit between start and end. Widen the window.");
-  let remaining = games.slice();
-  const placed = [];
-  for (const slot of slots) {
-    if (!remaining.length) break;
-    const busy = {};
+  const gameMin = Number(event.get("game_length_minutes") || 90);
+  const buffer = Number(body.buffer_minutes || 15);
+  const globalStart = body.start_time || event.get("hours_start") || "08:00";
+  const globalEnd = body.end_time || event.get("hours_end") || "18:00";
+  const candidates = [];
+  for (const day of days) {
     for (const field of fields) {
-      let pick = -1;
-      for (let i = 0; i < remaining.length; i++) {
-        const g = remaining[i];
-        if (busy[g.home.id] || busy[g.away.id]) continue;
-        pick = i;
-        break;
+      const win = fieldWindow(event, field, day);
+      if (!win.available) continue;
+      const start = win.start || globalStart;
+      const end = win.end || globalEnd;
+      let t = start;
+      let guard = 0;
+      while (minutesOf(t) + gameMin <= minutesOf(end) && guard < 40) {
+        candidates.push({ date: day, time: t, field: field });
+        t = addMinutes(t, gameMin + buffer);
+        guard++;
       }
-      if (pick === -1) break;
-      const game = remaining.splice(pick, 1)[0];
-      busy[game.home.id] = true;
-      busy[game.away.id] = true;
-      placed.push(savePoolGame(app, event, game, slot, field));
     }
   }
-  let extra = slots.length ? slots[slots.length - 1] : { date: days[0], time: body.start_time || "08:00" };
-  let guard = 0;
-  while (remaining.length && guard < 80) {
-    extra = { date: extra.date, time: addMinutes(extra.time, Number(event.get("game_length_minutes") || 90) + Number(body.buffer_minutes || 15)) };
-    const busy = {};
-    for (const field of fields) {
-      if (!remaining.length) break;
-      let pick = -1;
-      for (let i = 0; i < remaining.length; i++) {
-        const g = remaining[i];
-        if (busy[g.home.id] || busy[g.away.id]) continue;
-        pick = i;
-        break;
-      }
-      if (pick === -1) break;
-      const game = remaining.splice(pick, 1)[0];
-      busy[game.home.id] = true;
-      busy[game.away.id] = true;
-      placed.push(savePoolGame(app, event, game, extra, field));
+  candidates.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.time !== b.time) return minutesOf(a.time) - minutesOf(b.time);
+    return String(a.field.get("name")).localeCompare(String(b.field.get("name")));
+  });
+  if (!candidates.length) throw new BadRequestError("No field is open in that window. Widen global hours or a field's day hours.");
+  let remaining = games.slice();
+  const placed = [];
+  const busyAt = {};
+  for (const cand of candidates) {
+    if (!remaining.length) break;
+    const key = cand.date + "|" + cand.time;
+    if (!busyAt[key]) busyAt[key] = {};
+    let pick = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      const g = remaining[i];
+      if (busyAt[key][g.home.id] || busyAt[key][g.away.id]) continue;
+      pick = i;
+      break;
     }
-    guard++;
+    if (pick === -1) continue;
+    const game = remaining.splice(pick, 1)[0];
+    busyAt[key][game.home.id] = true;
+    busyAt[key][game.away.id] = true;
+    placed.push(savePoolGame(app, event, game, { date: cand.date, time: cand.time }, cand.field));
   }
   const format = body.format || event.get("format") || "pool-to-bracket";
   if (format) {
@@ -712,6 +812,9 @@ module.exports = {
   mapUrl: mapUrl,
   fieldJson: fieldJson,
   eventFields: eventFields,
+  fieldWindow: fieldWindow,
+  fieldOpenAt: fieldOpenAt,
+  datesBetween: datesBetween,
   applyLocation: applyLocation,
   saveEventFields: saveEventFields,
   saveField: saveField,

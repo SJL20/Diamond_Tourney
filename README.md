@@ -18,7 +18,7 @@ Every page has a **site bar** (Find, Year, Account, Create). Tournament pages ad
 ## How to create the schedule
 
 1. **Log in** as a director (`td@local.test` / `EventTd1!` locally) and open **Create → Run it here**.
-2. Name the weekend, then fill **Venue, address, and fields**. Each diamond needs a name. Add a street address and/or GPS so the public board can link a map. A field without its own pin inherits the park.
+2. Name the weekend, then fill **Venue, address, and fields**. Set the **global** first-pitch and last-out window. Each diamond needs a name, and each date can be narrower — or unchecked if that field is dark. Auto-schedule will not put a game on a closed diamond or after that field’s last out. A field without its own pin inherits the park.
 3. Pick a **bracket type**: pool then single-elim, pool only, single-elim, or double-elim.
 4. Open signup. Put teams in the same pool letter (`A`, `B`) so pool play can pair them.
 5. On **Admin**, save fields if you added more, then **Build pool schedule**. That fills round-robin games per field without double-booking a team or a diamond. **Draw bracket from standings** (or auto-schedule does it when the format is not pool-only).

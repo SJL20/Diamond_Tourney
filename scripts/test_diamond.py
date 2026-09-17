@@ -720,6 +720,55 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(overall_final["time"], "11:30")
         self.assertEqual(overall_final["kind"], "bracket")
 
+    def test_field_day_hours_skip_closed_diamond(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "hours-classic-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Hours Classic",
+            "slug": slug,
+            "format": "pool-only",
+            "start": "2026-09-19",
+            "end": "2026-09-20",
+            "hours_start": "08:00",
+            "hours_end": "18:00",
+            "game_length_minutes": 90,
+            "fields": [
+                {"name": "Harbor 1"},
+                {"name": "Harbor 2", "availability": [
+                    {"date": "2026-09-19", "available": True, "start": "08:00", "end": "12:00"},
+                    {"date": "2026-09-20", "available": False, "start": "08:00", "end": "18:00"},
+                ]},
+            ],
+        })
+        slug = created["event"]["slug"]
+        self.assertEqual(created["event"]["hours_start"], "08:00")
+        harbor2 = next(f for f in created["event"]["fields"] if f["name"] == "Harbor 2")
+        sat = next(w for w in harbor2["windows"] if w["date"] == "2026-09-19")
+        sun = next(w for w in harbor2["windows"] if w["date"] == "2026-09-20")
+        self.assertEqual(sat["end"], "12:00")
+        self.assertFalse(sun["available"])
+        for name, pool in (("Hours Hawks", "A"), ("Hours Heat", "A"), ("Hours Cats", "B"), ("Hours Fox", "B")):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": pool,
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19", "2026-09-20"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-only",
+        })
+        self.assertGreaterEqual(auto["games"], 2)
+        for game in auto["schedule"]:
+            if game["field"] != "Harbor 2":
+                continue
+            self.assertEqual(game["date"], "2026-09-19")
+            hh, mm = game["time"].split(":")
+            start = int(hh) * 60 + int(mm)
+            self.assertLessEqual(start + 90, 12 * 60)
+
     def test_keystone_fields_and_rain_note(self):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
         self.assertEqual(board["event"]["address"], "51 Meadow St, McDonald, PA 15057")
