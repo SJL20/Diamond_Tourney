@@ -4,12 +4,18 @@ import {
   eventBracket, eventHome, eventLeaders, eventList, eventPools, eventSchedule,
   eventSignup, startTournament,
 } from "./event.js";
+import { accountHome, findPage, startGate, yearPage } from "./flow.js";
 
 const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
 
 const ROUTES = [
   [/^\/login\/?$/, "login"],
+  [/^\/register\/?$/, "register"],
+  [/^\/find\/?$/, "find"],
+  [/^\/account\/?$/, "account"],
+  [/^\/year\/([^/]+)\/?$/, "year"],
+  [/^\/year\/?$/, "year"],
   [/^\/start\/?$/, "start"],
   [/^\/directors\/new\/?$/, "native"],
   [/^\/directors\/link-tm\/?$/, "linktm"],
@@ -90,9 +96,12 @@ function chrome(team, page, body) {
       <a class="brand" href="/"><b>DIAMOND TOURNEY</b><span>${team ? escapeHtml(team.name) : "Keep the clipboard. Lose the group text."}</span></a>
       <nav class="nav">
         ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
-        <a data-link href="/t">Tournaments</a>
-        <a data-link href="/start">Start</a>
-        ${user() ? `<button class="link" id="logout">Sign out</button>` : `<a data-link href="/login">Log in</a>`}
+        <a data-link href="/find">Find</a>
+        <a data-link href="/year/2026">Year</a>
+        <a data-link href="/t">Boards</a>
+        ${user()
+          ? `<a data-link href="/account">Account</a><a data-link href="/start">Create</a><button class="link" id="logout">Sign out</button>`
+          : `<a data-link href="/login">Log in</a><a data-link href="/register">Create account</a>`}
       </nav>
     </header>
     <main class="wrap">${body}</main>
@@ -108,101 +117,13 @@ function table(headers, rows, totals) {
 }
 
 async function landing() {
-  const teams = await pb.collection("teams").getFullList({ sort: "age_group,name" });
-  let events = [];
-  try {
-    events = await pb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
-  } catch (err) {}
-  const cards = teams.map((t) => `
-    <a class="card team-card" data-link href="${user() && isCoachOf(t.id) ? `/teams/${t.slug}/home` : `/teams/${t.slug}`}">
-      <h3>${escapeHtml(t.name)}</h3>
-      <p class="muted">${escapeHtml(t.age_group)} · public record only</p>
-      <p><b>${t.public_record_wins || 0}-${t.public_record_losses || 0}</b>${t.public_record_ties ? `-${t.public_record_ties}` : ""}</p>
-    </a>`).join("");
-  app.innerHTML = chrome(null, "landing", `
-    <section class="hero">
-      <h1>Keep the clipboard. Lose the group text.</h1>
-      <p>Diamond Tourney is the public weekend board. Region team books stay behind a coach login. Use as much of it as you want.</p>
-    </section>
-    <section class="grid cards">
-      <a class="card team-card" data-link href="/start">
-        <h3>Start a tournament</h3>
-        <p class="muted">Native or Tourney Machine</p>
-        <p>Open one on this host, or paste a public Tourney Machine URL. Teams then sign up with GameChanger.</p>
-      </a>
-      <a class="card team-card" data-link href="/t/central-saturday/signup">
-        <h3>Sign a team up</h3>
-        <p class="muted">Director or coach</p>
-        <p>A GameChanger team URL is required. That public page is the stats source. No bot in the loop.</p>
-      </a>
-      <a class="card team-card" data-link href="/t/central-saturday">
-        <h3>Just look at a live board</h3>
-        <p class="muted">Central Saturday · 10U</p>
-        <p>Pools, championship tree, consolation games, and a print-ready award sheet.</p>
-      </a>
-    </section>
-    <section class="grid cards">
-      <a class="card team-card" data-link href="/directors/import">
-        <h3>You already have a schedule</h3>
-        <p class="muted">Door three · paste a grid</p>
-        <p>Excel, Tourney Machine export, or a legal pad. Live standings and a bracket that fills itself.</p>
-      </a>
-      <a class="card team-card" data-link href="/login">
-        <h3>Season team book</h3>
-        <p class="muted">Coach login</p>
-        <p>Approve staged boxes. Nothing publishes unverified.</p>
-      </a>
-    </section>
-    <section class="card">
-      <h2>This weekend</h2>
-      ${events.map((ev) => `<p><a data-link href="/t/${ev.slug}"><b>${escapeHtml(ev.name)}</b></a> · ${escapeHtml(ev.venue || "")} · ${escapeHtml(ev.ages || "")}</p>`).join("") || `<p class="muted">No public events yet.</p>`}
-    </section>
-    <section class="grid cards">${cards || `<div class="card empty">No teams yet.</div>`}</section>
-  `);
+  if (user()) return accountHome();
+  return startGate("login");
 }
 
 async function login() {
-  app.innerHTML = chrome(null, "login", `
-    <section class="hero">
-      <h1>Log in</h1>
-      <p class="muted">Team books require a coach or region admin account. The bot account can write staging only.</p>
-      <form class="form" id="login-form">
-        <label>Email <input name="email" type="email" autocomplete="username" required></label>
-        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-        <button class="btn" type="submit">Enter team book</button>
-        <p class="error" id="login-error" hidden></p>
-      </form>
-      ${["localhost", "127.0.0.1"].includes(location.hostname) ? `
-        <div class="accounts">
-          <p><b>Local accounts</b></p>
-          <p>owner@local.test / RegionAdmin1!</p>
-          <p>coach.demo@local.test / CoachDemo1!</p>
-          <p>coach.hawks@local.test / CoachHawks1!</p>
-          <p>td@local.test / EventTd1!</p>
-          <p>bot@local.test / BotStaging1! (API only)</p>
-        </div>` : ""}
-    </section>
-  `);
-  document.getElementById("login-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const data = new FormData(ev.target);
-    const err = document.getElementById("login-error");
-    try {
-      await pb.collection("users").authWithPassword(data.get("email"), data.get("password"));
-      const u = user();
-      if (u.role === "team_coach" && u.team) {
-        const team = await pb.collection("teams").getOne(u.team);
-        go("/teams/" + team.slug + "/home");
-      } else if (u.role === "event_td" || u.role === "region_admin") {
-        go("/start");
-      } else {
-        go("/");
-      }
-    } catch (e) {
-      err.hidden = false;
-      err.textContent = "Login failed. Check the email and password.";
-    }
-  });
+  if (user()) return accountHome();
+  return startGate("login");
 }
 
 async function requireTeamPage(slug, page) {
@@ -459,8 +380,15 @@ async function render() {
   const { name, params } = matchRoute();
   try {
     if (name === "login") return login();
+    if (name === "register") return startGate("register");
+    if (name === "find") return findPage();
+    if (name === "account") return accountHome();
+    if (name === "year") return yearPage(params[0] || "2026");
     if (name === "landing" || name === "teams") return landing();
-    if (name === "start") return startTournament();
+    if (name === "start") {
+      if (!user()) return startGate("login");
+      return startTournament();
+    }
     if (name === "native") return directorNative();
     if (name === "linktm") return directorLinkTm();
     if (name === "import") return directorImport();

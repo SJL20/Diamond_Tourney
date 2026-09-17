@@ -271,6 +271,7 @@ function publicBoard(app, event) {
       tm_url: event.get("tm_url") || "",
       signup_open: !!event.get("signup_open"),
       auto_sync: !!event.get("auto_sync"),
+      created_by: event.get("created_by") || "",
     },
     standings: poolStandings(app, eventId),
     schedule: schedule.map(function (g) {

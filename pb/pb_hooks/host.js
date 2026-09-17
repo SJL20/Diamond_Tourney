@@ -55,6 +55,7 @@ function eventJson(rec) {
     auto_sync: !!rec.get("auto_sync"),
     pitch_limit_ip: rec.get("pitch_limit_ip") || 6,
     public: !!rec.get("public"),
+    created_by: rec.get("created_by") || "",
   };
 }
 
@@ -63,6 +64,7 @@ function teamJson(rec) {
     id: rec.id,
     name: rec.get("name"),
     slug: rec.get("slug"),
+    club: rec.get("club") || "",
     pool: rec.get("pool") || "",
     gamechanger_url: rec.get("gamechanger_url") || "",
     gc_linked: isGameChangerUrl(rec.get("gamechanger_url")),
@@ -149,6 +151,15 @@ function upsertEventTeam(app, event, data) {
   rec.set("contact_email", data.contact_email || "");
   rec.set("signed_up_by", data.signed_up_by || "team");
   rec.set("gc_sync_status", "linked");
+  if (data.account) rec.set("account", data.account);
+  try {
+    const year = require(__hooks + "/year.js");
+    const club = year.upsertClub(app, {
+      name: data.name,
+      gamechanger_url: data.gamechanger_url,
+    });
+    if (club) rec.set("club", club.id);
+  } catch (err) {}
   app.save(rec);
   return rec;
 }
@@ -181,6 +192,7 @@ function createEvent(app, body, auth) {
     rec.set("tm_url", body.tm_url);
     rec.set("tm_id", tm.tmId);
   }
+  if (auth) rec.set("created_by", auth.id);
   app.save(rec);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
   return { event: eventJson(rec), note: tm.note || "Tournament is live. Teams must link GameChanger to sign up." };
@@ -201,8 +213,77 @@ function signupTeam(app, event, body, auth) {
     contact_name: body.contact_name || (auth ? auth.email() : ""),
     contact_email: body.contact_email || (auth ? auth.email() : ""),
     signed_up_by: director && (body.as_director === true || body.as_director === "true" || body.as_director === "director") ? "director" : "team",
+    account: auth ? auth.id : "",
   });
   return teamJson(team);
+}
+
+function registerAccount(app, body) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const password = String(body.password || "");
+  const name = String(body.display_name || body.name || "").trim();
+  if (!email || password.length < 8) {
+    throw new BadRequestError("Email and a password of at least 8 characters are required");
+  }
+  const intent = body.intent === "team" ? "team_coach" : "event_td";
+  const rec = new Record(app.findCollectionByNameOrId("users"));
+  rec.set("email", email);
+  rec.set("password", password);
+  rec.set("passwordConfirm", password);
+  rec.set("role", intent);
+  rec.set("display_name", name);
+  rec.set("verified", true);
+  app.save(rec);
+  return { id: rec.id, email: rec.email(), role: rec.get("role"), display_name: rec.get("display_name") || "" };
+}
+
+function searchEvents(app, q) {
+  const rows = app.findRecordsByFilter("events", "public = true", "-start", 80, 0);
+  const needle = String(q || "").trim().toLowerCase();
+  return rows.map(eventJson).filter(function (ev) {
+    if (!needle) return true;
+    return (ev.name + " " + ev.venue + " " + ev.ages + " " + ev.slug).toLowerCase().indexOf(needle) !== -1;
+  });
+}
+
+function accountHome(app, auth) {
+  let created = [];
+  try {
+    created = app.findRecordsByFilter("events", "created_by = {:u}", "-id", 80, 0, { u: auth.id }).map(eventJson);
+  } catch (err) {}
+  const joined = [];
+  const seen = {};
+  try {
+    const teams = app.findRecordsByFilter(
+      "event_teams",
+      "account = {:u} || contact_email = {:e}",
+      "name",
+      80,
+      0,
+      { u: auth.id, e: auth.email() },
+    );
+    for (const t of teams) {
+      const evId = t.get("event");
+      if (!evId || seen[evId]) continue;
+      seen[evId] = true;
+      try {
+        const row = eventJson(app.findRecordById("events", evId));
+        row.team_name = t.get("name");
+        row.gc_linked = isGameChangerUrl(t.get("gamechanger_url"));
+        joined.push(row);
+      } catch (err) {}
+    }
+  } catch (err) {}
+  return {
+    user: {
+      id: auth.id,
+      email: auth.email(),
+      role: auth.get("role"),
+      display_name: auth.get("display_name") || "",
+    },
+    created: created,
+    joined: joined,
+  };
 }
 
 function syncGameChangerTeam(app, team) {
@@ -278,4 +359,7 @@ module.exports = {
   syncEvent: syncEvent,
   publicRoster: publicRoster,
   applySettings: applySettings,
+  registerAccount: registerAccount,
+  searchEvents: searchEvents,
+  accountHome: accountHome,
 };

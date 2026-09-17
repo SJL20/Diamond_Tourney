@@ -111,6 +111,25 @@ tr.total { font-weight: 700; background: #f3eee4; }
 
 .form { display: grid; gap: 10px; max-width: 360px; }
 .form.wide { max-width: 560px; }
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.tab {
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--navy);
+}
+.tab.active {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+}
 label.check { display: flex; align-items: center; gap: 8px; }
 label.check input { width: auto; }
 .badge.linked { background: #d9f3e6; color: var(--win); }

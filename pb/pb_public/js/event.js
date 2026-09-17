@@ -48,8 +48,10 @@ function eventChrome(event, page, body, extraNav = []) {
       <nav class="nav">
         ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
         ${extraNav.join("")}
-        <a data-link href="/start">Start</a>
-        <a data-link href="/">Region books</a>
+        <a data-link href="/find">Find</a>
+        <a data-link href="/year/2026">Year</a>
+        <a data-link href="/start">Create</a>
+        <a data-link href="/account">Account</a>
       </nav>
     </header>
     <main class="wrap">${body}</main>
@@ -270,8 +272,8 @@ export async function eventList() {
   const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
   eventRoot().innerHTML = eventChrome(null, "", `
     <section class="hero"><h1>Tournaments</h1>
-      <p>Public boards only. Season books stay behind a coach login.</p>
-      <p><a class="btn" data-link href="/start">Start a tournament</a></p>
+      <p>Public boards only. Same club across weekends rolls into the year board.</p>
+      <p><a class="btn" data-link href="/start">Create a tournament</a> <a class="btn ghost" data-link href="/year/2026">2026 leaderboard</a></p>
     </section>
     <section class="grid cards">${events.map((ev) => `
       <a class="card team-card" data-link href="/t/${ev.slug}">
@@ -282,12 +284,13 @@ export async function eventList() {
 }
 
 function directorGate() {
-  if (isDirector()) return true;
+  const u = eventPb.authStore.record;
+  if (u && u.role !== "bot") return true;
   eventRoot().innerHTML = eventChrome(null, "", `
     <section class="card">
-      <h2>Director login required</h2>
-      <p>Starting a tournament is a director action. Teams sign up on the public form after you open the event.</p>
-      <p><a class="btn" data-link href="/login">Log in</a></p>
+      <h2>Log in to create a tournament</h2>
+      <p>Create an account first. Then you can open a weekend or join one that is already live.</p>
+      <p><a class="btn" data-link href="/login">Log in</a> <a class="btn ghost" data-link href="/register">Create an account</a></p>
     </section>`);
   return false;
 }

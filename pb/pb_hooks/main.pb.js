@@ -133,10 +133,33 @@ routerAdd("POST", "/api/bot/publish", (e) => {
   });
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/account/register", (e) => {
+  const host = require(__hooks + "/host.js");
+  const body = e.requestInfo().body || {};
+  return e.json(200, host.registerAccount(e.app, body));
+});
+
+routerAdd("GET", "/api/account/home", (e) => {
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  return e.json(200, host.accountHome(e.app, e.auth));
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/year/{year}/board", (e) => {
+  const year = require(__hooks + "/year.js");
+  return e.json(200, year.yearBoard(e.app, e.request.pathValue("year")));
+});
+
+routerAdd("GET", "/api/events/search", (e) => {
+  const host = require(__hooks + "/host.js");
+  const q = (e.requestInfo().query || {}).q || "";
+  return e.json(200, { events: host.searchEvents(e.app, q) });
+});
+
 routerAdd("POST", "/api/events/create", (e) => {
   const sb = require(__hooks + "/softball.js");
   const host = require(__hooks + "/host.js");
-  const auth = sb.requireRole(e, ["region_admin", "event_td"]);
+  const auth = sb.requireRole(e, ["region_admin", "event_td", "team_coach", "public"]);
   const body = e.requestInfo().body || {};
   const result = host.createEvent(e.app, body, auth);
   return e.json(200, result);
@@ -257,6 +280,13 @@ cronAdd("hosted-gc-tm-sync", "15 */2 * * *", () => {
     try { host.syncEvent($app, ev); } catch (err) {}
   }
 });
+
+onRecordCreateRequest((e) => {
+  if (e.hasSuperuserAuth()) return e.next();
+  const role = e.record.get("role");
+  if (role === "region_admin" || role === "bot" || !role) e.record.set("role", "event_td");
+  e.next();
+}, "users");
 
 onRecordUpdateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();

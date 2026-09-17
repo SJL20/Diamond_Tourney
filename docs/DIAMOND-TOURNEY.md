@@ -27,6 +27,7 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 | You already have a schedule | **Live** — CSV import + public board (`/directors/import`) |
 | Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
 | Team signup | **Live** — director or team, GameChanger URL required (`/t/{slug}/signup`). Hosted sync reads those public pages. No bot required. |
+| Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
 
 ## Tiebreak (outline §6, confirmed by the deck)
 

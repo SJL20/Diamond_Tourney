@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -148,6 +149,55 @@ class HostedSignupTests(unittest.TestCase):
         self.assertEqual(linked["event"]["source"], "tourneymachine")
         self.assertEqual(linked["event"]["tm_id"], "abc123xyz")
         self.assertTrue(linked["event"]["signup_open"])
+
+
+class AccountAndYearTests(unittest.TestCase):
+    def test_register_login_and_owned_event(self):
+        email = f"pat.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "DirectorPass1!",
+            "display_name": "Pat Director",
+            "intent": "director",
+        })
+        token = auth(BASE, email, "DirectorPass1!")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["email"], email)
+        created = request(BASE, "POST", "/api/events/create", token, {
+            "source": "native",
+            "name": "Pat Labor Day",
+            "slug": "pat-labor-day",
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        self.assertTrue(created["event"]["created_by"])
+        home2 = request(BASE, "GET", "/api/account/home", token)
+        slugs = [e["slug"] for e in home2["created"]]
+        self.assertTrue(any(s.startswith("pat-labor-day") for s in slugs))
+
+    def test_register_cannot_self_assign_admin(self):
+        out = request(BASE, "POST", "/api/account/register", None, {
+            "email": f"notadmin.{uuid.uuid4().hex[:8]}@local.test",
+            "password": "NotAdmin99!",
+            "display_name": "Not Admin",
+            "intent": "director",
+            "role": "region_admin",
+        })
+        self.assertEqual(out["role"], "event_td")
+
+    def test_find_central_saturday(self):
+        found = request(BASE, "GET", "/api/events/search?q=central")
+        slugs = [e["slug"] for e in found["events"]]
+        self.assertIn("central-saturday", slugs)
+
+    def test_year_2026_includes_hawks(self):
+        board = request(BASE, "GET", "/api/year/2026/board")
+        self.assertEqual(board["year"], "2026")
+        names = [t["name"] for t in board["teams"]]
+        self.assertIn("Hawks 10U", names)
+        self.assertTrue(any(e["slug"] == "central-saturday" for e in board["events"]))
+        self.assertTrue(board["hitting"])
+        self.assertEqual(board["hitting"][0]["name_key"], "Maeve D #4")
 
 
 if __name__ == "__main__":
