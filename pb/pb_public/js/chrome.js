@@ -37,6 +37,7 @@ export function eventBar(event, page = "", pb = null) {
   const statsOn = ["stats", "leaders", "awards"].includes(page);
   const links = [
     [`/t/${slug}`, "home", "Home"],
+    [`/t/${slug}/overall`, "overall", "Schedule"],
     [`/t/${slug}/schedule`, "schedule", "Games"],
     [`/t/${slug}/bracket`, "bracket", "Bracket"],
     [`/t/${slug}/stats`, "stats", "Stats"],

@@ -371,8 +371,44 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .rain-banner.delay { background: #ffe0c2; }
 .rain-banner.postponed, .rain-banner.moved { background: #f8d7d0; }
 .rain-banner.clear { background: #eef4ea; }
-.bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; padding: 8px 12px 10px; }
 .bk-score input { width: 4.2rem; }
+.bk-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 7px 12px;
+  background: #eef3f8;
+  border-top: 1px solid var(--line);
+}
+.bk-chip { min-width: 4.2rem; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.bk-chip em {
+  display: block;
+  font-style: normal;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bk-desk {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  background: #f7f3ea;
+  border-top: 1px solid var(--line);
+}
+.bk-desk .form-grid { gap: 6px; }
+.bk-desk input, .bk-desk select { font-size: 0.85rem; }
+.bk-desk .actions { margin: 2px 0 0; }
+.ov-kind {
+  display: inline-block;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.ov-kind.pool { color: var(--navy); }
+.ov-kind.bracket { color: var(--action); }
 .stats-now { margin: 0 0 12px; }
 .badge.queued { background: #fff3cd; color: var(--warn); }
 

@@ -272,9 +272,62 @@ function eventLeaders(app, eventId) {
   };
 }
 
+function overallRowKey(row) {
+  return [row.date || "9999-99-99", row.time || "99:99", row.field || "zzz", row.kind || "", row.round || "", row.home || ""].join("|");
+}
+
+function listOverall(schedule, bracket) {
+  const rows = [];
+  for (let i = 0; i < schedule.length; i++) {
+    const g = schedule[i];
+    if (!g.home || !g.away) continue;
+    rows.push({
+      kind: "pool",
+      id: g.id,
+      date: g.date || "",
+      time: g.time || "",
+      field: g.field || "",
+      round: g.pool ? "Pool " + g.pool : "Pool",
+      home: g.home,
+      away: g.away,
+      home_runs: g.home_runs,
+      away_runs: g.away_runs,
+      status: g.status,
+      delayed_from: g.delayed_from || "",
+      can_score: !!g.can_score,
+      has_box: !!g.has_box,
+    });
+  }
+  for (let i = 0; i < bracket.length; i++) {
+    const g = bracket[i];
+    rows.push({
+      kind: "bracket",
+      id: g.id,
+      date: g.date || "",
+      time: g.time || "",
+      field: g.field || "",
+      round: g.round || "",
+      home: g.home || "",
+      away: g.away || "",
+      home_runs: g.home_runs,
+      away_runs: g.away_runs,
+      status: g.status,
+      protest_note: g.protest_note || "",
+    });
+  }
+  rows.sort(function (a, b) {
+    const ka = overallRowKey(a);
+    const kb = overallRowKey(b);
+    if (ka < kb) return -1;
+    if (ka > kb) return 1;
+    return 0;
+  });
+  return rows;
+}
+
 function publicBoard(app, event, auth) {
   const eventId = event.id;
-  const bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 40, 0, { e: eventId });
+  const bracketRecs = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 40, 0, { e: eventId });
   function teamName(id) {
     if (!id) return "";
     try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
@@ -282,12 +335,8 @@ function publicBoard(app, event, auth) {
   const host = require(__hooks + "/host.js");
   const scheduleMod = require(__hooks + "/schedule.js");
   const packet = host.parsePacket(event.get("packet"));
-  return {
-    event: host.eventJson(event, app),
-    fields: scheduleMod.eventFields(app, eventId),
-    standings: poolStandings(app, eventId),
-    schedule: scheduleMod.listSchedule(app, eventId, auth),
-    bracket: bracket.map(function (g) {
+  const schedule = scheduleMod.listSchedule(app, eventId, auth);
+  const bracket = bracketRecs.map(function (g) {
       const round = g.get("round");
       const hr = Number(g.get("home_runs") || 0);
       const ar = Number(g.get("away_runs") || 0);
@@ -299,16 +348,27 @@ function publicBoard(app, event, auth) {
         side: inferSide(round, g.get("side")),
         home: teamName(g.get("home_team")),
         away: teamName(g.get("away_team")),
+        home_id: g.get("home_team") || "",
+        away_id: g.get("away_team") || "",
         home_runs: g.get("home_runs"),
         away_runs: g.get("away_runs"),
         winner: teamName(g.get("winner")),
+        winner_id: g.get("winner") || "",
+        protest_note: g.get("protest_note") || "",
         status: g.get("status"),
         field: g.get("field_name") || "",
         time: g.get("time") || "",
         date: g.get("date") || "",
         tie: g.get("status") === "final" && hr === ar,
       };
-    }),
+    });
+  return {
+    event: host.eventJson(event, app),
+    fields: scheduleMod.eventFields(app, eventId),
+    standings: poolStandings(app, eventId),
+    schedule: schedule,
+    bracket: bracket,
+    overall: listOverall(schedule, bracket),
     leaders: (function () {
       const computed = eventLeaders(app, eventId);
       if (!packet) return computed;
@@ -352,5 +412,6 @@ module.exports = {
   advanceBracket: advanceBracket,
   eventLeaders: eventLeaders,
   publicBoard: publicBoard,
+  listOverall: listOverall,
   upsertEventTeam: upsertEventTeam,
 };

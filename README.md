@@ -13,7 +13,7 @@ bash scripts/local-server.sh
 
 That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy, then prints the Keystone Clash URLs. Do not kill a healthy listener just to “restart Preview.”
 
-Every page has a **site bar** (Find, Year, Account, Create). Tournament pages add a second **tournament bar** under it (Home, Games, Bracket, Stats, Info, Sign up, Admin). Season books use the same split: site bar, then team-book links. The two bars do not mix.
+Every page has a **site bar** (Find, Year, Account, Create). Tournament pages add a second **tournament bar** under it (Home, Schedule, Games, Bracket, Stats, Info, Sign up, Admin). Season books use the same split: site bar, then team-book links. The two bars do not mix.
 
 ## How to create the schedule
 
@@ -24,7 +24,9 @@ Every page has a **site bar** (Find, Year, Account, Create). Tournament pages ad
 5. On **Admin**, save fields if you added more, then **Build pool schedule**. That fills round-robin games per field without double-booking a team or a diamond. **Draw bracket from standings** (or auto-schedule does it when the format is not pool-only).
 6. **Rain desk** posts a public banner and can delay times, move a day, postpone games, or close a wet field and reassign.
 
-Games on the public **Games** tab are grouped by field. Only real pool games show there — empty bracket slots stay on **Bracket** until those games have teams. A delay keeps the original first-pitch time on the row.
+**Schedule** is the weekend grid: pool and bracket together, sorted by date, first pitch, and field. **Games** stays pool-only, grouped by diamond. Empty bracket slots still appear on **Schedule** and **Bracket** so the field number and time stay visible.
+
+On **Bracket**, every card shows **Field** and **Time**. A director can edit those, swap home/away, reopen a final, or move a team from one seat to another after a protest. Saving only field or time does not wipe a posted score.
 
 **Scoring:** the director can enter or override any score from Admin or a game page. A team manager who signed that club up can post a result for their own games; those sit as submitted until the director marks them final.
 
@@ -53,6 +55,8 @@ Lines land in the weekend leaders only when someone (bot or person) types them. 
 | `/find` | Search public weekends — Keystone Clash is featured |
 | `/year/2026` | Series leaderboard — same club across weekends |
 | `/start` | Create a tournament — fields + GPS/address, bracket type, guidelines, team packet |
+| `/t/{slug}/overall` | Weekend schedule — pool + bracket, field and time |
+| `/t/{slug}/bracket` | Championship tree — field and time on every card; directors can edit or reorder after a protest |
 | `/t/{slug}/admin` | Director desk — fields, auto-schedule per diamond, rain, scores, packets |
 | `/t/{slug}/games/{id}` | Four stats doors — GC mobile PDF, public box URL, Grok bot, director PDF |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
@@ -76,6 +80,8 @@ Admin UI: http://127.0.0.1:8097/_/
 python3 scripts/bot_a_ingest.py --team hawks-10u testdata/hawks_game1.txt
 # approve in /teams/hawks-10u/admin/review
 python3 scripts/bot_b_publish.py --team hawks-10u
+python3 scripts/bot_c_event_box.py --list
+python3 scripts/bot_c_event_box.py --event SLUG --game GAME_ID --home-runs 6 --away-runs 4
 ```
 
 ## Acceptance tests (outline §15)

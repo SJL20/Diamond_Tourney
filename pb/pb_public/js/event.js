@@ -303,11 +303,45 @@ function gameSide(g) {
   return /^(C|3RD|5TH|CONS)/.test(r) ? "consolation" : "championship";
 }
 
-function matchCard(g) {
+function teamOptions(roster, selected) {
+  return `<option value="">TBD</option>${(roster || []).map((t) =>
+    `<option value="${escapeHtml(t.id)}" ${t.id === selected ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}`;
+}
+
+function matchCard(g, roster = []) {
   const tie = !!(g.tie || (g.status === "final" && g.home_runs === g.away_runs && g.home && g.away));
   const homeWin = !tie && g.status === "final" && g.winner && g.winner === g.home;
   const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
-  const meta = [g.game_id, g.field, g.time, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
+  const fieldLabel = g.field || "—";
+  const timeLabel = g.time || "—";
+  const meta = [g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
+  const desk = isDirector() && g.id ? `
+    <form class="bk-desk" data-bk-desk="${escapeHtml(g.id)}">
+      <div class="form-grid two">
+        <label>Field
+          <input name="field" list="bk-fields" value="${escapeHtml(g.field || "")}" placeholder="Harbor 1">
+        </label>
+        <label>Time
+          <input name="time" value="${escapeHtml(g.time || "")}" placeholder="10:00">
+        </label>
+      </div>
+      <label>Date <input name="date" type="date" value="${escapeHtml(g.date || "")}"></label>
+      <div class="form-grid two">
+        <label>Home <select name="home_id">${teamOptions(roster, g.home_id)}</select></label>
+        <label>Away <select name="away_id">${teamOptions(roster, g.away_id)}</select></label>
+      </div>
+      <label>Protest note <input name="protest_note" value="${escapeHtml(g.protest_note || "")}" placeholder="Seed 3 restored after protest"></label>
+      <div class="actions">
+        <button class="btn" type="submit">Save slot</button>
+        <button class="btn ghost" type="button" data-swap>Swap sides</button>
+        ${g.status === "final" ? `<button class="btn ghost" type="button" data-reopen>Reopen</button>` : ""}
+      </div>
+    </form>
+    ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
+      <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
+      <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
+      <button class="btn ghost" type="submit">Final</button>
+    </form>` : ""}` : "";
   return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""}">
     <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
       <span>${escapeHtml(g.home || "TBD")}</span>
@@ -317,16 +351,16 @@ function matchCard(g) {
       <span>${escapeHtml(g.away || "TBD")}</span>
       <b>${g.status === "final" ? g.away_runs : ""}</b>
     </div>
-    <p class="bk-meta">${escapeHtml(meta.join(" · "))}</p>
-    ${isDirector() && g.id && g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
-      <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
-      <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
-      <button class="btn ghost" type="submit">Final</button>
-    </form>` : ""}
+    <div class="bk-when">
+      <span class="bk-chip"><em>Field</em> ${escapeHtml(fieldLabel)}</span>
+      <span class="bk-chip"><em>Time</em> ${escapeHtml(timeLabel)}</span>
+    </div>
+    <p class="bk-meta">${escapeHtml(meta.join(" · "))}${g.protest_note ? ` · ${escapeHtml(g.protest_note)}` : ""}</p>
+    ${desk}
   </article>`;
 }
 
-function renderBracketTree(games, title, blurb, showChampion) {
+function renderBracketTree(games, title, blurb, showChampion, roster) {
   if (!games.length) return "";
   const byRound = {};
   for (const g of games) {
@@ -348,7 +382,7 @@ function renderBracketTree(games, title, blurb, showChampion) {
       ${rounds.map((r) => `
         <div class="bk-round">
           <h3>${ROUND_META[r]?.label || r}</h3>
-          <div class="bk-round-games n${byRound[r].length}">${byRound[r].map(matchCard).join("")}</div>
+          <div class="bk-round-games n${byRound[r].length}">${byRound[r].map((g) => matchCard(g, roster)).join("")}</div>
         </div>`).join("")}
       ${showChampion ? `<div class="bk-round">
         <h3>Champion</h3>
@@ -358,13 +392,90 @@ function renderBracketTree(games, title, blurb, showChampion) {
   </section>`;
 }
 
-function bracketBoards(games) {
+function protestSwapForm(games) {
+  if (!isDirector()) return "";
+  const seats = (games || []).filter((g) => g.id).flatMap((g) => {
+    const label = ROUND_META[g.round]?.label || g.round || "Game";
+    return [
+      { id: g.id, seat: "home", label: `${label} · home · ${g.home || "TBD"}` },
+      { id: g.id, seat: "away", label: `${label} · away · ${g.away || "TBD"}` },
+    ];
+  });
+  if (!seats.length) return "";
+  const opts = seats.map((s) =>
+    `<option value="${escapeHtml(s.id)}|${s.seat}">${escapeHtml(s.label)}</option>`).join("");
+  return `<section class="card">
+    <h2>Protest / reorder</h2>
+    <p class="muted">Move a team from one bracket seat to another after a protest. Games that were final reopen. Field and time stay on the card unless you change them there.</p>
+    <form class="form wide" id="bk-swap">
+      <div class="form-grid two">
+        <label>From <select name="from">${opts}</select></label>
+        <label>To <select name="to">${opts}</select></label>
+      </div>
+      <label>Protest note <input name="protest_note" placeholder="Umpire conference — seed 4 restored"></label>
+      <button class="btn" type="submit">Swap seats</button>
+    </form>
+  </section>`;
+}
+
+function bracketBoards(games, roster) {
   const champ = games.filter((g) => gameSide(g) === "championship");
   const cons = games.filter((g) => gameSide(g) === "consolation");
   return `
-    ${renderBracketTree(champ, "Championship", "Winners move right when a score is final. Locked rosters stay locked.", true)}
-    ${renderBracketTree(cons, "Consolation", "Outside the championship. These games do not feed the final.", false)}
+    ${renderBracketTree(champ, "Championship", "Winners move right when a score is final. Field and first pitch sit on every card.", true, roster)}
+    ${renderBracketTree(cons, "Consolation", "Outside the championship. These games do not feed the final.", false, roster)}
   `;
+}
+
+function bindBracketDesk(slug, root) {
+  const post = async (path, body) => {
+    const res = await fetch("/api/events/" + encodeURIComponent(slug) + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      alert(await res.text());
+      return false;
+    }
+    return true;
+  };
+  root.querySelectorAll("[data-bk-id]").forEach((form) => {
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const data = Object.fromEntries(new FormData(form));
+      if (await post("/bracket/" + form.dataset.bkId + "/score", data)) eventBracket(slug);
+    });
+  });
+  root.querySelectorAll("[data-bk-desk]").forEach((form) => {
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const data = Object.fromEntries(new FormData(form));
+      if (await post("/bracket/" + form.dataset.bkDesk, data)) eventBracket(slug);
+    });
+    form.querySelector("[data-swap]")?.addEventListener("click", async () => {
+      if (await post("/bracket/" + form.dataset.bkDesk, { swap: true })) eventBracket(slug);
+    });
+    form.querySelector("[data-reopen]")?.addEventListener("click", async () => {
+      if (await post("/bracket/" + form.dataset.bkDesk, { reopen: true })) eventBracket(slug);
+    });
+  });
+  const swap = root.querySelector("#bk-swap");
+  if (swap) {
+    swap.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const data = Object.fromEntries(new FormData(swap));
+      const [fromId, fromSeat] = String(data.from || "").split("|");
+      const [toId, toSeat] = String(data.to || "").split("|");
+      if (await post("/bracket/swap", {
+        from_id: fromId,
+        from_seat: fromSeat,
+        to_id: toId,
+        to_seat: toSeat,
+        protest_note: data.protest_note,
+      })) eventBracket(slug);
+    });
+  }
 }
 
 function rosterBlock(teams) {
@@ -395,6 +506,7 @@ export async function eventHome(slug) {
       <p class="muted">${escapeHtml([ev.dates || packet?.dates, ev.format_label, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
       <div class="actions">
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
+        <a class="btn ghost" data-link href="/t/${ev.slug}/overall">Weekend schedule</a>
         <a class="btn ghost" data-link href="/t/${ev.slug}/bracket">Open bracket</a>
         ${ev.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
         ${ev.tm_url ? `<a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Tourney Machine</a>` : ""}
@@ -420,29 +532,48 @@ export async function eventPools(slug) {
 
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
+  const fieldNames = (board.fields || []).map((f) => f.name).filter(Boolean);
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head">
       <h1>Bracket</h1>
-      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game. Field number and first pitch are on every card${isDirector() ? " — directors can edit them here, or reorder seats after a protest" : ""}.</p>
     </section>
-    ${board.bracket.length ? bracketBoards(board.bracket) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
+    ${fieldNames.length ? `<datalist id="bk-fields">${fieldNames.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("")}</datalist>` : `<datalist id="bk-fields"></datalist>`}
+    ${board.bracket.length ? bracketBoards(board.bracket, board.roster) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
+    ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
   `);
-  eventRoot().querySelectorAll("[data-bk-id]").forEach((form) => {
-    form.addEventListener("submit", async (evnt) => {
-      evnt.preventDefault();
-      const data = Object.fromEntries(new FormData(form));
-      const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/bracket/" + form.dataset.bkId + "/score", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader() },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) {
-        alert(await res.text());
-        return;
-      }
-      eventBracket(slug);
-    });
-  });
+  bindBracketDesk(slug, eventRoot());
+}
+
+export async function eventOverall(slug) {
+  const board = await fetchBoard(slug);
+  const rows = board.overall || [];
+  eventRoot().innerHTML = eventChrome(board.event, "overall", `
+    <section class="page-head">
+      <h1>Schedule</h1>
+      <p class="muted">Every game this weekend — pool play and the bracket — sorted by date, first pitch, and field.</p>
+    </section>
+    ${rainBanner(board.event)}
+    <section class="card">
+      ${rows.length ? table(["When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
+        const when = [g.date, g.time].filter(Boolean).join(" ");
+        const kind = g.kind === "bracket" ? (ROUND_META[g.round]?.label || g.round || "Bracket") : (g.round || "Pool");
+        const href = g.kind === "pool" && g.id
+          ? `/t/${escapeHtml(slug)}/games/${g.id}`
+          : `/t/${escapeHtml(slug)}/bracket`;
+        return `<tr>
+          <td>${escapeHtml(when || "TBD")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
+          <td>${escapeHtml(g.field || "—")}</td>
+          <td><span class="ov-kind ${escapeHtml(g.kind || "")}">${escapeHtml(kind)}</span></td>
+          <td>${escapeHtml(g.home || "TBD")}</td>
+          <td>${escapeHtml(g.away || "TBD")}</td>
+          <td>${scoreText(g)} · ${escapeHtml(g.status || "")}
+            ${g.id ? ` · <a data-link href="${href}">${g.kind === "pool" ? (g.can_score ? "Post score" : "Open") : "Bracket"}</a>` : ""}
+          </td>
+        </tr>`;
+      })) : `<p class="empty">No games on the weekend board yet. Build pool play on Admin, then draw the bracket.</p>`}
+    </section>
+  `);
 }
 
 export async function eventSchedule(slug) {
@@ -453,7 +584,7 @@ export async function eventSchedule(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "schedule", `
     <section class="page-head">
       <h1>Games</h1>
-      <p class="muted">Pool games by diamond. Open a game to post the score and upload stats: GC mobile PDF, public box URL, Grok bot, or a director PDF.</p>
+      <p class="muted">Pool games by diamond. The full weekend — pool and bracket, with field and time — is on <a data-link href="/t/${escapeHtml(board.event.slug)}/overall">Schedule</a>. Open a game to post the score and upload stats.</p>
     </section>
     ${rainBanner(board.event)}
     <section class="card">
@@ -1095,7 +1226,7 @@ export async function eventAdmin(slug) {
     </section>
     <section class="card">
       <h2>Auto-schedule</h2>
-      <p class="muted">Round-robin inside each pool. Teams never play two games at the same time. Open fields take the next available slot.</p>
+      <p class="muted">Round-robin inside each pool. Teams never play two games at the same time. Open fields take the next available slot. After you draw the bracket, set field and first pitch on the Bracket cards — or reorder seats there after a protest.</p>
       <form class="form wide" id="auto-form">
         <div class="form-grid two">
           <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml([ev.start, ev.end].filter(Boolean).join("\n") || "")}</textarea></label>

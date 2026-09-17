@@ -506,6 +506,96 @@ function buildBracket(app, event, opts) {
   return { games: consolation ? 10 : 7, seeds: n };
 }
 
+function resolveEventTeam(app, event, value) {
+  if (value == null || value === "") return "";
+  try {
+    const rec = app.findRecordById("event_teams", value);
+    if (rec.get("event") === event.id) return rec.id;
+  } catch (err) {}
+  try {
+    return app.findFirstRecordByFilter("event_teams", "event = {:e} && name = {:n}", { e: event.id, n: String(value) }).id;
+  } catch (err) {
+    return "";
+  }
+}
+
+function clearBracketResult(rec) {
+  rec.set("status", "scheduled");
+  rec.set("winner", "");
+  rec.set("home_runs", 0);
+  rec.set("away_runs", 0);
+}
+
+function editBracketGame(app, event, id, body) {
+  const rec = app.findRecordById("bracket_games", id);
+  if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  let teamsChanged = body.swap === true || body.swap === "true";
+  if (teamsChanged) {
+    const home = rec.get("home_team") || "";
+    rec.set("home_team", rec.get("away_team") || "");
+    rec.set("away_team", home);
+  }
+  if (body.home_id !== undefined || body.home !== undefined) {
+    const next = resolveEventTeam(app, event, body.home_id !== undefined ? body.home_id : body.home);
+    if (next !== (rec.get("home_team") || "")) teamsChanged = true;
+    rec.set("home_team", next);
+  }
+  if (body.away_id !== undefined || body.away !== undefined) {
+    const next = resolveEventTeam(app, event, body.away_id !== undefined ? body.away_id : body.away);
+    if (next !== (rec.get("away_team") || "")) teamsChanged = true;
+    rec.set("away_team", next);
+  }
+  if (body.field != null || body.field_name != null) rec.set("field_name", body.field || body.field_name || "");
+  if (body.time != null) rec.set("time", body.time);
+  if (body.date != null) rec.set("date", body.date);
+  if (body.slot != null && body.slot !== "") rec.set("slot", Number(body.slot));
+  if (body.side === "championship" || body.side === "consolation") rec.set("side", body.side);
+  if (body.round) rec.set("round", body.round);
+  if (body.protest_note != null) rec.set("protest_note", body.protest_note);
+  const keep = body.keep_score === true || body.keep_score === "true";
+  if (body.clear_result === true || body.clear_result === "true" || body.reopen === true || body.reopen === "true" || (teamsChanged && rec.get("status") === "final" && !keep)) {
+    clearBracketResult(rec);
+  }
+  app.save(rec);
+  return rec;
+}
+
+function swapBracketSeats(app, event, body) {
+  if (!body.from_id) throw new BadRequestError("from_id is required");
+  const a = app.findRecordById("bracket_games", body.from_id);
+  if (a.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  const b = body.to_id && body.to_id !== body.from_id
+    ? app.findRecordById("bracket_games", body.to_id)
+    : a;
+  if (b.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  const fromSeat = body.from_seat === "away" ? "away_team" : "home_team";
+  const toSeat = body.to_seat === "away" ? "away_team" : "home_team";
+  const first = a.get(fromSeat) || "";
+  const second = b.get(toSeat) || "";
+  a.set(fromSeat, second);
+  b.set(toSeat, first);
+  if (a.get("status") === "final") clearBracketResult(a);
+  if (b.get("status") === "final") clearBracketResult(b);
+  if (body.protest_note) {
+    a.set("protest_note", body.protest_note);
+    if (a.id !== b.id) b.set("protest_note", body.protest_note);
+  }
+  app.save(a);
+  if (a.id !== b.id) app.save(b);
+  return { swapped: true };
+}
+
+function saveBracketDesk(app, event, body) {
+  const games = body.games || [];
+  let updated = 0;
+  for (const row of games) {
+    if (!row || !row.id) continue;
+    editBracketGame(app, event, row.id, row);
+    updated++;
+  }
+  return { updated: updated };
+}
+
 function rainUpdate(app, event, body) {
   const status = body.rain_status || body.status || "watch";
   const allowed = ["clear", "watch", "delay", "postponed", "moved"];
@@ -631,6 +721,9 @@ module.exports = {
   updateGame: updateGame,
   deleteGame: deleteGame,
   buildBracket: buildBracket,
+  editBracketGame: editBracketGame,
+  swapBracketSeats: swapBracketSeats,
+  saveBracketDesk: saveBracketDesk,
   rainUpdate: rainUpdate,
   plan: plan,
   listSchedule: listSchedule,

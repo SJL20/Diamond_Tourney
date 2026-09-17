@@ -1,8 +1,8 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
   directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
-  eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventPools, eventSchedule,
-  eventSignup, eventStats, startTournament,
+  eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall, eventPools,
+  eventSchedule, eventSignup, eventStats, startTournament,
 } from "./event.js";
 import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
 import { pageShell } from "./chrome.js";
@@ -26,6 +26,7 @@ const ROUTES = [
   [/^\/t\/?$/, "events"],
   [/^\/t\/([^/]+)\/pools\/?$/, "epools"],
   [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
+  [/^\/t\/([^/]+)\/overall\/?$/, "eoverall"],
   [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
   [/^\/t\/([^/]+)\/games\/([^/]+)\/?$/, "egame"],
   [/^\/t\/([^/]+)\/leaders\/?$/, "eleaders"],
@@ -378,6 +379,7 @@ async function render() {
     if (name === "ehome") return eventHome(params[0]);
     if (name === "epools") return eventPools(params[0]);
     if (name === "ebracket") return eventBracket(params[0]);
+    if (name === "eoverall") return eventOverall(params[0]);
     if (name === "eschedule") return eventSchedule(params[0]);
     if (name === "egame") return eventGame(params[0], params[1]);
     if (name === "eleaders") return eventLeaders(params[0]);

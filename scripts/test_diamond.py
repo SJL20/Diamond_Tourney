@@ -631,6 +631,95 @@ class ScheduleTests(unittest.TestCase):
         sources = {b["source"] for b in plan.get("pending_boxes", [])}
         self.assertNotIn("director_pdf", sources)
 
+    def test_bracket_field_time_and_overall_schedule(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "bracket-desk-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Bracket Desk",
+            "slug": slug,
+            "format": "pool-to-bracket",
+            "start": "2026-09-19",
+            "end": "2026-09-20",
+            "fields": [{"name": "Harbor 1"}, {"name": "Harbor 2"}],
+        })
+        slug = created["event"]["slug"]
+        for name, pool in (("Desk Hawks", "A"), ("Desk Heat", "A"), ("Desk Cats", "B"), ("Desk Fox", "B")):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": pool,
+                "as_director": True,
+            })
+        request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "start_time": "08:00",
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        built = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "consolation": True,
+            "replace": True,
+        })
+        self.assertGreaterEqual(built["games"], 1)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertIn("field", final)
+        self.assertIn("time", final)
+        self.assertTrue(any(row["kind"] == "pool" for row in board["overall"]))
+        self.assertTrue(any(row["kind"] == "bracket" and row["round"] == "F" for row in board["overall"]))
+
+        saved = request(BASE, "POST", f"/api/events/{slug}/bracket/{final['id']}", td, {
+            "field": "Harbor 2",
+            "time": "11:30",
+            "date": "2026-09-20",
+        })
+        slot = next(g for g in saved["bracket"] if g["id"] == final["id"])
+        self.assertEqual(slot["field"], "Harbor 2")
+        self.assertEqual(slot["time"], "11:30")
+        self.assertEqual(slot["date"], "2026-09-20")
+
+        qf = next(g for g in board["bracket"] if g["round"] in ("QF", "SF", "F") and g["home"] and g["away"])
+        home_before, away_before = qf["home"], qf["away"]
+        request(BASE, "POST", f"/api/events/{slug}/bracket/{qf['id']}/score", td, {
+            "home_runs": 8,
+            "away_runs": 1,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/bracket/{qf['id']}", td, {
+            "field": "Harbor 1",
+            "time": "09:15",
+        })
+        after_time = request(BASE, "GET", f"/api/event/{slug}/board")
+        still = next(g for g in after_time["bracket"] if g["id"] == qf["id"])
+        self.assertEqual(still["status"], "final")
+        self.assertEqual(int(still["home_runs"]), 8)
+        self.assertEqual(still["field"], "Harbor 1")
+        self.assertEqual(still["time"], "09:15")
+
+        swapped = request(BASE, "POST", f"/api/events/{slug}/bracket/{qf['id']}", td, {
+            "swap": True,
+            "protest_note": "Seed restored after protest",
+        })
+        moved = next(g for g in swapped["bracket"] if g["id"] == qf["id"])
+        self.assertEqual(moved["home"], away_before)
+        self.assertEqual(moved["away"], home_before)
+        self.assertEqual(moved["status"], "scheduled")
+        self.assertEqual(moved["protest_note"], "Seed restored after protest")
+
+        seats = request(BASE, "POST", f"/api/events/{slug}/bracket/swap", td, {
+            "from_id": moved["id"],
+            "from_seat": "home",
+            "to_id": moved["id"],
+            "to_seat": "away",
+            "protest_note": "Home/away flipped again",
+        })
+        self.assertTrue(seats["swapped"])
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        overall_final = next(row for row in board["overall"] if row["id"] == final["id"])
+        self.assertEqual(overall_final["field"], "Harbor 2")
+        self.assertEqual(overall_final["time"], "11:30")
+        self.assertEqual(overall_final["kind"], "bracket")
+
     def test_keystone_fields_and_rain_note(self):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
         self.assertEqual(board["event"]["address"], "51 Meadow St, McDonald, PA 15057")

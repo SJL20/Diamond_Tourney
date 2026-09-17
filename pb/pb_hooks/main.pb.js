@@ -398,6 +398,22 @@ routerAdd("POST", "/api/events/{slug}/rain", (e) => {
   return e.json(200, schedule.rainUpdate(e.app, event, e.requestInfo().body || {}));
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/bracket/swap", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, schedule.swapBracketSeats(e.app, event, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/bracket/reorder", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, schedule.saveBracketDesk(e.app, event, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
   const sb = require(__hooks + "/softball.js");
   const schedule = require(__hooks + "/schedule.js");
@@ -409,6 +425,16 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
     e.app.save(event);
   }
   return e.json(200, schedule.buildBracket(e.app, event, body));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/bracket/{id}", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  schedule.editBracketGame(e.app, event, e.request.pathValue("id"), e.requestInfo().body || {});
+  const diamond = require(__hooks + "/diamond.js");
+  return e.json(200, { ok: true, bracket: diamond.publicBoard(e.app, event, e.auth).bracket });
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/import-popup", (e) => {
