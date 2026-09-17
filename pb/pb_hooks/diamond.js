@@ -272,7 +272,7 @@ function eventLeaders(app, eventId) {
   };
 }
 
-function publicBoard(app, event) {
+function publicBoard(app, event, auth) {
   const eventId = event.id;
   const bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 40, 0, { e: eventId });
   function teamName(id) {
@@ -286,7 +286,7 @@ function publicBoard(app, event) {
     event: host.eventJson(event, app),
     fields: scheduleMod.eventFields(app, eventId),
     standings: poolStandings(app, eventId),
-    schedule: scheduleMod.listSchedule(app, eventId),
+    schedule: scheduleMod.listSchedule(app, eventId, auth),
     bracket: bracket.map(function (g) {
       const round = g.get("round");
       const hr = Number(g.get("home_runs") || 0);

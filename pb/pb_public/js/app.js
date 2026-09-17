@@ -1,7 +1,7 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
   directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
-  eventBracket, eventHome, eventInfo, eventLeaders, eventList, eventPools, eventSchedule,
+  eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventPools, eventSchedule,
   eventSignup, eventStats, startTournament,
 } from "./event.js";
 import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
@@ -27,6 +27,7 @@ const ROUTES = [
   [/^\/t\/([^/]+)\/pools\/?$/, "epools"],
   [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
   [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
+  [/^\/t\/([^/]+)\/games\/([^/]+)\/?$/, "egame"],
   [/^\/t\/([^/]+)\/leaders\/?$/, "eleaders"],
   [/^\/t\/([^/]+)\/stats\/?$/, "estats"],
   [/^\/t\/([^/]+)\/awards\/?$/, "eawards"],
@@ -378,6 +379,7 @@ async function render() {
     if (name === "epools") return eventPools(params[0]);
     if (name === "ebracket") return eventBracket(params[0]);
     if (name === "eschedule") return eventSchedule(params[0]);
+    if (name === "egame") return eventGame(params[0], params[1]);
     if (name === "eleaders") return eventLeaders(params[0]);
     if (name === "estats") return eventStats(params[0]);
     if (name === "eawards") return eventAwards(params[0]);

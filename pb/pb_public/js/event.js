@@ -136,10 +136,20 @@ function fieldsBlock(ev, fields) {
   </section>`;
 }
 
-function scheduleByField(games) {
-  if (!games || !games.length) return `<p class="empty">No games on the board yet. The director adds fields, then auto-schedules or types games per diamond.</p>`;
+function scoreText(g) {
+  if (g.home_runs == null && g.away_runs == null) return "—";
+  return `${g.home_runs ?? "—"}–${g.away_runs ?? "—"}`;
+}
+
+function realPoolGames(games) {
+  return (games || []).filter((g) => g.home && g.away && g.id);
+}
+
+function scheduleByField(games, slug) {
+  const list = realPoolGames(games);
+  if (!list.length) return `<p class="empty">No pool games on the board yet. Empty bracket slots stay on the Bracket tab until those games are actually scheduled.</p>`;
   const groups = {};
-  for (const g of games) {
+  for (const g of list) {
     const key = g.field || "Unassigned";
     if (!groups[key]) groups[key] = [];
     groups[key].push(g);
@@ -151,8 +161,10 @@ function scheduleByField(games) {
         <td>${escapeHtml(g.date || "")} ${escapeHtml(g.time || "")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
         <td>${escapeHtml(g.pool || "")}</td>
         <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
-        <td>${g.status === "final" ? `${g.home_runs}–${g.away_runs}` : "—"}</td>
-        <td>${escapeHtml(g.status)}</td>
+        <td>${scoreText(g)}</td>
+        <td>${escapeHtml(g.status)}${g.has_box ? " · box" : ""}
+          ${g.id ? ` · <a data-link href="/t/${escapeHtml(slug)}/games/${g.id}">${g.can_score ? "Post score" : "Open"}</a>` : ""}
+        </td>
       </tr>`))}
     </div>`).join("");
 }
@@ -245,7 +257,9 @@ function guidelinesBlock(ev) {
 }
 
 async function fetchBoard(slug) {
-  const res = await fetch("/api/event/" + encodeURIComponent(slug) + "/board");
+  const res = await fetch("/api/event/" + encodeURIComponent(slug) + "/board", {
+    headers: authHeader(),
+  });
   if (!res.ok) throw new Error("Event board failed");
   return res.json();
 }
@@ -304,6 +318,11 @@ function matchCard(g) {
       <b>${g.status === "final" ? g.away_runs : ""}</b>
     </div>
     <p class="bk-meta">${escapeHtml(meta.join(" · "))}</p>
+    ${isDirector() && g.id && g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
+      <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
+      <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
+      <button class="btn ghost" type="submit">Final</button>
+    </form>` : ""}
   </article>`;
 }
 
@@ -406,34 +425,135 @@ export async function eventBracket(slug) {
       <h1>Bracket</h1>
       <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.</p>
     </section>
-    ${board.bracket.length ? bracketBoards(board.bracket) : `<section class="card empty">No bracket games yet.</section>`}
+    ${board.bracket.length ? bracketBoards(board.bracket) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
   `);
+  eventRoot().querySelectorAll("[data-bk-id]").forEach((form) => {
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const data = Object.fromEntries(new FormData(form));
+      const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/bracket/" + form.dataset.bkId + "/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        alert(await res.text());
+        return;
+      }
+      eventBracket(slug);
+    });
+  });
 }
 
 export async function eventSchedule(slug) {
   const board = await fetchBoard(slug);
   const packet = board.packet || board.event.packet;
-  const rows = [
-    ...board.schedule.map((g) => ({
-      date: g.date, time: g.time, field: "", game_id: "",
-      home: g.home, away: g.away, home_runs: g.home_runs, away_runs: g.away_runs, status: g.status,
-    })),
-    ...board.bracket.map((g) => ({
-      date: g.date, time: g.time, field: g.field, game_id: g.game_id,
-      home: g.home, away: g.away, home_runs: g.home_runs, away_runs: g.away_runs, status: g.status,
-    })),
-  ].sort((a, b) => String(a.date + a.time + a.game_id).localeCompare(String(b.date + b.time + b.game_id)));
+  const rows = realPoolGames(board.schedule).sort((a, b) =>
+    String(a.date + a.time + a.field + a.home).localeCompare(String(b.date + b.time + b.field + b.home)));
   eventRoot().innerHTML = eventChrome(board.event, "schedule", `
     <section class="page-head">
       <h1>Games</h1>
-      <p class="muted">Pool and bracket games grouped by diamond. A delay or move shows on the row.</p>
+      <p class="muted">Pool games by diamond. Bracket placeholders stay on Bracket until those games have teams and a time. Directors and team managers post scores from a game.</p>
     </section>
     ${rainBanner(board.event)}
     <section class="card">
       ${packet?.info?.pool_note ? `<p class="muted">${escapeHtml(packet.info.pool_note)}</p>` : ""}
       ${packet?.bracket_venue ? `<p class="muted">${escapeHtml(packet.bracket_venue)}${packet.bracket_note ? " — " + escapeHtml(packet.bracket_note) : ""}</p>` : ""}
-      ${scheduleByField(rows)}
+      ${scheduleByField(rows, board.event.slug)}
     </section>`);
+}
+
+export async function eventGame(slug, id) {
+  const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/schedule/" + encodeURIComponent(id), {
+    headers: authHeader(),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const detail = await res.json();
+  const ev = (await fetchBoard(slug)).event;
+  const g = detail.game;
+  const box = detail.box;
+  const can = !!g.can_score;
+  eventRoot().innerHTML = eventChrome(ev, "schedule", `
+    <section class="page-head">
+      <h1>${escapeHtml(g.home)} vs ${escapeHtml(g.away)}</h1>
+      <p class="muted">${escapeHtml([g.date, g.time, g.field, g.pool ? "Pool " + g.pool : ""].filter(Boolean).join(" · "))}</p>
+      <p><a data-link href="/t/${escapeHtml(slug)}/schedule">Back to games</a></p>
+    </section>
+    <section class="card">
+      <h2>Score</h2>
+      ${can ? `<form class="form wide" id="score-form">
+        <div class="form-grid two">
+          <label>${escapeHtml(g.home)} <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" required></label>
+          <label>${escapeHtml(g.away)} <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" required></label>
+        </div>
+        ${detail.director ? `<label>Status
+          <select name="status">
+            <option value="scheduled" ${g.status === "scheduled" ? "selected" : ""}>Scheduled</option>
+            <option value="live" ${g.status === "live" ? "selected" : ""}>Live</option>
+            <option value="submitted" ${g.status === "submitted" ? "selected" : ""}>Submitted — waiting on director</option>
+            <option value="final" ${g.status === "final" ? "selected" : ""}>Final</option>
+          </select>
+        </label>` : `<p class="muted">A team manager post waits as submitted until the director marks it final. The director can override any score.</p>`}
+        <label>Note <input name="notes" value="${escapeHtml(g.notes || "")}"></label>
+        <button class="btn" type="submit">Save score</button>
+        <p class="error" id="score-err" hidden></p>
+        <p class="muted" id="score-note"></p>
+      </form>` : `<p>${scoreText(g)} · ${escapeHtml(g.status)}</p>
+        <p class="muted">${eventPb.authStore.record ? "This is not your game to score." : "Log in as the director or a team manager to post a result."}</p>`}
+    </section>
+    <section class="card">
+      <h2>Box score</h2>
+      <p class="muted">Upload the scorebook photo or PDF. Optional hitting and pitching lines are stored as posted — nothing is invented from the picture.</p>
+      ${box ? `<p>${box.url ? `<a href="${escapeHtml(box.url)}" target="_blank" rel="noopener">${escapeHtml(box.original_name || "Current box")}</a>` : "Lines on file"} · ${escapeHtml(box.status)}${box.note ? " · " + escapeHtml(box.note) : ""}</p>` : `<p class="empty">No box uploaded yet.</p>`}
+      ${can ? `<form class="form wide" id="box-form">
+        <label>Scorebook photo or PDF <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp"></label>
+        <label>Hitting lines (optional)
+          <textarea name="hitting" rows="4" placeholder="home,hit,4,Maeve D,4,1,2,1,0,0">${box && Array.isArray(box.hitting) && box.hitting.length ? escapeHtml(JSON.stringify(box.hitting)) : ""}</textarea>
+        </label>
+        <label>Pitching lines (optional)
+          <textarea name="pitching" rows="3" placeholder="home,pit,7,Sam P,4.0,3,1,1,1,5">${box && Array.isArray(box.pitching) && box.pitching.length ? escapeHtml(JSON.stringify(box.pitching)) : ""}</textarea>
+        </label>
+        <p class="muted">CSV: side,hit or pit,jersey,name, then AB R H RBI BB SO — or IP H R ER BB SO.</p>
+        <label>Note <input name="note" value="${escapeHtml(box?.note || "")}"></label>
+        <button class="btn" type="submit">Upload box</button>
+        <p class="error" id="box-err" hidden></p>
+      </form>` : ""}
+    </section>
+  `);
+  const show = (id, err) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = err.message || String(err);
+  };
+  const scoreForm = document.getElementById("score-form");
+  if (scoreForm) {
+    scoreForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const data = Object.fromEntries(new FormData(evnt.target));
+      if (detail.director && data.status === "final") data.confirm = true;
+      const out = await fetch("/api/events/" + encodeURIComponent(slug) + "/schedule/" + encodeURIComponent(id) + "/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify(data),
+      });
+      if (!out.ok) return show("score-err", new Error(await out.text()));
+      eventGame(slug, id);
+    });
+  }
+  const boxForm = document.getElementById("box-form");
+  if (boxForm) {
+    boxForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const out = await fetch("/api/events/" + encodeURIComponent(slug) + "/schedule/" + encodeURIComponent(id) + "/box", {
+        method: "POST",
+        headers: { ...authHeader() },
+        body: new FormData(evnt.target),
+      });
+      if (!out.ok) return show("box-err", new Error(await out.text()));
+      eventGame(slug, id);
+    });
+  }
 }
 
 export async function eventLeaders(slug) {
@@ -944,8 +1064,9 @@ export async function eventAdmin(slug) {
           <label>First pitch <input name="start_time" type="time" value="08:00"></label>
           <label>No start after <input name="end_time" type="time" value="18:00"></label>
         </div>
-        <label class="check"><input type="checkbox" name="consolation" checked> Draw consolation games outside the championship</label>
-        <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed games</label>
+        <label class="check"><input type="checkbox" name="consolation" checked> If you draw a bracket, include consolation games</label>
+        <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed pool games</label>
+        <label class="check"><input type="checkbox" name="draw_bracket"> Also draw empty bracket slots now</label>
         <div class="actions">
           <button class="btn" type="submit">Build pool schedule</button>
           <button class="btn ghost" id="build-bracket" type="button">Draw bracket from standings</button>
@@ -981,13 +1102,20 @@ export async function eventAdmin(slug) {
     </section>
     <section class="card">
       <h2>Schedule per field</h2>
-      ${games.length ? table(["When", "Field", "Pool", "Home", "Away", ""], games.map((g) => `<tr>
+      ${games.length ? table(["When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
         <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
             <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
         <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
-        <td>${escapeHtml(g.pool || "")}</td>
         <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
-        <td><button class="btn ghost" type="button" data-save-game="${g.id}">Save</button> ${escapeHtml(g.status)}</td>
+        <td><input data-edit="${g.id}" name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" style="width:4.2rem">
+            <input data-edit="${g.id}" name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" style="width:4.2rem"></td>
+        <td>
+          <button class="btn ghost" type="button" data-save-game="${g.id}">Save</button>
+          <button class="btn ghost" type="button" data-score-game="${g.id}">Final</button>
+          <a data-link href="/t/${ev.slug}/games/${g.id}">Box</a>
+          <button class="btn ghost" type="button" data-delete-game="${g.id}">Remove</button>
+          ${escapeHtml(g.status)}
+        </td>
       </tr>`)) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
       <form class="form wide" id="add-game-form">
         <h3>Add one game</h3>
@@ -1050,6 +1178,7 @@ export async function eventAdmin(slug) {
         end_time: fd.get("end_time") || "18:00",
         consolation: fd.get("consolation") === "on",
         replace: fd.get("replace") === "on",
+        draw_bracket: fd.get("draw_bracket") === "on",
         format: ev.format || "pool-to-bracket",
       });
       note("Scheduled " + out.games + " game(s) on " + (out.fields || []).join(", ") + (out.leftover ? " · " + out.leftover + " leftover" : ""));
@@ -1099,10 +1228,36 @@ export async function eventAdmin(slug) {
         if (el.name === "when_date") body.date = el.value;
         if (el.name === "when_time") body.time = el.value;
         if (el.name === "field") body.field = el.value;
+        if (el.name === "home_runs") body.home_runs = el.value;
+        if (el.name === "away_runs") body.away_runs = el.value;
       });
       try {
         await adminPost(slug, "/schedule/" + id, body);
         note("Game updated");
+      } catch (err) { showErr(err); }
+    });
+  });
+  eventRoot().querySelectorAll("[data-score-game]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.scoreGame;
+      const inputs = eventRoot().querySelectorAll(`[data-edit="${id}"]`);
+      const body = { status: "final", confirm: true };
+      inputs.forEach((el) => {
+        if (el.name === "home_runs") body.home_runs = el.value;
+        if (el.name === "away_runs") body.away_runs = el.value;
+      });
+      try {
+        await adminPost(slug, "/schedule/" + id + "/score", body);
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
+  eventRoot().querySelectorAll("[data-delete-game]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this pool game from the schedule?")) return;
+      try {
+        await adminPost(slug, "/schedule/" + btn.dataset.deleteGame + "/delete", {});
+        eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
   });

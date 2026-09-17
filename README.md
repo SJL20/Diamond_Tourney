@@ -24,7 +24,9 @@ Every page has a **site bar** (Find, Year, Account, Create). Tournament pages ad
 5. On **Admin**, save fields if you added more, then **Build pool schedule**. That fills round-robin games per field without double-booking a team or a diamond. **Draw bracket from standings** (or auto-schedule does it when the format is not pool-only).
 6. **Rain desk** posts a public banner and can delay times, move a day, postpone games, or close a wet field and reassign.
 
-Games on the public **Games** tab are grouped by field. A delay keeps the original first-pitch time on the row.
+Games on the public **Games** tab are grouped by field. Only real pool games show there — empty bracket slots stay on **Bracket** until those games have teams. A delay keeps the original first-pitch time on the row.
+
+**Scoring:** the director can enter or override any score from Admin or a game page, and can upload a scorebook photo/PDF. A team manager who signed that club up can post a result and a box for their own games; those sit as submitted until the director marks them final. Lines are stored only if someone types them — a photo is not turned into invented stats.
 
 | Page | What it is |
 |---|---|
@@ -40,7 +42,8 @@ Games on the public **Games** tab are grouped by field. A delay keeps the origin
 | `/find` | Search public weekends — Keystone Clash is featured |
 | `/year/2026` | Series leaderboard — same club across weekends |
 | `/start` | Create a tournament — fields + GPS/address, bracket type, guidelines, team packet |
-| `/t/{slug}/admin` | Director desk — fields, auto-schedule per diamond, rain delay/move/postpone, packets |
+| `/t/{slug}/admin` | Director desk — fields, auto-schedule per diamond, rain, scores, packets |
+| `/t/{slug}/games/{id}` | Post a score and upload a box — director or that game’s team manager |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
 

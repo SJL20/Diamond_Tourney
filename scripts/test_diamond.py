@@ -429,7 +429,15 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("Lightning", board["event"]["rain_note"])
         self.assertTrue(any(g.get("field") for g in board["schedule"]))
         self.assertGreaterEqual(len(board["fields"]), 2)
+        self.assertTrue(all(g.get("home") and g.get("away") and g.get("field") for g in board["schedule"]))
+        built = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "consolation": True,
+            "replace": True,
+        })
+        self.assertGreaterEqual(built["games"], 1)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertTrue(any(g["round"] == "F" for g in board["bracket"]))
+        self.assertTrue(all(g.get("home") and g.get("away") for g in board["schedule"]))
 
         moved = request(BASE, "POST", f"/api/events/{slug}/rain", td, {
             "rain_status": "moved",
@@ -439,6 +447,96 @@ class ScheduleTests(unittest.TestCase):
         })
         self.assertGreaterEqual(moved["moved"], 1)
         self.assertTrue(all(g["date"] == "2026-09-20" for g in moved["schedule"] if g["status"] != "final"))
+
+    def test_director_and_manager_can_score_and_upload_box(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "score-classic-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Score Classic",
+            "slug": slug,
+            "format": "pool-only",
+            "fields": [{"name": "Diamond 1"}, {"name": "Diamond 2"}],
+        })
+        slug = created["event"]["slug"]
+        email = f"mgr.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "CoachScore1!",
+            "display_name": "Coach Score",
+            "intent": "team",
+        })
+        mgr = auth(BASE, email, "CoachScore1!")
+        request(BASE, "POST", f"/api/events/{slug}/signup", mgr, {
+            "team_name": "Score Hawks",
+            "pool": "A",
+            "contact_name": "Coach Score",
+            "contact_email": email,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Score Heat",
+            "pool": "A",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Score Cats",
+            "pool": "B",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Score Fox",
+            "pool": "B",
+            "as_director": True,
+        })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-only",
+        })
+        self.assertGreaterEqual(len(auto["schedule"]), 2)
+        self.assertTrue(all(g["home"] and g["away"] for g in auto["schedule"]))
+        mine = next(g for g in auto["schedule"] if "Score Hawks" in (g["home"], g["away"]))
+        other = next(g for g in auto["schedule"] if "Score Hawks" not in (g["home"], g["away"]))
+
+        posted = request(BASE, "POST", f"/api/events/{slug}/schedule/{mine['id']}/score", mgr, {
+            "home_runs": 6,
+            "away_runs": 2,
+        })
+        self.assertEqual(posted["game"]["status"], "submitted")
+        self.assertEqual(int(posted["game"]["home_runs"]), 6)
+
+        with self.assertRaises(RuntimeError) as forbidden:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{other['id']}/score", mgr, {
+                "home_runs": 1,
+                "away_runs": 0,
+            })
+        self.assertIn("manager", str(forbidden.exception).lower())
+
+        final = request(BASE, "POST", f"/api/events/{slug}/schedule/{mine['id']}/score", td, {
+            "home_runs": 7,
+            "away_runs": 2,
+            "status": "final",
+            "confirm": True,
+        })
+        self.assertEqual(final["game"]["status"], "final")
+        self.assertEqual(int(final["game"]["home_runs"]), 7)
+
+        pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
+        boxed = request_multipart(BASE, f"/api/events/{slug}/schedule/{mine['id']}/box", mgr, {
+            "note": "Scorebook page 1",
+            "hitting": "home,hit,4,Maeve D,4,1,2,1,0,0",
+        }, {
+            "file": ("box.pdf", pdf, "application/pdf"),
+        })
+        self.assertTrue(boxed["box"]["url"])
+        self.assertEqual(boxed["box"]["status"], "submitted")
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board", td)
+        scored = next(g for g in board["schedule"] if g["id"] == mine["id"])
+        self.assertTrue(scored["can_score"])
+        self.assertTrue(scored["has_box"])
+        self.assertEqual(scored["status"], "final")
 
     def test_keystone_fields_and_rain_note(self):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")

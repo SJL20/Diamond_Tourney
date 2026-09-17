@@ -147,12 +147,12 @@ function fieldLabel(app, rec) {
   return rec.get("field_name") || "";
 }
 
-function scheduleRow(app, rec) {
+function scheduleRow(app, rec, extras) {
   function teamName(id) {
     if (!id) return "";
     try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
   }
-  return {
+  const row = {
     id: rec.id,
     date: rec.get("date") || "",
     time: rec.get("time") || "",
@@ -168,12 +168,42 @@ function scheduleRow(app, rec) {
     status: rec.get("status") || "scheduled",
     notes: rec.get("notes") || "",
     delayed_from: rec.get("delayed_from") || "",
+    can_score: false,
+    has_box: false,
   };
+  if (extras) {
+    if (extras.can_score) row.can_score = true;
+    if (extras.has_box) row.has_box = true;
+  }
+  return row;
 }
 
-function listSchedule(app, eventId) {
+function boxesForEvent(app, eventId) {
+  const map = {};
+  try {
+    const rows = app.findRecordsByFilter("event_boxes", "event = {:e}", "", 200, 0, { e: eventId });
+    for (const b of rows) map[b.get("schedule_row")] = true;
+  } catch (err) {
+    try {
+      const rows = app.findRecordsByFilter("event_boxes", "", "", 200, 0);
+      for (const b of rows) map[b.get("schedule_row")] = true;
+    } catch (miss) {}
+  }
+  return map;
+}
+
+function listSchedule(app, eventId, auth) {
+  let event = null;
+  if (auth) {
+    try { event = app.findRecordById("events", eventId); } catch (err) {}
+  }
+  const boxes = boxesForEvent(app, eventId);
+  const score = require(__hooks + "/score.js");
   return app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time,field_name", 400, 0, { e: eventId }).map(function (r) {
-    return scheduleRow(app, r);
+    return scheduleRow(app, r, {
+      can_score: !!(auth && event && score.canScore(app, event, r, auth)),
+      has_box: !!boxes[r.id],
+    });
   });
 }
 
@@ -327,9 +357,12 @@ function autoSchedule(app, event, body) {
     guard++;
   }
   const format = body.format || event.get("format") || "pool-to-bracket";
-  if (format && format !== "pool-only" && format !== "imported") {
+  if (format) {
     event.set("format", format);
     app.save(event);
+  }
+  const draw = body.draw_bracket === true || body.draw_bracket === "true";
+  if (draw && format && format !== "pool-only" && format !== "imported") {
     buildBracket(app, event, { consolation: body.consolation !== false, replace: true });
   }
   return {
@@ -382,8 +415,17 @@ function updateGame(app, event, id, body) {
       rec.set("field_name", field.get("name"));
     }
   }
+  if (body.home_runs != null && body.home_runs !== "") rec.set("home_runs", Number(body.home_runs));
+  if (body.away_runs != null && body.away_runs !== "") rec.set("away_runs", Number(body.away_runs));
   app.save(rec);
   return scheduleRow(app, rec);
+}
+
+function deleteGame(app, event, id) {
+  const rec = app.findRecordById("event_schedule", id);
+  if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  app.delete(rec);
+  return { deleted: id };
 }
 
 function seedList(app, event) {
@@ -565,12 +607,12 @@ function rainUpdate(app, event, body) {
   };
 }
 
-function plan(app, event) {
+function plan(app, event, auth) {
   const host = require(__hooks + "/host.js");
   return {
     event: host.eventJson(event, app),
     fields: eventFields(app, event.id),
-    schedule: listSchedule(app, event.id),
+    schedule: listSchedule(app, event.id, auth),
     teams: host.publicRoster(app, event),
   };
 }
@@ -586,9 +628,11 @@ module.exports = {
   autoSchedule: autoSchedule,
   addGame: addGame,
   updateGame: updateGame,
+  deleteGame: deleteGame,
   buildBracket: buildBracket,
   rainUpdate: rainUpdate,
   plan: plan,
   listSchedule: listSchedule,
+  scheduleRow: scheduleRow,
   addMinutes: addMinutes,
 };

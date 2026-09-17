@@ -277,14 +277,14 @@ routerAdd("GET", "/api/event/{slug}/board", (e) => {
   const diamond = require(__hooks + "/diamond.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
-  return e.json(200, diamond.publicBoard(e.app, event));
+  return e.json(200, diamond.publicBoard(e.app, event, e.auth));
 });
 
 routerAdd("GET", "/api/events/{slug}/plan", (e) => {
   const schedule = require(__hooks + "/schedule.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
-  return e.json(200, schedule.plan(e.app, event));
+  return e.json(200, schedule.plan(e.app, event, e.auth));
 });
 
 routerAdd("POST", "/api/events/{slug}/fields", (e) => {
@@ -313,6 +313,46 @@ routerAdd("POST", "/api/events/{slug}/schedule/game", (e) => {
   sb.requireRole(e, ["region_admin", "event_td"]);
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   return e.json(200, { game: schedule.addGame(e.app, event, e.requestInfo().body || {}) });
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/events/{slug}/schedule/{id}", (e) => {
+  const score = require(__hooks + "/score.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
+  return e.json(200, score.gameDetail(e.app, event, e.request.pathValue("id"), e.auth));
+});
+
+routerAdd("POST", "/api/events/{slug}/schedule/{id}/score", (e) => {
+  const score = require(__hooks + "/score.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const game = score.postScore(e.app, event, e.request.pathValue("id"), e.requestInfo().body || {}, e.auth);
+  return e.json(200, { game: game });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/schedule/{id}/box", (e) => {
+  const host = require(__hooks + "/host.js");
+  const score = require(__hooks + "/score.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const body = e.requestInfo().body || {};
+  const files = host.uploaded(e, "file") || host.uploaded(e, "box");
+  return e.json(200, { box: score.saveBox(e.app, event, e.request.pathValue("id"), body, files, e.auth) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/schedule/{id}/delete", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, schedule.deleteGame(e.app, event, e.request.pathValue("id")));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/bracket/{id}/score", (e) => {
+  const score = require(__hooks + "/score.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, score.postBracketScore(e.app, event, e.request.pathValue("id"), e.requestInfo().body || {}, e.auth));
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/schedule/{id}", (e) => {

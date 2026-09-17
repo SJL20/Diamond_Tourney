@@ -371,6 +371,8 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .rain-banner.delay { background: #ffe0c2; }
 .rain-banner.postponed, .rain-banner.moved { background: #f8d7d0; }
 .rain-banner.clear { background: #eef4ea; }
+.bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.bk-score input { width: 4.2rem; }
 
 .list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
 .list li, .list-row {
