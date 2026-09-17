@@ -193,6 +193,84 @@ button, input, select, textarea { font: inherit; }
 
 .page { padding: 20px 0 32px; }
 .page > * + * { margin-top: 16px; }
+.wrap.page:has(.admin-desk) { width: min(1200px, calc(100% - 28px)); }
+
+.admin-desk {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.admin-rail {
+  position: sticky;
+  top: calc(var(--site-h) + 86px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 10px;
+}
+.admin-rail .kicker { padding: 0 8px 8px; }
+.admin-rail nav { display: grid; gap: 2px; }
+.admin-rail button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--navy);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.admin-rail button:hover { background: #eef3f8; }
+.admin-rail button.active {
+  background: var(--navy);
+  color: #fff;
+}
+.rail-count {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+  opacity: 0.72;
+}
+.admin-stage { min-width: 0; }
+.admin-stage .card[hidden] { display: none; }
+.admin-jump { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 6px; }
+.admin-jump button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--action);
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 800px) {
+  .admin-desk { grid-template-columns: 1fr; }
+  .admin-rail {
+    position: sticky;
+    top: calc(var(--site-h) + 70px);
+    z-index: 20;
+    padding: 8px;
+  }
+  .admin-rail nav {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+  }
+  .admin-rail button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+}
 
 .page-head, .hero, .card {
   background: var(--surface);

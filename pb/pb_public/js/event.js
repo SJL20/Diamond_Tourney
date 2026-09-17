@@ -138,48 +138,60 @@ function bindFieldRows(root, startCount, ev = {}) {
   });
 }
 
-function setupLocationFields(ev = {}, fields = []) {
-  const rows = fields.length ? fields : [{}, {}];
+function setupFormatFields(ev = {}) {
   const fmt = ev.format || "pool-to-bracket";
+  return `
+    <label>Format
+      <select name="format">
+        <option value="pool-to-bracket" ${fmt === "pool-to-bracket" ? "selected" : ""}>Pool play, then single-elim bracket</option>
+        <option value="pool-only" ${fmt === "pool-only" ? "selected" : ""}>Pool play only</option>
+        <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
+        <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
+        <option value="imported" ${fmt === "imported" ? "selected" : ""}>Imported / already drawn</option>
+      </select>
+    </label>
+    <p class="muted">Pool games are scheduled per field. Auto-schedule builds a round-robin inside each pool, then draws the bracket if you chose one.</p>
+  `;
+}
+
+function setupVenueFields(ev = {}, fields = []) {
+  const rows = fields.length ? fields : [{}, {}];
   const hoursStart = ev.hours_start || "08:00";
   const hoursEnd = ev.hours_end || "18:00";
   const dates = datesBetween(ev.start, ev.end);
   return `
+    <label>Complex / park name <input name="venue" value="${escapeHtml(ev.venue || "")}" placeholder="East End Park"></label>
+    <label>Street address <input name="address" value="${escapeHtml(ev.address || "")}" placeholder="51 Meadow St, McDonald, PA 15057"></label>
+    <div class="form-grid two">
+      <label>Latitude <input name="lat" value="${ev.lat || ""}" placeholder="40.3668"></label>
+      <label>Longitude <input name="lng" value="${ev.lng || ""}" placeholder="-80.2345"></label>
+    </div>
+    <div class="form-grid two">
+      <label>First day <input name="start" type="date" value="${dateInput(ev.start)}"></label>
+      <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
+    </div>
+    <div class="hours-global">
+      <p class="muted">Global availability. Every diamond inherits this window unless you narrow a day below. A field that is closed Saturday will not get Saturday games.</p>
+      <div class="form-grid two">
+        <label>First pitch <input name="hours_start" type="time" value="${escapeHtml(hoursStart)}"></label>
+        <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
+      </div>
+    </div>
+    <p class="muted">Use GPS or a street address. Each diamond can have its own pin; blank fields inherit the park.</p>
+    <div id="field-rows">${rows.map((f, i) => fieldRow(f, i, dates, hoursStart, hoursEnd)).join("")}</div>
+    <button class="btn ghost" type="button" id="add-field">Add another field</button>
+  `;
+}
+
+function setupLocationFields(ev = {}, fields = []) {
+  return `
     <details class="setup-block" open>
       <summary>Venue, address, and fields</summary>
-      <label>Complex / park name <input name="venue" value="${escapeHtml(ev.venue || "")}" placeholder="East End Park"></label>
-      <label>Street address <input name="address" value="${escapeHtml(ev.address || "")}" placeholder="51 Meadow St, McDonald, PA 15057"></label>
-      <div class="form-grid two">
-        <label>Latitude <input name="lat" value="${ev.lat || ""}" placeholder="40.3668"></label>
-        <label>Longitude <input name="lng" value="${ev.lng || ""}" placeholder="-80.2345"></label>
-      </div>
-      <div class="form-grid two">
-        <label>First day <input name="start" type="date" value="${dateInput(ev.start)}"></label>
-        <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
-      </div>
-      <div class="hours-global">
-        <p class="muted">Global availability. Every diamond inherits this window unless you narrow a day below. A field that is closed Saturday will not get Saturday games.</p>
-        <div class="form-grid two">
-          <label>First pitch <input name="hours_start" type="time" value="${escapeHtml(hoursStart)}"></label>
-          <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
-        </div>
-      </div>
-      <p class="muted">Use GPS or a street address. Each diamond can have its own pin; blank fields inherit the park.</p>
-      <div id="field-rows">${rows.map((f, i) => fieldRow(f, i, dates, hoursStart, hoursEnd)).join("")}</div>
-      <button class="btn ghost" type="button" id="add-field">Add another field</button>
+      ${setupVenueFields(ev, fields)}
     </details>
     <details class="setup-block" open>
       <summary>Bracket type and pool play</summary>
-      <label>Format
-        <select name="format">
-          <option value="pool-to-bracket" ${fmt === "pool-to-bracket" ? "selected" : ""}>Pool play, then single-elim bracket</option>
-          <option value="pool-only" ${fmt === "pool-only" ? "selected" : ""}>Pool play only</option>
-          <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
-          <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
-          <option value="imported" ${fmt === "imported" ? "selected" : ""}>Imported / already drawn</option>
-        </select>
-      </label>
-      <p class="muted">Pool games are scheduled per field. Auto-schedule builds a round-robin inside each pool, then draws the bracket if you chose one.</p>
+      ${setupFormatFields(ev)}
     </details>
   `;
 }
@@ -1412,6 +1424,30 @@ async function adminPost(slug, path, body, json = true) {
   return res.json();
 }
 
+function adminPaneFromHash() {
+  const id = String(location.hash || "").replace(/^#admin-/, "");
+  const allowed = ["overview", "setup", "venue", "scheduler", "rain", "teams", "stats"];
+  return allowed.includes(id) ? id : "overview";
+}
+
+function bindAdminRail(root) {
+  const setPane = (id) => {
+    const pane = ["overview", "setup", "venue", "scheduler", "rain", "teams", "stats"].includes(id) ? id : "overview";
+    root.querySelectorAll("[data-admin-pane]").forEach((el) => {
+      el.hidden = el.dataset.adminPane !== pane;
+    });
+    root.querySelectorAll("[data-admin-go]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.adminGo === pane);
+    });
+    const next = "#admin-" + pane;
+    if (location.hash !== next) history.replaceState({}, "", location.pathname + next);
+  };
+  root.querySelectorAll("[data-admin-go]").forEach((btn) => {
+    btn.addEventListener("click", () => setPane(btn.dataset.adminGo));
+  });
+  setPane(adminPaneFromHash());
+}
+
 export async function eventAdmin(slug) {
   if (!directorGate()) return;
   const plan = await fetch("/api/events/" + encodeURIComponent(slug) + "/plan", {
@@ -1430,138 +1466,178 @@ export async function eventAdmin(slug) {
     box.textContent = err.message || String(err);
   };
   const fieldOpts = fields.map((f) => `<option value="${escapeHtml(f.name)}">${escapeHtml(f.name)}</option>`).join("");
+  const pending = plan.pending_boxes || [];
+  const rainOn = ev.rain_status && ev.rain_status !== "clear";
+  const rail = [
+    ["overview", "Overview", ""],
+    ["setup", "Tournament setup", ""],
+    ["venue", "Venue setups", fields.length ? String(fields.length) : ""],
+    ["scheduler", "Scheduler", games.length ? String(games.length) : ""],
+    ["rain", "Rain notice", rainOn ? ev.rain_status : ""],
+    ["teams", "Teams", teams.length ? String(teams.length) : ""],
+    ["stats", "Stats inbox", pending.length ? String(pending.length) : ""],
+  ];
   eventRoot().innerHTML = eventChrome(ev, "admin", `
-    <section class="page-head">
+    <section class="page-head admin-status">
       <h1>Director desk</h1>
       <p class="muted">${ev.source === "tourneymachine" ? "Linked Tourney Machine" : ev.source === "popup" ? "Imported popup" : "Native host"} · ${escapeHtml(ev.format_label || ev.format || "format unset")} · signup ${ev.signup_open ? "open" : "closed"}</p>
-      <p>Add diamonds and an address first. Auto-schedule fills pool games per field. Rain updates shift, move, or postpone that grid.</p>
-      <div class="actions">
-        <button class="btn" id="sync-now" type="button">Refresh links</button>
-        <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
-        <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
-        <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
-        ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
-      </div>
       <p class="error" id="admin-err" hidden></p>
       <p class="muted" id="admin-note"></p>
     </section>
-    ${rainBanner(ev)}
-    <section class="card">
-      <h2>Fields and format</h2>
-      <form class="form wide" id="fields-form">
-        ${setupLocationFields(ev, fields.length ? fields : [{}, {}])}
-        <button class="btn" type="submit">Save fields</button>
-      </form>
-    </section>
-    <section class="card">
-      <h2>Auto-schedule</h2>
-      <p class="muted">Round-robin inside each pool. A diamond is only used while it is open that day. The global window is the default; a field can be darker or shorter on Saturday without closing Sunday.</p>
-      <form class="form wide" id="auto-form">
-        <div class="form-grid two">
-          <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml([ev.start, ev.end].filter(Boolean).join("\n") || "")}</textarea></label>
-          <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="2"></label>
-          <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
-          <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
-        </div>
-        <label class="check"><input type="checkbox" name="consolation" checked> If you draw a bracket, include consolation games</label>
-        <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed pool games</label>
-        <label class="check"><input type="checkbox" name="draw_bracket"> Also draw empty bracket slots now</label>
-        <div class="actions">
-          <button class="btn" type="submit">Build pool schedule</button>
-          <button class="btn ghost" id="build-bracket" type="button">Draw bracket from standings</button>
-        </div>
-      </form>
-    </section>
-    <section class="card">
-      <h2>Rain desk</h2>
-      <form class="form wide" id="rain-form">
-        <label>Status
-          <select name="rain_status">
-            ${[["clear", "Clear — play as scheduled"], ["watch", "Weather watch"], ["delay", "Rain delay"], ["postponed", "Postponed"], ["moved", "Venue / day moved"]].map(([v, l]) =>
-              `<option value="${v}" ${ev.rain_status === v ? "selected" : ""}>${l}</option>`).join("")}
-          </select>
-        </label>
-        <label>Public note <textarea name="rain_note" rows="2" placeholder="Lightning delay. First pitch 10:00. Sunday moves to No Offseason.">${escapeHtml(ev.rain_note || "")}</textarea></label>
-        <div class="form-grid two">
-          <label>Delay minutes <input name="delay_minutes" type="number" min="0" placeholder="60"></label>
-          <label>Only games after <input name="after_time" type="time" value="00:00"></label>
-          <label>Only this date <input name="date" type="date"></label>
-          <label>Close this field
-            <select name="close_field">
-              <option value="">Keep all diamonds open</option>
-              ${fields.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`).join("")}
-            </select>
-          </label>
-          <label>Move games from <input name="move_from" type="date"></label>
-          <label>Move games to <input name="move_to" type="date"></label>
-        </div>
-        <label class="check"><input type="checkbox" name="postpone"> Mark matching games postponed</label>
-        <button class="btn" type="submit">Post rain update</button>
-      </form>
-    </section>
-    <section class="card">
-      <h2>Stats inbox</h2>
-      <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
-      ${(plan.pending_boxes || []).length ? table(["Game", "Door", "Status", ""], plan.pending_boxes.map((b) => `<tr>
-        <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
-        <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>
-        <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
-        <td>${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open</a>` : ""}</td>
-      </tr>`)) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
-    </section>
-    <section class="card">
-      <h2>Schedule per field</h2>
-      ${games.length ? table(["When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
-        <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
-            <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
-        <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
-        <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
-        <td><input data-edit="${g.id}" name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" style="width:4.2rem">
-            <input data-edit="${g.id}" name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" style="width:4.2rem"></td>
-        <td>
-          <button class="btn ghost" type="button" data-save-game="${g.id}">Save</button>
-          <button class="btn ghost" type="button" data-score-game="${g.id}">Final</button>
-          <a data-link href="/t/${ev.slug}/games/${g.id}">Box</a>
-          <button class="btn ghost" type="button" data-delete-game="${g.id}">Remove</button>
-          ${escapeHtml(g.status)}
-        </td>
-      </tr>`)) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
-      <form class="form wide" id="add-game-form">
-        <h3>Add one game</h3>
-        <div class="form-grid two">
-          <label>Home <input name="home" required placeholder="Hawks 10U"></label>
-          <label>Away <input name="away" required placeholder="Passion"></label>
-          <label>Date <input name="date" type="date" value="${dateInput(ev.start)}"></label>
-          <label>Time <input name="time" type="time" value="09:00"></label>
-          <label>Field
-            <select name="field">${fieldOpts || `<option value="">Add a field first</option>`}</select>
-          </label>
-          <label>Pool <input name="pool" placeholder="A"></label>
-        </div>
-        <button class="btn" type="submit">Add game</button>
-      </form>
-    </section>
-    <section class="card">
-      <h2>Guidelines</h2>
-      <form class="form wide" id="guide-form">
-        ${setupGuidelinesFields(ev)}
-        <button class="btn" type="submit">Save guidelines</button>
-      </form>
-    </section>
-    <section class="card">
-      <h2>Team packets</h2>
-      ${table(["Team", "Packet", "Missing", "Files"], teams.map((t) => {
-        const p = t.packet || {};
-        return `<tr>
-          <td>${escapeHtml(t.name)}</td>
-          <td><span class="badge ${p.status || "incomplete"}">${escapeHtml(p.status || "incomplete")}</span></td>
-          <td>${(p.missing || []).map((k) => escapeHtml(k)).join(", ") || "—"}</td>
-          <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(d.url)}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
-        </tr>`;
-      }))}
-    </section>
-    ${rosterBlock(teams)}
+    <div class="admin-desk">
+      <aside class="admin-rail" aria-label="Director sections">
+        <p class="kicker">Desk</p>
+        <nav>
+          ${rail.map(([id, label, badge]) =>
+            `<button type="button" data-admin-go="${id}">${escapeHtml(label)}${badge ? ` <span class="rail-count">${escapeHtml(badge)}</span>` : ""}</button>`).join("")}
+        </nav>
+      </aside>
+      <div class="admin-stage">
+        <section class="card" data-admin-pane="overview">
+          <h2>Overview</h2>
+          <p class="muted">Open one section at a time. Venue and hours first, then the scheduler. Rain and team packets stay on their own desks.</p>
+          ${rainBanner(ev)}
+          <div class="actions">
+            <button class="btn" id="sync-now" type="button">Refresh links</button>
+            <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
+            <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
+            <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+            ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
+          </div>
+          <ul class="admin-jump">
+            <li><button type="button" class="link" data-admin-go="venue">Set fields and hours</button></li>
+            <li><button type="button" class="link" data-admin-go="scheduler">Build the weekend grid</button></li>
+            <li><button type="button" class="link" data-admin-go="rain">Post a rain notice</button></li>
+            <li><button type="button" class="link" data-admin-go="teams">Review team packets</button></li>
+          </ul>
+        </section>
+        <section class="card" data-admin-pane="setup" hidden>
+          <h2>Tournament setup</h2>
+          <p class="muted">Bracket type, governing body, pitch cap, and what teams must upload.</p>
+          <form class="form wide" id="guide-form">
+            <div class="setup-block">${setupFormatFields(ev)}</div>
+            ${setupGuidelinesFields(ev)}
+            <button class="btn" type="submit">Save tournament setup</button>
+          </form>
+        </section>
+        <section class="card" data-admin-pane="venue" hidden>
+          <h2>Venue setups</h2>
+          <p class="muted">Park, GPS, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
+          <form class="form wide" id="fields-form">
+            ${setupVenueFields(ev, fields.length ? fields : [{}, {}])}
+            <button class="btn" type="submit">Save venue</button>
+          </form>
+        </section>
+        <section class="card" data-admin-pane="scheduler" hidden>
+          <h2>Scheduler</h2>
+          <p class="muted">Round-robin inside each pool. A diamond is only used while it is open that day.</p>
+          <form class="form wide" id="auto-form">
+            <div class="form-grid two">
+              <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml([ev.start, ev.end].filter(Boolean).join("\n") || "")}</textarea></label>
+              <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="2"></label>
+              <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
+              <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
+            </div>
+            <label class="check"><input type="checkbox" name="consolation" checked> If you draw a bracket, include consolation games</label>
+            <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed pool games</label>
+            <label class="check"><input type="checkbox" name="draw_bracket"> Also draw empty bracket slots now</label>
+            <div class="actions">
+              <button class="btn" type="submit">Build pool schedule</button>
+              <button class="btn ghost" id="build-bracket" type="button">Draw bracket from standings</button>
+            </div>
+          </form>
+          <h3>Games by field</h3>
+          ${games.length ? table(["When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
+            <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
+                <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
+            <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
+            <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
+            <td><input data-edit="${g.id}" name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" style="width:4.2rem">
+                <input data-edit="${g.id}" name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" style="width:4.2rem"></td>
+            <td>
+              <button class="btn ghost" type="button" data-save-game="${g.id}">Save</button>
+              <button class="btn ghost" type="button" data-score-game="${g.id}">Final</button>
+              <a data-link href="/t/${ev.slug}/games/${g.id}">Box</a>
+              <button class="btn ghost" type="button" data-delete-game="${g.id}">Remove</button>
+              ${escapeHtml(g.status)}
+            </td>
+          </tr>`)) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
+          <form class="form wide" id="add-game-form">
+            <h3>Add one game</h3>
+            <div class="form-grid two">
+              <label>Home <input name="home" required placeholder="Hawks 10U"></label>
+              <label>Away <input name="away" required placeholder="Passion"></label>
+              <label>Date <input name="date" type="date" value="${dateInput(ev.start)}"></label>
+              <label>Time <input name="time" type="time" value="09:00"></label>
+              <label>Field
+                <select name="field">${fieldOpts || `<option value="">Add a field first</option>`}</select>
+              </label>
+              <label>Pool <input name="pool" placeholder="A"></label>
+            </div>
+            <button class="btn" type="submit">Add game</button>
+          </form>
+        </section>
+        <section class="card" data-admin-pane="rain" hidden>
+          <h2>Rain notice</h2>
+          <p class="muted">Posts a public banner and can delay times, move a day, postpone games, or close a wet field.</p>
+          ${rainBanner(ev)}
+          <form class="form wide" id="rain-form">
+            <label>Status
+              <select name="rain_status">
+                ${[["clear", "Clear — play as scheduled"], ["watch", "Weather watch"], ["delay", "Rain delay"], ["postponed", "Postponed"], ["moved", "Venue / day moved"]].map(([v, l]) =>
+                  `<option value="${v}" ${ev.rain_status === v ? "selected" : ""}>${l}</option>`).join("")}
+              </select>
+            </label>
+            <label>Public note <textarea name="rain_note" rows="2" placeholder="Lightning delay. First pitch 10:00. Sunday moves to No Offseason.">${escapeHtml(ev.rain_note || "")}</textarea></label>
+            <div class="form-grid two">
+              <label>Delay minutes <input name="delay_minutes" type="number" min="0" placeholder="60"></label>
+              <label>Only games after <input name="after_time" type="time" value="00:00"></label>
+              <label>Only this date <input name="date" type="date"></label>
+              <label>Close this field
+                <select name="close_field">
+                  <option value="">Keep all diamonds open</option>
+                  ${fields.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`).join("")}
+                </select>
+              </label>
+              <label>Move games from <input name="move_from" type="date"></label>
+              <label>Move games to <input name="move_to" type="date"></label>
+            </div>
+            <label class="check"><input type="checkbox" name="postpone"> Mark matching games postponed</label>
+            <button class="btn" type="submit">Post rain update</button>
+          </form>
+        </section>
+        <section class="card" data-admin-pane="teams" hidden>
+          <h2>Teams</h2>
+          <p class="muted">Packets and the public roster. Add a club from Overview or the signup page.</p>
+          <div class="actions">
+            <a class="btn" data-link href="/t/${ev.slug}/signup">Add a team</a>
+          </div>
+          <h3>Packets</h3>
+          ${table(["Team", "Packet", "Missing", "Files"], teams.map((t) => {
+            const p = t.packet || {};
+            return `<tr>
+              <td>${escapeHtml(t.name)}</td>
+              <td><span class="badge ${p.status || "incomplete"}">${escapeHtml(p.status || "incomplete")}</span></td>
+              <td>${(p.missing || []).map((k) => escapeHtml(k)).join(", ") || "—"}</td>
+              <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(d.url)}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
+            </tr>`;
+          }))}
+          ${rosterBlock(teams)}
+        </section>
+        <section class="card" data-admin-pane="stats" hidden>
+          <h2>Stats inbox</h2>
+          <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
+          ${pending.length ? table(["Game", "Door", "Status", ""], pending.map((b) => `<tr>
+            <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
+            <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>
+            <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
+            <td>${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open</a>` : ""}</td>
+          </tr>`)) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
+        </section>
+      </div>
+    </div>
   `);
+  bindAdminRail(eventRoot());
   bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 

@@ -57,7 +57,7 @@ Lines land in the weekend leaders only when someone (bot or person) types them. 
 | `/start` | Create a tournament — fields + GPS/address, bracket type, guidelines, team packet |
 | `/t/{slug}/overall` | Weekend schedule — pool + bracket, field and time |
 | `/t/{slug}/bracket` | Championship tree — field and time on every card; directors can edit or reorder after a protest |
-| `/t/{slug}/admin` | Director desk — fields, auto-schedule per diamond, rain, scores, packets |
+| `/t/{slug}/admin` | Director desk — left rail for tournament setup, venue, scheduler, rain, teams, stats |
 | `/t/{slug}/games/{id}` | Four stats doors — GC mobile PDF, public box URL, Grok bot, director PDF |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
