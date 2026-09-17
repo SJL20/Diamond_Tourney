@@ -177,21 +177,13 @@ routerAdd("GET", "/api/events/search", (e) => {
   return e.json(200, { events: host.searchEvents(e.app, q) });
 });
 
-function uploaded(e, field) {
-  try {
-    const files = e.findUploadedFiles(field);
-    if (files && files.length) return files;
-  } catch (err) {}
-  return null;
-}
-
 routerAdd("POST", "/api/events/create", (e) => {
   const sb = require(__hooks + "/softball.js");
   const host = require(__hooks + "/host.js");
   const auth = sb.requireRole(e, ["region_admin", "event_td", "team_coach", "public"]);
   const body = e.requestInfo().body || {};
   const result = host.createEvent(e.app, body, auth);
-  const rules = uploaded(e, "rules_file");
+  const rules = host.uploaded(e, "rules_file");
   if (rules) {
     const rec = e.app.findRecordById("events", result.event.id);
     rec.set("rules_file", rules);
@@ -209,7 +201,7 @@ routerAdd("POST", "/api/events/{slug}/signup", (e) => {
   const rec = e.app.findRecordById("event_teams", team.id);
   const kinds = host.DOC_KINDS || ["insurance", "roster", "birth_certs", "waiver", "coach_cert", "other"];
   for (const kind of kinds) {
-    const files = uploaded(e, kind);
+    const files = host.uploaded(e, kind);
     if (files) {
       host.saveTeamDoc(e.app, event, rec, { kind: kind, original_name: kind }, files, e.auth);
     }
@@ -232,7 +224,7 @@ routerAdd("POST", "/api/events/{slug}/docs", (e) => {
     throw new BadRequestError("Signup is closed. Ask the director to take a replacement file.");
   }
   const team = e.app.findRecordById("event_teams", body.team_id || body.event_team);
-  const files = uploaded(e, "file") || uploaded(e, body.kind);
+  const files = host.uploaded(e, "file") || host.uploaded(e, body.kind);
   const doc = host.saveTeamDoc(e.app, event, team, body, files, e.auth);
   return e.json(200, { doc: doc, packet: host.packetSummary(e.app, event, team) });
 });
@@ -261,7 +253,7 @@ routerAdd("POST", "/api/events/{slug}/settings", (e) => {
   sb.requireRole(e, ["region_admin", "event_td"]);
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   const updated = host.applySettings(e.app, event, e.requestInfo().body || {});
-  const rules = uploaded(e, "rules_file");
+  const rules = host.uploaded(e, "rules_file");
   if (rules) {
     const rec = e.app.findRecordById("events", event.id);
     rec.set("rules_file", rules);

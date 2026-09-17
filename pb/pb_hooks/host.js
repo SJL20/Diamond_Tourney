@@ -90,6 +90,33 @@ function requiredDocKinds(event) {
   return out;
 }
 
+function isMultipart(e) {
+  try {
+    const h = e.request.header.get("Content-Type") || "";
+    if (String(h).toLowerCase().indexOf("multipart/form-data") !== -1) return true;
+  } catch (err) {}
+  try {
+    const headers = e.requestInfo().headers || {};
+    const keys = Object.keys(headers);
+    for (let i = 0; i < keys.length; i++) {
+      if (String(keys[i]).toLowerCase() !== "content-type") continue;
+      const v = headers[keys[i]];
+      const s = Array.isArray(v) ? v.join(" ") : String(v);
+      if (s.toLowerCase().indexOf("multipart/") !== -1) return true;
+    }
+  } catch (err) {}
+  return false;
+}
+
+function uploaded(e, field) {
+  if (!isMultipart(e)) return null;
+  try {
+    const files = e.findUploadedFiles(field);
+    if (files && files.length) return files;
+  } catch (err) {}
+  return null;
+}
+
 function fileUrl(app, collectionName, rec, field) {
   const name = rec.get(field);
   if (!name) return "";
@@ -649,4 +676,5 @@ module.exports = {
   reviewDoc: reviewDoc,
   DOC_KINDS: DOC_KINDS,
   DOC_LABELS: DOC_LABELS,
+  uploaded: uploaded,
 };
