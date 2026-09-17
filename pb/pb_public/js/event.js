@@ -453,7 +453,7 @@ export async function eventSchedule(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "schedule", `
     <section class="page-head">
       <h1>Games</h1>
-      <p class="muted">Pool games by diamond. Bracket placeholders stay on Bracket until those games have teams and a time. Directors and team managers post scores from a game.</p>
+      <p class="muted">Pool games by diamond. Open a game to post the score and upload stats: GC mobile PDF, public box URL, Grok bot, or a director PDF.</p>
     </section>
     ${rainBanner(board.event)}
     <section class="card">
@@ -502,22 +502,53 @@ export async function eventGame(slug, id) {
         <p class="muted">${eventPb.authStore.record ? "This is not your game to score." : "Log in as the director or a team manager to post a result."}</p>`}
     </section>
     <section class="card">
-      <h2>Box score</h2>
-      <p class="muted">Upload the scorebook photo or PDF. Optional hitting and pitching lines are stored as posted — nothing is invented from the picture.</p>
-      ${box ? `<p>${box.url ? `<a href="${escapeHtml(box.url)}" target="_blank" rel="noopener">${escapeHtml(box.original_name || "Current box")}</a>` : "Lines on file"} · ${escapeHtml(box.status)}${box.note ? " · " + escapeHtml(box.note) : ""}</p>` : `<p class="empty">No box uploaded yet.</p>`}
-      ${can ? `<form class="form wide" id="box-form">
-        <label>Scorebook photo or PDF <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp"></label>
-        <label>Hitting lines (optional)
-          <textarea name="hitting" rows="4" placeholder="home,hit,4,Maeve D,4,1,2,1,0,0">${box && Array.isArray(box.hitting) && box.hitting.length ? escapeHtml(JSON.stringify(box.hitting)) : ""}</textarea>
-        </label>
-        <label>Pitching lines (optional)
-          <textarea name="pitching" rows="3" placeholder="home,pit,7,Sam P,4.0,3,1,1,1,5">${box && Array.isArray(box.pitching) && box.pitching.length ? escapeHtml(JSON.stringify(box.pitching)) : ""}</textarea>
-        </label>
-        <p class="muted">CSV: side,hit or pit,jersey,name, then AB R H RBI BB SO — or IP H R ER BB SO.</p>
-        <label>Note <input name="note" value="${escapeHtml(box?.note || "")}"></label>
-        <button class="btn" type="submit">Upload box</button>
-        <p class="error" id="box-err" hidden></p>
-      </form>` : ""}
+      <h2>How this game’s stats get here</h2>
+      <p class="muted">Four doors. This host does not scrape GameChanger. A PDF or public box URL is stored as you sent it. A Grok bot (or a person) types the lines. Nothing is invented from a picture.</p>
+      ${box ? `<p class="stats-now">
+        ${box.gc_url ? `<a href="${escapeHtml(box.gc_url)}" target="_blank" rel="noopener">GameChanger box</a> · ` : ""}
+        ${box.url ? `<a href="${escapeHtml(box.url)}" target="_blank" rel="noopener">${escapeHtml(box.original_name || "Uploaded PDF")}</a> · ` : ""}
+        ${escapeHtml(box.source || "box")} · ${escapeHtml(box.status)}
+        ${box.note ? " · " + escapeHtml(box.note) : ""}
+      </p>` : `<p class="empty">No PDF, GameChanger link, or bot lines on this game yet.</p>`}
+      ${can ? `
+      <details class="setup-block" open>
+        <summary>1. GameChanger mobile PDF</summary>
+        <p class="muted">From the GC app: share / export the box as PDF, then drop it here. Team managers use this after the game.</p>
+        <form class="form wide" id="gc-pdf-form">
+          <input type="hidden" name="source" value="gc_pdf">
+          <label>GameChanger PDF <input name="file" type="file" accept=".pdf,application/pdf" required></label>
+          <label>Note <input name="note" placeholder="Saturday 9:00, Harbor 1"></label>
+          <button class="btn" type="submit">Queue GC PDF</button>
+          <p class="error" id="gc-pdf-err" hidden></p>
+        </form>
+      </details>
+      <details class="setup-block" open>
+        <summary>2. Public GameChanger box URL</summary>
+        <p class="muted">Paste the public web box, like web.gc.com/teams/…/schedule/…/box-score. We store the link and check that the page is reachable. We do not copy numbers off that page.</p>
+        <form class="form wide" id="gc-url-form">
+          <input type="hidden" name="source" value="gc_url">
+          <label>Box-score URL <input name="gc_url" type="url" required placeholder="https://web.gc.com/teams/…/schedule/…/box-score" value="${escapeHtml(box?.gc_url || "")}"></label>
+          <button class="btn" type="submit">Save GC link for a bot</button>
+          <p class="error" id="gc-url-err" hidden></p>
+        </form>
+      </details>
+      <details class="setup-block">
+        <summary>3. Grok bot upload</summary>
+        <p class="muted">Queued PDFs and links show in Admin → Stats inbox. A bot (or you) posts the extracted hitting, pitching, and score to <code>/api/bot/event-box</code>. Local: <code>python3 scripts/bot_c_event_box.py --list</code> then <code>--event ${escapeHtml(slug)} --game ${escapeHtml(id)}</code>.</p>
+      </details>
+      ${detail.director ? `<details class="setup-block" open>
+        <summary>4. Director PDF</summary>
+        <p class="muted">Your upload as the tournament director. Use a GC export or a scorebook scan. Check the box if this file is the book of record and a bot does not need to type it.</p>
+        <form class="form wide" id="td-pdf-form">
+          <input type="hidden" name="source" value="director_pdf">
+          <label>PDF or photo <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" required></label>
+          <label class="check"><input type="checkbox" name="approve_file"> Official book — do not wait on a bot</label>
+          <label>Note <input name="note" placeholder="TD copy from the plate meeting"></label>
+          <button class="btn" type="submit">Upload director PDF</button>
+          <p class="error" id="td-pdf-err" hidden></p>
+        </form>
+      </details>` : ""}
+      ` : `<p class="muted">${eventPb.authStore.record ? "Log in as this game’s manager or the director to upload a PDF or GC link." : "Log in to upload stats."}</p>`}
     </section>
   `);
   const show = (id, err) => {
@@ -541,19 +572,27 @@ export async function eventGame(slug, id) {
       eventGame(slug, id);
     });
   }
-  const boxForm = document.getElementById("box-form");
-  if (boxForm) {
-    boxForm.addEventListener("submit", async (evnt) => {
-      evnt.preventDefault();
-      const out = await fetch("/api/events/" + encodeURIComponent(slug) + "/schedule/" + encodeURIComponent(id) + "/box", {
-        method: "POST",
-        headers: { ...authHeader() },
-        body: new FormData(evnt.target),
-      });
-      if (!out.ok) return show("box-err", new Error(await out.text()));
-      eventGame(slug, id);
+  const postBox = async (form, errId) => {
+    const fd = new FormData(form);
+    if (form.querySelector("[name=approve_file]")) {
+      fd.set("approve_file", form.querySelector("[name=approve_file]").checked ? "true" : "false");
+    }
+    const out = await fetch("/api/events/" + encodeURIComponent(slug) + "/schedule/" + encodeURIComponent(id) + "/box", {
+      method: "POST",
+      headers: { ...authHeader() },
+      body: fd,
     });
-  }
+    if (!out.ok) return show(errId, new Error(await out.text()));
+    eventGame(slug, id);
+  };
+  [["gc-pdf-form", "gc-pdf-err"], ["gc-url-form", "gc-url-err"], ["td-pdf-form", "td-pdf-err"]].forEach(([fid, eid]) => {
+    const form = document.getElementById(fid);
+    if (!form) return;
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      postBox(evnt.target, eid);
+    });
+  });
 }
 
 export async function eventLeaders(slug) {
@@ -1099,6 +1138,16 @@ export async function eventAdmin(slug) {
         <label class="check"><input type="checkbox" name="postpone"> Mark matching games postponed</label>
         <button class="btn" type="submit">Post rain update</button>
       </form>
+    </section>
+    <section class="card">
+      <h2>Stats inbox</h2>
+      <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
+      ${(plan.pending_boxes || []).length ? table(["Game", "Door", "Status", ""], plan.pending_boxes.map((b) => `<tr>
+        <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
+        <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>
+        <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
+        <td>${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open</a>` : ""}</td>
+      </tr>`)) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
     </section>
     <section class="card">
       <h2>Schedule per field</h2>

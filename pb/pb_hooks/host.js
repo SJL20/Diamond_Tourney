@@ -31,6 +31,11 @@ function isGameChangerUrl(url) {
   return host === "gc.com" || host === "web.gc.com" || host === "gamechanger.io";
 }
 
+function isGcBoxUrl(url) {
+  if (!isGameChangerUrl(url)) return false;
+  return /\/box-score\/?(\?|#|$)|\/schedule\/[a-zA-Z0-9-]+/i.test(String(url || ""));
+}
+
 function gcRef(url) {
   const m = String(url || "").match(/^https?:\/\/([^?#]+)/i);
   return m ? m[1].replace(/\/+$/, "") : "";
@@ -701,6 +706,7 @@ function applySettings(app, event, body) {
 module.exports = {
   slugify: slugify,
   isGameChangerUrl: isGameChangerUrl,
+  isGcBoxUrl: isGcBoxUrl,
   isTourneyMachineUrl: isTourneyMachineUrl,
   eventJson: eventJson,
   teamJson: teamJson,

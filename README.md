@@ -26,7 +26,18 @@ Every page has a **site bar** (Find, Year, Account, Create). Tournament pages ad
 
 Games on the public **Games** tab are grouped by field. Only real pool games show there — empty bracket slots stay on **Bracket** until those games have teams. A delay keeps the original first-pitch time on the row.
 
-**Scoring:** the director can enter or override any score from Admin or a game page, and can upload a scorebook photo/PDF. A team manager who signed that club up can post a result and a box for their own games; those sit as submitted until the director marks them final. Lines are stored only if someone types them — a photo is not turned into invented stats.
+**Scoring:** the director can enter or override any score from Admin or a game page. A team manager who signed that club up can post a result for their own games; those sit as submitted until the director marks them final.
+
+## How to upload stats
+
+Open the game (`Games` → the match, or Admin → Box). Four doors:
+
+1. **GameChanger mobile PDF** — from the GC app, export/share the box as PDF. A team manager drops it on their game. Status is `queued` for a bot unless they also type lines.
+2. **Public GameChanger box URL** — paste a public page such as `https://web.gc.com/teams/…/schedule/…/box-score`. This host stores the link. It does not scrape GameChanger.
+3. **Grok bot** — queued PDFs and links appear on Admin → Stats inbox and `GET /api/bot/event-boxes`. The bot (or you) posts extracted hitting, pitching, and the score to `POST /api/bot/event-box`. Local helper: `python3 scripts/bot_c_event_box.py --list`.
+4. **Director PDF** — the tournament director uploads a GC export or a scorebook scan. Check “official book” if a bot should not wait on it.
+
+Lines land in the weekend leaders only when someone (bot or person) types them. A PDF is not turned into invented numbers.
 
 | Page | What it is |
 |---|---|
@@ -43,7 +54,7 @@ Games on the public **Games** tab are grouped by field. Only real pool games sho
 | `/year/2026` | Series leaderboard — same club across weekends |
 | `/start` | Create a tournament — fields + GPS/address, bracket type, guidelines, team packet |
 | `/t/{slug}/admin` | Director desk — fields, auto-schedule per diamond, rain, scores, packets |
-| `/t/{slug}/games/{id}` | Post a score and upload a box — director or that game’s team manager |
+| `/t/{slug}/games/{id}` | Four stats doors — GC mobile PDF, public box URL, Grok bot, director PDF |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
 

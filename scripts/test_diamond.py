@@ -538,6 +538,99 @@ class ScheduleTests(unittest.TestCase):
         self.assertTrue(scored["has_box"])
         self.assertEqual(scored["status"], "final")
 
+    def test_four_stats_upload_routes(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "stats-doors-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Stats Doors",
+            "slug": slug,
+            "format": "pool-only",
+            "fields": [{"name": "Main"}],
+        })
+        slug = created["event"]["slug"]
+        email = f"gc.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "CoachScore1!",
+            "display_name": "GC Coach",
+            "intent": "team",
+        })
+        mgr = auth(BASE, email, "CoachScore1!")
+        request(BASE, "POST", f"/api/events/{slug}/signup", mgr, {
+            "team_name": "Dukes Stats",
+            "pool": "A",
+            "contact_email": email,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Heat Stats",
+            "pool": "A",
+            "as_director": True,
+        })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-only",
+        })
+        game_id = auto["schedule"][0]["id"]
+        pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
+        gc_box = (
+            "https://web.gc.com/teams/Qgojbuf369Eu/"
+            "2027-spring-lady-dukes-wpa-2033/schedule/"
+            "d1ed080a-d4da-42a2-9dfb-1813c9272d5f/box-score"
+        )
+
+        mobile = request_multipart(BASE, f"/api/events/{slug}/schedule/{game_id}/box", mgr, {
+            "source": "gc_pdf",
+            "note": "GC app export",
+        }, {"file": ("gc-mobile.pdf", pdf, "application/pdf")})
+        self.assertEqual(mobile["box"]["source"], "gc_pdf")
+        self.assertEqual(mobile["box"]["status"], "queued")
+        self.assertTrue(mobile["box"]["queued_for_bot"])
+
+        linked = request(BASE, "POST", f"/api/events/{slug}/schedule/{game_id}/box", mgr, {
+            "source": "gc_url",
+            "gc_url": gc_box,
+        })
+        self.assertEqual(linked["box"]["source"], "gc_url")
+        self.assertEqual(linked["box"]["gc_url"], gc_box)
+        self.assertEqual(linked["box"]["status"], "queued")
+
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game_id}/box", mgr, {
+                "gc_url": "https://example.com/not-gc",
+            })
+        self.assertIn("GameChanger", str(bad.exception))
+
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        inbox = request(BASE, "GET", f"/api/bot/event-boxes?event={slug}", bot)
+        self.assertTrue(any(b["schedule_id"] == game_id for b in inbox["boxes"]))
+        extracted = request(BASE, "POST", "/api/bot/event-box", bot, {
+            "event_slug": slug,
+            "schedule_id": game_id,
+            "home_runs": 8,
+            "away_runs": 3,
+            "gc_url": gc_box,
+            "hitting": [{"side": "home", "jersey": "4", "name": "Maeve D", "ab": 3, "r": 1, "h": 2, "rbi": 1, "bb": 0, "so": 0}],
+            "pitching": [{"side": "home", "jersey": "7", "name": "Sam P", "ip": "4.0", "h": 2, "r": 1, "er": 1, "bb": 0, "so": 4}],
+            "parser_notes": "Read from the public box the coach pasted.",
+        })
+        self.assertEqual(extracted["box"]["source"], "bot")
+        self.assertEqual(extracted["box"]["status"], "approved")
+
+        director = request_multipart(BASE, f"/api/events/{slug}/schedule/{game_id}/box", td, {
+            "source": "director_pdf",
+            "approve_file": "true",
+            "note": "TD plate-meeting copy",
+        }, {"file": ("td-book.pdf", pdf, "application/pdf")})
+        self.assertEqual(director["box"]["source"], "director_pdf")
+        self.assertEqual(director["box"]["status"], "approved")
+
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        sources = {b["source"] for b in plan.get("pending_boxes", [])}
+        self.assertNotIn("director_pdf", sources)
+
     def test_keystone_fields_and_rain_note(self):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
         self.assertEqual(board["event"]["address"], "51 Meadow St, McDonald, PA 15057")

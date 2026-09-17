@@ -614,6 +614,7 @@ function plan(app, event, auth) {
     fields: eventFields(app, event.id),
     schedule: listSchedule(app, event.id, auth),
     teams: host.publicRoster(app, event),
+    pending_boxes: require(__hooks + "/score.js").listPendingBoxes(app, event.id),
   };
 }
 

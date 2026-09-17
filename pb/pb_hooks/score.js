@@ -5,6 +5,7 @@ function isDirector(auth) {
 function canScore(app, event, rec, auth) {
   if (!auth) return false;
   if (isDirector(auth)) return true;
+  if (auth.get("role") === "bot") return true;
   if (event.get("created_by") && event.get("created_by") === auth.id) return true;
   const home = rec.get("home") || rec.get("home_team");
   const away = rec.get("away") || rec.get("away_team");
@@ -158,8 +159,58 @@ function boxJson(app, rec) {
     status: rec.get("status") || "submitted",
     note: rec.get("note") || "",
     original_name: rec.get("original_name") || "",
+    gc_url: rec.get("gc_url") || "",
     url: fileUrl(app, "event_boxes", rec, "file"),
+    schedule_id: rec.get("schedule_row") || "",
+    event_id: rec.get("event") || "",
   };
+}
+
+function upsertBox(app, event, game) {
+  try {
+    return app.findFirstRecordByFilter("event_boxes", "schedule_row = {:s}", { s: game.id });
+  } catch (err) {
+    const rec = new Record(app.findCollectionByNameOrId("event_boxes"));
+    rec.set("schedule_row", game.id);
+    rec.set("event", event.id);
+    return rec;
+  }
+}
+
+function pendingFilter(status) {
+  return status === "queued" || status === "submitted" || status === "needs_review";
+}
+
+function boxWithGame(app, rec) {
+  const row = boxJson(app, rec);
+  try {
+    const game = app.findRecordById("event_schedule", rec.get("schedule_row"));
+    const schedule = require(__hooks + "/schedule.js");
+    row.game = schedule.scheduleRow(app, game);
+    try {
+      row.event_slug = app.findRecordById("events", rec.get("event") || game.get("event")).get("slug");
+    } catch (err) {}
+  } catch (err) {}
+  return row;
+}
+
+function listPendingBoxes(app, eventId) {
+  const out = [];
+  let rows = [];
+  try {
+    if (eventId) {
+      rows = app.findRecordsByFilter("event_boxes", "event = {:e}", "-id", 120, 0, { e: eventId });
+    } else {
+      rows = app.findRecordsByFilter("event_boxes", "", "-id", 120, 0);
+    }
+  } catch (err) {
+    return out;
+  }
+  for (const rec of rows) {
+    if (!pendingFilter(rec.get("status"))) continue;
+    out.push(boxWithGame(app, rec));
+  }
+  return out;
 }
 
 function postScore(app, event, id, body, auth) {
@@ -187,33 +238,100 @@ function saveBox(app, event, id, body, files, auth) {
   const rec = app.findRecordById("event_schedule", id);
   if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
   requireScore(app, event, rec, auth);
+  const host = require(__hooks + "/host.js");
+  const director = isDirector(auth) || (event.get("created_by") && event.get("created_by") === auth.id);
+  const bot = !!(auth && auth.get("role") === "bot");
   const hitting = asList(body.hitting);
   const pitching = asList(body.pitching);
-  let box;
-  try {
-    box = app.findFirstRecordByFilter("event_boxes", "schedule_row = {:s}", { s: rec.id });
-  } catch (err) {
-    box = new Record(app.findCollectionByNameOrId("event_boxes"));
-    box.set("schedule_row", rec.id);
+  const gcUrl = String(body.gc_url || "").trim();
+  if (gcUrl && !host.isGcBoxUrl(gcUrl)) {
+    throw new BadRequestError("Paste a public GameChanger box-score URL (web.gc.com …/schedule/…/box-score).");
   }
+  const box = upsertBox(app, event, rec);
   box.set("event", event.id);
   box.set("schedule_row", rec.id);
   if (files && files.length) {
     box.set("file", files);
-    box.set("original_name", body.original_name || "box-score");
+    box.set("original_name", body.original_name || body.filename || "box-score.pdf");
   }
+  if (gcUrl) box.set("gc_url", gcUrl);
   if (hitting.length) box.set("hitting", hitting);
   if (pitching.length) box.set("pitching", pitching);
-  box.set("source", body.source || (isDirector(auth) ? "director" : "team"));
-  box.set("status", isDirector(auth) ? "approved" : "submitted");
+  let source = body.source || "";
+  if (!source) {
+    if (bot) source = "bot";
+    else if (gcUrl && !(files && files.length)) source = "gc_url";
+    else if (director && files && files.length) source = "director_pdf";
+    else if (files && files.length) source = "gc_pdf";
+    else source = director ? "director" : "team";
+  }
+  box.set("source", source);
+  const hasLines = !!(hitting.length || pitching.length);
+  let status = body.status;
+  if (!status) {
+    if (bot && hasLines) status = "approved";
+    else if (hasLines && director) status = "approved";
+    else if (hasLines) status = "submitted";
+    else status = "queued";
+  }
+  if (!director && !bot && status === "approved") status = hasLines ? "submitted" : "queued";
+  if (director && (body.approve_file === true || body.approve_file === "true")) status = "approved";
+  box.set("status", status);
   box.set("submitted_by", auth.id);
   if (body.note != null) box.set("note", body.note);
   app.save(box);
-  if (hitting.length || pitching.length) applyBoxLines(app, event, rec, hitting, pitching);
+  if (hasLines) applyBoxLines(app, event, rec, hitting, pitching);
   if (body.home_runs != null || body.away_runs != null) {
     postScore(app, event, id, body, auth);
   }
-  return boxJson(app, box);
+  const out = boxJson(app, box);
+  out.queued_for_bot = pendingFilter(box.get("status"));
+  return out;
+}
+
+function botApply(app, body, auth) {
+  if (!auth || (auth.get("role") !== "bot" && auth.get("role") !== "region_admin" && auth.get("role") !== "event_td")) {
+    throw new ForbiddenError("Bot or director login required to post extracted stats");
+  }
+  const slug = body.event_slug || body.slug;
+  if (!slug || !body.schedule_id) throw new BadRequestError("event_slug and schedule_id required");
+  const event = app.findFirstRecordByData("events", "slug", slug);
+  const rec = app.findRecordById("event_schedule", body.schedule_id);
+  if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  const hitting = asList(body.hitting);
+  const pitching = asList(body.pitching);
+  if (!hitting.length && !pitching.length && body.home_runs == null && !body.gc_url && !body.note) {
+    throw new BadRequestError("Bot post needs hitting, pitching, a score, or a note");
+  }
+  const box = upsertBox(app, event, rec);
+  box.set("event", event.id);
+  box.set("schedule_row", rec.id);
+  if (body.gc_url) {
+    const host = require(__hooks + "/host.js");
+    if (!host.isGcBoxUrl(body.gc_url)) throw new BadRequestError("gc_url must be a public GameChanger box-score page");
+    box.set("gc_url", body.gc_url);
+  }
+  if (hitting.length) box.set("hitting", hitting);
+  if (pitching.length) box.set("pitching", pitching);
+  box.set("source", body.source || "bot");
+  box.set("status", body.status || (body.apply === false ? "needs_review" : "approved"));
+  box.set("submitted_by", auth.id);
+  if (body.parser_notes != null) box.set("note", body.parser_notes);
+  else if (body.note != null) box.set("note", body.note);
+  app.save(box);
+  if (hitting.length || pitching.length) applyBoxLines(app, event, rec, hitting, pitching);
+  if (body.home_runs != null || body.away_runs != null) {
+    if (body.home_runs != null) rec.set("home_runs", Number(body.home_runs));
+    if (body.away_runs != null) rec.set("away_runs", Number(body.away_runs));
+    rec.set("status", body.game_status || "final");
+    rec.set("scored_by", auth.id);
+    app.save(rec);
+  }
+  const diamond = require(__hooks + "/diamond.js");
+  return {
+    box: boxJson(app, box),
+    standings: diamond.poolStandings(app, event.id),
+  };
 }
 
 function gameDetail(app, event, id, auth) {
@@ -230,6 +348,7 @@ function gameDetail(app, event, id, auth) {
     }),
     box: box ? boxJson(app, box) : null,
     director: isDirector(auth),
+    routes: ["gc_pdf", "gc_url", "bot", "director_pdf"],
   };
 }
 
@@ -258,6 +377,8 @@ module.exports = {
   canScore: canScore,
   postScore: postScore,
   saveBox: saveBox,
+  botApply: botApply,
+  listPendingBoxes: listPendingBoxes,
   gameDetail: gameDetail,
   postBracketScore: postBracketScore,
 };

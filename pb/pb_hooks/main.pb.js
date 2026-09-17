@@ -340,6 +340,33 @@ routerAdd("POST", "/api/events/{slug}/schedule/{id}/box", (e) => {
   return e.json(200, { box: score.saveBox(e.app, event, e.request.pathValue("id"), body, files, e.auth) });
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/events/{slug}/boxes", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const score = require(__hooks + "/score.js");
+  sb.requireRole(e, ["region_admin", "event_td", "bot"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  return e.json(200, { boxes: score.listPendingBoxes(e.app, event.id) });
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/bot/event-boxes", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const score = require(__hooks + "/score.js");
+  sb.requireRole(e, ["bot", "region_admin", "event_td"]);
+  const q = (e.requestInfo().query || {}).event || "";
+  let eventId = "";
+  if (q) {
+    try { eventId = e.app.findFirstRecordByData("events", "slug", q).id; } catch (err) {}
+  }
+  return e.json(200, { boxes: score.listPendingBoxes(e.app, eventId) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/bot/event-box", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const score = require(__hooks + "/score.js");
+  const auth = sb.requireRole(e, ["bot", "region_admin", "event_td"]);
+  return e.json(200, score.botApply(e.app, e.requestInfo().body || {}, auth));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/schedule/{id}/delete", (e) => {
   const sb = require(__hooks + "/softball.js");
   const schedule = require(__hooks + "/schedule.js");

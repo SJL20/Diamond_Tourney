@@ -373,6 +373,8 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .rain-banner.clear { background: #eef4ea; }
 .bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .bk-score input { width: 4.2rem; }
+.stats-now { margin: 0 0 12px; }
+.badge.queued { background: #fff3cd; color: var(--warn); }
 
 .list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
 .list li, .list-row {
