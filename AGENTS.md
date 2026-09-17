@@ -1,6 +1,8 @@
 # Region Softball Platform — Agent instructions
 
-Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md` and `CURSOR-GROK-INTEGRATION.md` before changing anything.
+Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md` before changing anything.
+
+Public tournament product name: **Diamond Tourney**. Season books stay behind login. Door-three wedge: import a schedule the director already has. Do not scrape GameChanger.
 
 You are a Cursor Cloud Agent (Grok). The owner does not write HTML or SQL. You do.
 

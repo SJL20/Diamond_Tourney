@@ -1,8 +1,8 @@
-# Region Softball Platform
+# Diamond Tourney + Region books
 
-Tournament and team-stat books on one PocketBase box. Coaches approve staged GameChanger ingest before anything goes live. Cursor Cloud Agents (Grok) own the repo; Grok Bots and Automations handle drops and Sunday recaps.
+Public tournament boards (“keep the clipboard, lose the group text”) and login-only season stat books on one PocketBase box. Coaches approve staged GameChanger ingest before anything goes live.
 
-Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md` and `CURSOR-GROK-INTEGRATION.md`.
+Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md` (partner deck notes).
 
 ## Run locally
 
@@ -11,7 +11,7 @@ bash scripts/install-pocketbase.sh
 bash scripts/start-pocketbase.sh
 ```
 
-Open http://127.0.0.1:8097
+Open http://127.0.0.1:8097 — live demo event: http://127.0.0.1:8097/t/central-saturday
 
 | Role | Email | Password |
 |---|---|---|

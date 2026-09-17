@@ -133,6 +133,42 @@ routerAdd("POST", "/api/bot/publish", (e) => {
   });
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/event/{slug}/board", (e) => {
+  const diamond = require(__hooks + "/diamond.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
+  return e.json(200, diamond.publicBoard(e.app, event));
+});
+
+routerAdd("POST", "/api/event/import-schedule", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const diamond = require(__hooks + "/diamond.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const body = e.requestInfo().body || {};
+  if (!body.event_slug || !body.csv) throw new BadRequestError("event_slug and csv required");
+  let event;
+  try {
+    event = e.app.findFirstRecordByData("events", "slug", body.event_slug);
+  } catch (err) {
+    event = new Record(e.app.findCollectionByNameOrId("events"));
+    event.set("name", body.event_name || body.event_slug);
+    event.set("slug", body.event_slug);
+    event.set("public", true);
+    event.set("status", "live");
+    event.set("format", "imported");
+    event.set("venue", body.venue || "");
+    event.set("ages", body.ages || "10U");
+    event.set("pitch_limit_ip", 6);
+    e.app.save(event);
+  }
+  if (body.replace) {
+    const old = e.app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    for (const row of old) e.app.delete(row);
+  }
+  const result = diamond.importSchedule(e.app, event, body.csv);
+  return e.json(200, { event: event.get("slug"), imported: result.imported, standings: result.standings });
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/bot/event-update", (e) => {
   const sb = require(__hooks + "/softball.js");
   sb.requireRole(e, ["bot", "region_admin", "event_td"]);
@@ -161,7 +197,9 @@ routerAdd("POST", "/api/bot/event-update", (e) => {
     if (body.away_runs != null) bg.set("away_runs", body.away_runs);
     e.app.save(bg);
   }
-  return e.json(200, { ok: true, event: event.get("slug") });
+  const diamond = require(__hooks + "/diamond.js");
+  diamond.advanceBracket(e.app, event.id);
+  return e.json(200, { ok: true, event: event.get("slug"), standings: diamond.poolStandings(e.app, event.id) });
 }, $apis.requireAuth());
 
 onRecordUpdateRequest((e) => {

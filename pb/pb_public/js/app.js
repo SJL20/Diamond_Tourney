@@ -1,10 +1,22 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
+import {
+  directorImport, eventAwards, eventBracket, eventHome, eventLeaders,
+  eventList, eventPools, eventSchedule,
+} from "./event.js";
 
 const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
 
 const ROUTES = [
   [/^\/login\/?$/, "login"],
+  [/^\/directors\/import\/?$/, "import"],
+  [/^\/t\/?$/, "events"],
+  [/^\/t\/([^/]+)\/pools\/?$/, "epools"],
+  [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
+  [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
+  [/^\/t\/([^/]+)\/leaders\/?$/, "eleaders"],
+  [/^\/t\/([^/]+)\/awards\/?$/, "eawards"],
+  [/^\/t\/([^/]+)\/?$/, "ehome"],
   [/^\/teams\/?$/, "teams"],
   [/^\/teams\/([^/]+)\/home\/?$/, "home"],
   [/^\/teams\/([^/]+)\/roster\/?$/, "roster"],
@@ -69,9 +81,10 @@ function chrome(team, page, body) {
   const who = user() ? user().email : "signed out";
   return `
     <header class="wrap top">
-      <a class="brand" href="/"><b>REGION SOFTBALL</b><span>${team ? escapeHtml(team.name) : "Team books behind login"}</span></a>
+      <a class="brand" href="/"><b>DIAMOND TOURNEY</b><span>${team ? escapeHtml(team.name) : "Keep the clipboard. Lose the group text."}</span></a>
       <nav class="nav">
         ${links.map(([href, label]) => `<a class="${page === label.toLowerCase() ? "active" : ""}" data-link href="${href}">${label}</a>`).join("")}
+        <a data-link href="/t">Tournaments</a>
         ${user() ? `<button class="link" id="logout">Sign out</button>` : `<a data-link href="/login">Log in</a>`}
       </nav>
     </header>
@@ -89,6 +102,10 @@ function table(headers, rows, totals) {
 
 async function landing() {
   const teams = await pb.collection("teams").getFullList({ sort: "age_group,name" });
+  let events = [];
+  try {
+    events = await pb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
+  } catch (err) {}
   const cards = teams.map((t) => `
     <a class="card team-card" data-link href="${user() && isCoachOf(t.id) ? `/teams/${t.slug}/home` : `/teams/${t.slug}`}">
       <h3>${escapeHtml(t.name)}</h3>
@@ -97,9 +114,29 @@ async function landing() {
     </a>`).join("");
   app.innerHTML = chrome(null, "landing", `
     <section class="hero">
-      <h1>Region softball books</h1>
-      <p>Team hitting and pitching stay behind a coach login. Visitors see weekend records, not player lines.</p>
-      <p><a class="btn" data-link href="/login">Coach / admin login</a></p>
+      <h1>Keep the clipboard. Lose the group text.</h1>
+      <p>Diamond Tourney is the public weekend board. Region team books stay behind a coach login. Use as much of it as you want.</p>
+    </section>
+    <section class="grid cards">
+      <a class="card team-card" data-link href="/directors/import">
+        <h3>You already have a schedule</h3>
+        <p class="muted">START HERE · door three</p>
+        <p>Paste the Excel / Tourney Machine / legal-pad grid. Get a link, live standings, and a bracket that fills itself.</p>
+      </a>
+      <a class="card team-card" data-link href="/t/central-saturday">
+        <h3>Just look at a live board</h3>
+        <p class="muted">Central Saturday · 10U</p>
+        <p>Pools, bracket, leaders, and a print-ready award sheet.</p>
+      </a>
+      <a class="card team-card" data-link href="/login">
+        <h3>Season team book</h3>
+        <p class="muted">Coach login</p>
+        <p>Approve GameChanger boxes. Nothing publishes unverified.</p>
+      </a>
+    </section>
+    <section class="card">
+      <h2>This weekend</h2>
+      ${events.map((ev) => `<p><a data-link href="/t/${ev.slug}"><b>${escapeHtml(ev.name)}</b></a> · ${escapeHtml(ev.venue || "")} · ${escapeHtml(ev.ages || "")}</p>`).join("") || `<p class="muted">No public events yet.</p>`}
     </section>
     <section class="grid cards">${cards || `<div class="card empty">No teams yet.</div>`}</section>
   `);
@@ -122,6 +159,7 @@ async function login() {
           <p>owner@local.test / RegionAdmin1!</p>
           <p>coach.demo@local.test / CoachDemo1!</p>
           <p>coach.hawks@local.test / CoachHawks1!</p>
+          <p>td@local.test / EventTd1!</p>
           <p>bot@local.test / BotStaging1! (API only)</p>
         </div>` : ""}
     </section>
@@ -401,6 +439,14 @@ async function render() {
   try {
     if (name === "login") return login();
     if (name === "landing" || name === "teams") return landing();
+    if (name === "import") return directorImport();
+    if (name === "events") return eventList();
+    if (name === "ehome") return eventHome(params[0]);
+    if (name === "epools") return eventPools(params[0]);
+    if (name === "ebracket") return eventBracket(params[0]);
+    if (name === "eschedule") return eventSchedule(params[0]);
+    if (name === "eleaders") return eventLeaders(params[0]);
+    if (name === "eawards") return eventAwards(params[0]);
     if (name === "publicTeam") return publicTeam(params[0]);
     if (name === "home") return home(params[0]);
     if (name === "roster") return roster(params[0]);

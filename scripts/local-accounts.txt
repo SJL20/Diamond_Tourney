@@ -17,3 +17,6 @@ team_coach — Hawks 10U (Phase 1 sample)
 
 team_coach — Rivals 10U (ACL fixture)
   coach.rivals@local.test / CoachRivals1!
+
+event_td
+  td@local.test / EventTd1!

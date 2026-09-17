@@ -37,6 +37,10 @@ Grok Bot gets the bot user only.
 
 Login works and the demo hitting table renders (`/teams/demo/hitting` after `coach.demo@local.test`).
 
+## Diamond Tourney (partner deck)
+
+Derek’s concept lives in `docs/partner/Diamond_Tourney.pptx` and `docs/DIAMOND-TOURNEY.md`. Public event board: `/t/central-saturday`. Schedule paste: `/directors/import`. Pricing and registration stay unbuilt until Phase 4.
+
 ## Phase 1 done when
 
 `python3 scripts/acceptance_test.py` is green: same player rolls up, IP 2.1+1.2=4.0, reject does not change BA/W-L, double approve does not double-count, public cannot read hitting, Hawks coach book is hidden from Rivals coach.

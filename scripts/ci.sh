@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 export PB_PORT="${PB_PORT:-8097}"
 BASE="http://127.0.0.1:${PB_PORT}"
 
-python3 -m unittest scripts.test_metrics -v
+python3 -m unittest scripts.test_metrics scripts.test_diamond -v
 
 if ! curl -sf "$BASE/api/health" >/dev/null; then
   bash "$ROOT/scripts/install-pocketbase.sh"

@@ -26,3 +26,4 @@ During an event window, a final score or box arrives (Slack `#event-scores` or w
 4. Do not unlock `event_players.roster_locked`.
 5. Do not edit rules text.
 6. Leader gates default: min 8 AB, min 3.0 IP.
+7. After a final, standings and the next bracket slot update (`advanceBracket`). Do not pick all-tournament by eye — `/t/{slug}/awards` is the number sheet.
