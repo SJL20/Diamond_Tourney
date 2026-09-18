@@ -354,6 +354,7 @@ function setupGuidelinesFields(ev = {}) {
       ${check("require_coach_cert", "Coach certification / background")}
       <label>Notes to coaches <textarea name="packet_notes" rows="3" placeholder="Insurance and roster before first pitch. Bring birth certificates to the plate meeting only if asked.">${escapeHtml(ev.packet_notes || "")}</textarea></label>
     </details>
+    ${setupTiebreakFields(ev)}
   `;
 }
 
@@ -380,6 +381,7 @@ function guidelinesBlock(ev) {
       ["Rules", ev.rules_notes],
       ["Team must upload", req.join(", ")],
       ["Packet notes", ev.packet_notes],
+      ["Pool tiebreak", ev.tiebreak && ev.tiebreak.label],
     ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}${k === "Rules" && ev.rules_file_url ? ` · <a href="${escapeHtml(ev.rules_file_url)}">Download attachment</a>` : ""}</dd></div>`).join("")}
   </section>`;
 }
@@ -397,13 +399,15 @@ function standingsBlock(standings) {
     <div class="card">
       <h2>${pool.name === "All teams" ? "Pool standings" : "Pool " + escapeHtml(pool.name)}</h2>
       ${pool.note ? `<p class="muted">${escapeHtml(pool.note)}</p>` : ""}
-      ${table(["#", "Team", "W", "L", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
+      ${table(["#", "Team", "W", "L", "T", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
         <td>${t.seed}</td>
         <td>${t.gamechanger_url ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">${escapeHtml(t.name)}</a>` : escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
-        <td>${t.w}</td><td>${t.l}</td>
+        <td>${t.w}</td><td>${t.l}</td><td>${t.t || 0}</td>
         <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
-      <p class="muted">Tiebreak: wins, then losses, then head-to-head, then runs allowed, then runs scored.</p>
+      ${(pool.teams || []).some((t) => t.seed_reason) ? `<ul class="seed-why">${pool.teams.map((t) =>
+        `<li><b>Seed ${t.seed} ${escapeHtml(t.name)}</b> — ${escapeHtml(t.seed_reason)}</li>`).join("")}</ul>` : ""}
+      <p class="muted">Tiebreak: ${escapeHtml(pool.tiebreak_label || "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored")}.</p>
     </div>`).join("");
 }
 
@@ -1164,6 +1168,11 @@ export async function startTournament() {
         <h3>Import the popup</h3>
         <p>Public JSON only — teams, GameChanger links, pool records, and Sunday scores.</p>
       </a>
+      <a class="choice" data-link href="/directors/duplicate">
+        <p class="muted">Copy a weekend</p>
+        <h3>Duplicate an existing tournament</h3>
+        <p>Reuse last year’s fields, teams, and unpaid schedule. Scores, boxes, and family contacts stay behind.</p>
+      </a>
     </section>
   `);
 }
@@ -1331,7 +1340,63 @@ function packGuidelines(form) {
   for (const k of ["require_insurance", "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert"]) {
     fd.set(k, form.querySelector(`[name="${k}"]`)?.checked ? "true" : "false");
   }
+  const keys = [...form.querySelectorAll("#tiebreak-order [data-tiebreak]")].map((el) => el.value);
+  if (keys.length) fd.set("tiebreak_order", keys.join(","));
   return fd;
+}
+
+const TIEBREAK_OPTS = [
+  ["record", "Record (win% — a tie counts as half)"],
+  ["h2h", "Head-to-head (2-team ties, or a finished group)"],
+  ["ra", "Fewest runs allowed"],
+  ["diff", "Run differential"],
+  ["rs", "Most runs scored"],
+];
+
+function setupTiebreakFields(ev = {}) {
+  const order = (ev.tiebreak && ev.tiebreak.order) || ["record", "h2h", "ra", "diff", "rs"];
+  const label = (key) => TIEBREAK_OPTS.find((row) => row[0] === key)?.[1] || key;
+  return `
+    <details class="setup-block" open>
+      <summary>Pool tiebreak order</summary>
+      <p class="muted">A tie is half a win. Head-to-head is skipped on a 3-team cycle or when the tied teams have not all played each other.</p>
+      <ol class="tiebreak-order" id="tiebreak-order">
+        ${order.map((key, i) => `
+          <li>
+            <input type="hidden" data-tiebreak value="${escapeHtml(key)}">
+            <span class="tb-n">${i + 1}.</span>
+            <span>${escapeHtml(label(key))}</span>
+            <button type="button" class="btn ghost tb-up"${i === 0 ? " disabled" : ""}>Up</button>
+            <button type="button" class="btn ghost tb-down"${i === order.length - 1 ? " disabled" : ""}>Down</button>
+          </li>`).join("")}
+      </ol>
+    </details>`;
+}
+
+function bindTiebreakOrder(root) {
+  const list = root.querySelector("#tiebreak-order");
+  if (!list) return;
+  const refresh = () => {
+    [...list.children].forEach((el, i) => {
+      const n = el.querySelector(".tb-n");
+      if (n) n.textContent = (i + 1) + ".";
+      const up = el.querySelector(".tb-up");
+      const down = el.querySelector(".tb-down");
+      if (up) up.disabled = i === 0;
+      if (down) down.disabled = i === list.children.length - 1;
+    });
+  };
+  list.addEventListener("click", (evnt) => {
+    const li = evnt.target.closest("li");
+    if (!li) return;
+    if (evnt.target.classList.contains("tb-up") && li.previousElementSibling) {
+      li.parentNode.insertBefore(li, li.previousElementSibling);
+    }
+    if (evnt.target.classList.contains("tb-down") && li.nextElementSibling) {
+      li.parentNode.insertBefore(li.nextElementSibling, li);
+    }
+    refresh();
+  });
 }
 
 export async function directorNative() {
@@ -1355,6 +1420,7 @@ export async function directorNative() {
       </form>
     </section>`);
   bindFieldRows(eventRoot(), 2, {});
+  bindTiebreakOrder(eventRoot());
   document.getElementById("native-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = packGuidelines(ev.target);
@@ -1398,6 +1464,7 @@ export async function directorLinkTm() {
       </form>
     </section>`);
   bindFieldRows(eventRoot(), 2, {});
+  bindTiebreakOrder(eventRoot());
   document.getElementById("tm-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = packGuidelines(ev.target);
@@ -1414,6 +1481,58 @@ export async function directorLinkTm() {
     }
     const out = await res.json();
     flashSaved("Tournament saved");
+    goEvent("/t/" + out.event.slug + "/admin");
+  });
+}
+
+export async function directorDuplicate() {
+  if (!directorGate()) return;
+  const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
+      <h1>Duplicate a tournament</h1>
+      <p class="muted">Copies fields, clubs, and the unpaid schedule. Scores, box files, packets, and family emails stay on the original.</p>
+    </section>
+    <section class="card">
+      <form class="form wide" id="dup-form">
+        <label>Copy from
+          <select name="source" required>
+            <option value="">Choose a weekend</option>
+            ${events.map((row) => `<option value="${escapeHtml(row.slug)}"${row.slug === new URLSearchParams(location.search).get("from") ? " selected" : ""}>${escapeHtml(row.name)}</option>`).join("")}
+          </select>
+        </label>
+        <div class="form-grid two">
+          <label>New name <input name="name" required placeholder="Harbor Eight 2027"></label>
+          <label>New slug (optional) <input name="slug" placeholder="harbor-eight-2027"></label>
+          <label>First day <input name="start" type="date"></label>
+          <label>Last day <input name="end" type="date"></label>
+        </div>
+        <button class="btn" type="submit">Duplicate weekend</button>
+        <p class="error" id="dup-err" hidden></p>
+      </form>
+    </section>`);
+  document.getElementById("dup-form").addEventListener("submit", async (evnt) => {
+    evnt.preventDefault();
+    const fd = new FormData(evnt.target);
+    const source = String(fd.get("source") || "");
+    if (!source) return;
+    const res = await fetch("/api/events/" + encodeURIComponent(source) + "/duplicate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({
+        name: fd.get("name"),
+        slug: fd.get("slug"),
+        start: fd.get("start"),
+        end: fd.get("end"),
+      }),
+    });
+    if (!res.ok) {
+      document.getElementById("dup-err").hidden = false;
+      document.getElementById("dup-err").textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    flashSaved("Tournament copied");
     goEvent("/t/" + out.event.slug + "/admin");
   });
 }
@@ -1574,6 +1693,7 @@ export async function eventAdmin(slug) {
             <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
             <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
             <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+            <button class="btn ghost" id="duplicate-event" type="button">Duplicate this weekend</button>
             ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
           </div>
           <ul class="admin-jump">
@@ -1712,6 +1832,7 @@ export async function eventAdmin(slug) {
   `);
   bindAdminRail(eventRoot());
   bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
+  bindTiebreakOrder(eventRoot());
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 
   document.getElementById("fields-form").addEventListener("submit", async (evnt) => {
@@ -1859,6 +1980,12 @@ export async function eventAdmin(slug) {
       } catch (err) { showErr(err); }
     });
   });
+  const dupBtn = document.getElementById("duplicate-event");
+  if (dupBtn) {
+    dupBtn.addEventListener("click", () => {
+      goEvent("/directors/duplicate?from=" + encodeURIComponent(ev.slug));
+    });
+  }
   document.getElementById("sync-now").addEventListener("click", async (btnEv) => {
     const btn = btnEv.currentTarget;
     btn.disabled = true;

@@ -25,7 +25,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Repository | **public** — assume anything committed or served is world-readable |
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
-| Tests | 36 unit/integration cases + 13 acceptance checks |
+| Tests | 42 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -185,8 +185,8 @@ worth answering before the next session.
 2. First live team: name, slug, age group. `hawks-10u` is a placeholder.
 3. First tournament: name, dates, field complex.
 4. The `team_coach` email for the first real team.
-5. Pool tiebreak order, if not the default (wins, losses, head-to-head, runs
-   allowed, runs scored).
+5. ~~Pool tiebreak order~~ — directors can now reorder it. Default is record
+   (tie = half), group-aware H2H, fewest RA, run differential, most RS.
 6. **New — finding 2:** for a weekend imported from a public popup that does not
    publish R, BB, SO, or ER, should the board show blanks or should those games
    stay out of the leaders entirely?
@@ -197,6 +197,21 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — Derek / Claude email fixes
+
+`install-pocketbase.sh` maps `uname` (`linux_amd64`, `darwin_arm64`, …). A
+`.devcontainer` installs PocketBase and forwards **8097**. Pool standings now
+use win% (tie = half) and group-aware head-to-head: a 3-team cycle skips H2H
+and goes to RA, then run differential. Directors reorder that list on create
+and Admin setup. Each seed has a “why this seed” line. **Duplicate a weekend**
+copies fields, clubs, and the unpaid schedule — not scores, boxes, or family
+contacts.
+
+Fly already mounts `pb_data` at `/data` (`fly.toml`). No volume change.
+
+Finding 1 (any `event_td` can admin any event) is still open and is still the
+live-standup blocker.
 
 ### 2026-09-18 — Standings tab, game numbers, save toast
 

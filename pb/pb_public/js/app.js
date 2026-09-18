@@ -1,6 +1,6 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
-  directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
+  directorDuplicate, directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
   eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
   eventSchedule, eventSignup, eventStandings, eventStats, startTournament,
 } from "./event.js";
@@ -23,6 +23,7 @@ const ROUTES = [
   [/^\/directors\/link-tm\/?$/, "linktm"],
   [/^\/directors\/import\/?$/, "import"],
   [/^\/directors\/import-popup\/?$/, "importpopup"],
+  [/^\/directors\/duplicate\/?$/, "duplicate"],
   [/^\/t\/?$/, "events"],
   [/^\/t\/([^/]+)\/standings\/?$/, "estandings"],
   [/^\/t\/([^/]+)\/pools\/?$/, "estandings"],
@@ -377,6 +378,7 @@ async function render() {
     if (name === "linktm") return directorLinkTm();
     if (name === "import") return directorImport();
     if (name === "importpopup") return directorImportPopup();
+    if (name === "duplicate") return directorDuplicate();
     if (name === "events") return eventList();
     if (name === "ehome") return eventHome(params[0]);
     if (name === "estandings" || name === "epools") return eventStandings(params[0]);

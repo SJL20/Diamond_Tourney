@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from lib.standings import sort_pool
+from lib.standings import sort_pool, parse_order, win_pct
 from scripts.pb_client import auth, request, request_multipart
 
 BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT', '8097')}"
@@ -19,11 +19,71 @@ BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT',
 
 class TiebreakTests(unittest.TestCase):
     def test_h2h_before_run_diff(self):
-        a = {"id": "a", "name": "A", "w": 1, "l": 1, "rs": 20, "ra": 3}
-        b = {"id": "b", "name": "B", "w": 1, "l": 1, "rs": 8, "ra": 3}
+        a = {"id": "a", "name": "A", "w": 1, "l": 1, "t": 0, "rs": 20, "ra": 3}
+        b = {"id": "b", "name": "B", "w": 1, "l": 1, "t": 0, "rs": 8, "ra": 3}
         games = [{"home": "a", "away": "b", "home_runs": 2, "away_runs": 5}]
         ranked = sort_pool([a, b], games)
         self.assertEqual(ranked[0]["id"], "b")
+        self.assertIn("head-to-head", ranked[0]["seed_reason"])
+
+    def test_three_team_cycle_skips_h2h(self):
+        # Derek's rain-out repro: A beat B 5-3, B beat C 4-2, C beat A 6-5. All 1-1.
+        a = {"id": "a", "name": "A", "w": 1, "l": 1, "t": 0, "rs": 10, "ra": 9}
+        b = {"id": "b", "name": "B", "w": 1, "l": 1, "t": 0, "rs": 7, "ra": 7}
+        c = {"id": "c", "name": "C", "w": 1, "l": 1, "t": 0, "rs": 8, "ra": 9}
+        games = [
+            {"home": "a", "away": "b", "home_runs": 5, "away_runs": 3},
+            {"home": "b", "away": "c", "home_runs": 4, "away_runs": 2},
+            {"home": "c", "away": "a", "home_runs": 6, "away_runs": 5},
+        ]
+        ranked = sort_pool([a, b, c], games)
+        self.assertEqual([row["id"] for row in ranked], ["b", "a", "c"])
+        self.assertIn("cycle", ranked[0]["seed_reason"])
+        self.assertIn("runs allowed", ranked[0]["seed_reason"])
+        self.assertIn("differential", ranked[1]["seed_reason"])
+
+    def test_win_pct_counts_tie_as_half(self):
+        # Old W-then-L would rank A (3 wins) above B (2 wins). Win% does not.
+        a = {"id": "a", "name": "A", "w": 3, "l": 2, "t": 0, "rs": 20, "ra": 10}
+        b = {"id": "b", "name": "B", "w": 2, "l": 0, "t": 1, "rs": 8, "ra": 4}
+        self.assertGreater(win_pct(b), win_pct(a))
+        ranked = sort_pool([a, b], [])
+        self.assertEqual(ranked[0]["id"], "b")
+
+    def test_custom_order_can_put_ra_before_h2h(self):
+        a = {"id": "a", "name": "A", "w": 1, "l": 1, "t": 0, "rs": 6, "ra": 2}
+        b = {"id": "b", "name": "B", "w": 1, "l": 1, "t": 0, "rs": 8, "ra": 7}
+        games = [{"home": "a", "away": "b", "home_runs": 2, "away_runs": 5}]
+        default = sort_pool([dict(a), dict(b)], games)
+        self.assertEqual(default[0]["id"], "b")
+        custom = sort_pool([dict(a), dict(b)], games, ["record", "ra", "h2h", "diff", "rs"])
+        self.assertEqual(custom[0]["id"], "a")
+        self.assertEqual(parse_order("record, ra, h2h"), ["record", "ra", "h2h", "diff", "rs"])
+
+
+class InstallScriptTests(unittest.TestCase):
+    def test_release_asset_mapping(self):
+        def asset(system, machine):
+            env = os.environ.copy()
+            env["PB_UNAME_S"] = system
+            env["PB_UNAME_M"] = machine
+            import subprocess
+            return subprocess.check_output(
+                ["bash", str(ROOT / "scripts/install-pocketbase.sh"), "--print-asset"],
+                env=env,
+                text=True,
+            ).strip()
+
+        self.assertEqual(asset("Linux", "x86_64"), "linux_amd64")
+        self.assertEqual(asset("Darwin", "arm64"), "darwin_arm64")
+        self.assertEqual(asset("Darwin", "x86_64"), "darwin_amd64")
+        self.assertEqual(asset("Linux", "aarch64"), "linux_arm64")
+
+    def test_devcontainer_forwards_pocketbase(self):
+        src = (ROOT / ".devcontainer/devcontainer.json").read_text()
+        self.assertIn("8097", src)
+        self.assertIn("install-pocketbase.sh", src)
+        self.assertIn("ensure-pocketbase.sh", src)
 
 
 class TournamentUiTests(unittest.TestCase):
@@ -42,6 +102,11 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("flashSaved", event)
         self.assertIn("function gameNo", event)
         self.assertIn('input[type=file]', event)
+        self.assertIn("seed-why", event)
+        self.assertIn("setupTiebreakFields", event)
+        self.assertIn("directorDuplicate", event)
+        self.assertIn("/directors/duplicate", app)
+        self.assertIn(".tiebreak-order", css)
 
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
@@ -150,6 +215,118 @@ class BoardTests(unittest.TestCase):
         pool_a = next(p for p in board["standings"] if p["name"] == "A")
         self.assertEqual(pool_a["teams"][0]["name"], "Northside")
         self.assertEqual(pool_a["teams"][0]["w"], 2)
+
+
+class DerekFixesLiveTests(unittest.TestCase):
+    def test_board_ranks_three_team_cycle_by_ra_then_diff(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "cycle-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Cycle Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "format": "pool-only",
+            "tiebreak_order": "record,h2h,ra,diff,rs",
+        })
+        self.assertEqual(created["event"]["tiebreak"]["order"][0], "record")
+        slug = created["event"]["slug"]
+        for name in ("Cycle A", "Cycle B", "Cycle C"):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A",
+                "as_director": True,
+            })
+        scores = (
+            ("Cycle A", "Cycle B", 5, 3),
+            ("Cycle B", "Cycle C", 4, 2),
+            ("Cycle C", "Cycle A", 6, 5),
+        )
+        for home, away, hr, ar in scores:
+            game = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+                "home": home,
+                "away": away,
+                "date": "2026-10-18",
+                "time": "09:00",
+                "pool": "A",
+            })
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['game']['id']}/score", td, {
+                "home_runs": hr,
+                "away_runs": ar,
+                "status": "final",
+                "confirm": True,
+            })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        pool = next(row for row in board["standings"] if row["name"] == "A")
+        self.assertEqual([t["name"] for t in pool["teams"]], ["Cycle B", "Cycle A", "Cycle C"])
+        self.assertIn("cycle", pool["teams"][0]["seed_reason"])
+        self.assertIn("head-to-head", pool.get("tiebreak_label") or "")
+
+    def test_duplicate_skips_scores_and_family_email(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        src = "dup-src-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Original Weekend",
+            "slug": src,
+            "venue": "East End Park",
+            "ages": "10U",
+            "format": "pool-only",
+            "tiebreak_order": "record,ra,h2h,diff,rs",
+            "fields": [{"name": "East 1"}],
+        })
+        family = f"parent.{uuid.uuid4().hex[:8]}@family.test"
+        request(BASE, "POST", f"/api/events/{src}/signup", td, {
+            "team_name": "Oaks FAKE",
+            "pool": "A",
+            "contact_name": "Coach Parent",
+            "contact_email": family,
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{src}/signup", td, {
+            "team_name": "River FAKE",
+            "pool": "A",
+            "as_director": True,
+        })
+        game = request(BASE, "POST", f"/api/events/{src}/schedule/game", td, {
+            "home": "Oaks FAKE",
+            "away": "River FAKE",
+            "date": "2026-09-12",
+            "time": "10:00",
+            "field": "East 1",
+            "pool": "A",
+        })
+        request(BASE, "POST", f"/api/events/{src}/schedule/{game['game']['id']}/score", td, {
+            "home_runs": 8,
+            "away_runs": 1,
+            "status": "final",
+            "confirm": True,
+        })
+        dest = "dup-dest-" + uuid.uuid4().hex[:8]
+        copied = request(BASE, "POST", f"/api/events/{src}/duplicate", td, {
+            "name": "Copied Weekend",
+            "slug": dest,
+            "start": "2027-09-11",
+            "end": "2027-09-12",
+        })
+        self.assertEqual(copied["event"]["slug"], dest)
+        self.assertEqual(copied["event"]["tiebreak"]["order"][:2], ["record", "ra"])
+        self.assertEqual(copied["event"]["venue"], "East End Park")
+        board = request(BASE, "GET", f"/api/event/{dest}/board")
+        names = [t["name"] for t in board["roster"]]
+        self.assertEqual(sorted(names), ["Oaks FAKE", "River FAKE"])
+        self.assertTrue(all(g["status"] == "scheduled" for g in board["schedule"]))
+        self.assertTrue(all(g.get("home_runs") in (None, "", 0) or g["status"] != "final" for g in board["schedule"]))
+        self.assertTrue(all(t["w"] == 0 and t["l"] == 0 for p in board["standings"] for t in p["teams"]))
+        from urllib.parse import quote
+        admin = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        filt = quote(f"event='{copied['event']['id']}'")
+        teams = request(BASE, "GET", f"/api/collections/event_teams/records?filter={filt}&perPage=50", admin)
+        copied_teams = teams.get("items", [])
+        self.assertEqual(len(copied_teams), 2)
+        self.assertTrue(all(not row.get("contact_email") for row in copied_teams))
+        self.assertTrue(all(not row.get("contact_name") for row in copied_teams))
 
 
 class HostedSignupTests(unittest.TestCase):

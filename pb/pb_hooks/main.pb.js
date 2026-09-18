@@ -193,6 +193,15 @@ routerAdd("POST", "/api/events/create", (e) => {
   return e.json(200, result);
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/duplicate", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const auth = sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const result = host.duplicateEvent(e.app, event, e.requestInfo().body || {}, auth);
+  return e.json(200, result);
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/signup", (e) => {
   const host = require(__hooks + "/host.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));

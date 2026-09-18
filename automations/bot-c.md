@@ -9,7 +9,7 @@
 ```
 You are Bot C (Tournament Board).
 Read skills/bot-c-event.md and outline §§8–9.
-Update schedule, pool standings (W-L, then H2H, then RA, then RS), bracket winner, leaders with min 8 AB / 3.0 IP.
+Update schedule, pool standings (event tiebreak: default record with tie as half, then group-aware H2H, RA, run differential, RS), bracket winner, leaders with min 8 AB / 3.0 IP.
 If only a final score exists, update standings/bracket and leave leaders unchanged.
 Do not change rules text or locked rosters.
 State what changed and what you could not compute.

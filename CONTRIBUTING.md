@@ -35,7 +35,7 @@ bash scripts/ci.sh
 
 That is exactly what CI runs: it brings PocketBase up, runs
 `scripts/test_metrics.py` and `scripts/test_diamond.py`, then
-`scripts/acceptance_test.py`. Expect 31 cases and 13 acceptance checks.
+`scripts/acceptance_test.py`. Expect 42 cases and 13 acceptance checks.
 
 Narrower loops while you work:
 

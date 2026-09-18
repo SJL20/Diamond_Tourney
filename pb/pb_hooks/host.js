@@ -304,6 +304,15 @@ function eventJson(rec, app) {
     status_note: rec.get("status_note") || "",
     dates: packet ? packet.dates : "",
     packet: packet,
+    tiebreak: (function () {
+      try {
+        const diamond = require(__hooks + "/diamond.js");
+        const order = diamond.parseTiebreak(rec.get("tiebreak"));
+        return { order: order, label: diamond.tiebreakLabel(order) };
+      } catch (err) {
+        return { order: ["record", "h2h", "ra", "diff", "rs"], label: "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored" };
+      }
+    })(),
   };
 }
 
@@ -455,6 +464,11 @@ function createEvent(app, body, auth) {
     rec.set("tm_id", tm.tmId);
   }
   if (auth) rec.set("created_by", auth.id);
+  try {
+    require(__hooks + "/diamond.js").saveTiebreak(rec, body.tiebreak_order != null || body.tiebreak != null ? body : { tiebreak_order: "record,h2h,ra,diff,rs" });
+  } catch (err) {
+    rec.set("tiebreak", { order: ["record", "h2h", "ra", "diff", "rs"] });
+  }
   app.save(rec);
   schedule.saveEventFields(app, rec, body);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
@@ -716,6 +730,147 @@ function saveClub(app, body, id) {
   return clubJson(rec);
 }
 
+function duplicateEvent(app, source, body, auth) {
+  const name = String((body && body.name) || (source.get("name") + " copy")).trim();
+  if (!name) throw new BadRequestError("Tournament name is required");
+  const slug = uniqueSlug(app, slugify((body && body.slug) || name));
+  const rec = new Record(app.findCollectionByNameOrId("events"));
+  rec.set("name", name);
+  rec.set("slug", slug);
+  rec.set("venue", source.get("venue") || "");
+  rec.set("address", source.get("address") || "");
+  rec.set("lat", source.get("lat") || 0);
+  rec.set("lng", source.get("lng") || 0);
+  rec.set("ages", source.get("ages") || "10U");
+  rec.set("public", true);
+  rec.set("status", "live");
+  rec.set("format", source.get("format") || "pool-to-bracket");
+  rec.set("source", "native");
+  rec.set("signup_open", true);
+  rec.set("auto_sync", true);
+  rec.set("rain_status", "clear");
+  rec.set("rain_note", "");
+  rec.set("hours_start", source.get("hours_start") || "08:00");
+  rec.set("hours_end", source.get("hours_end") || "18:00");
+  rec.set("scheduler", source.get("scheduler") || null);
+  rec.set("tiebreak", source.get("tiebreak") || { order: ["record", "h2h", "ra", "diff", "rs"] });
+  const copied = [
+    "governing_body", "governing_notes", "pitch_limit_mode", "pitch_limit_ip",
+    "pitch_limit_pitches", "pitch_limit_notes", "game_length_minutes", "innings_cap",
+    "mercy_rule", "umpire_count", "rules_notes", "packet_notes", "require_insurance",
+    "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert",
+  ];
+  for (let i = 0; i < copied.length; i++) rec.set(copied[i], source.get(copied[i]));
+  if (body && body.start) rec.set("start", body.start);
+  else if (source.get("start")) rec.set("start", source.get("start"));
+  if (body && body.end) rec.set("end", body.end);
+  else if (source.get("end")) rec.set("end", source.get("end"));
+  if (auth) rec.set("created_by", auth.id);
+  app.save(rec);
+
+  const fieldMap = {};
+  const fields = app.findRecordsByFilter("fields", "event = {:e}", "name", 40, 0, { e: source.id });
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const nf = new Record(app.findCollectionByNameOrId("fields"));
+    nf.set("event", rec.id);
+    nf.set("name", f.get("name"));
+    nf.set("address", f.get("address") || "");
+    nf.set("lat", f.get("lat") || 0);
+    nf.set("lng", f.get("lng") || 0);
+    nf.set("surface", f.get("surface") || "");
+    nf.set("lights", !!f.get("lights"));
+    nf.set("notes", f.get("notes") || "");
+    nf.set("status", f.get("status") || "open");
+    nf.set("availability", f.get("availability") || []);
+    app.save(nf);
+    fieldMap[f.id] = nf;
+  }
+
+  const teamMap = {};
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: source.id });
+  for (let i = 0; i < teams.length; i++) {
+    const t = teams[i];
+    const nt = new Record(app.findCollectionByNameOrId("event_teams"));
+    nt.set("event", rec.id);
+    nt.set("name", t.get("name"));
+    nt.set("slug", t.get("slug"));
+    nt.set("pool", t.get("pool") || "");
+    nt.set("is_host", !!t.get("is_host"));
+    nt.set("gamechanger_url", t.get("gamechanger_url") || "");
+    nt.set("gc_team_ref", t.get("gc_team_ref") || "");
+    if (t.get("club")) nt.set("club", t.get("club"));
+    nt.set("packet_status", "incomplete");
+    app.save(nt);
+    teamMap[t.id] = nt;
+  }
+
+  try {
+    const pools = app.findRecordsByFilter("pools", "event = {:e}", "name", 20, 0, { e: source.id });
+    for (let i = 0; i < pools.length; i++) {
+      const np = new Record(app.findCollectionByNameOrId("pools"));
+      np.set("event", rec.id);
+      np.set("name", pools[i].get("name"));
+      np.set("tiebreak_notes", pools[i].get("tiebreak_notes") || "");
+      app.save(np);
+    }
+  } catch (err) {}
+
+  const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "game_number", 400, 0, { e: source.id });
+  for (let i = 0; i < games.length; i++) {
+    const g = games[i];
+    const home = teamMap[g.get("home")];
+    const away = teamMap[g.get("away")];
+    if (!home || !away) continue;
+    const ng = new Record(app.findCollectionByNameOrId("event_schedule"));
+    ng.set("event", rec.id);
+    ng.set("date", g.get("date") || "");
+    ng.set("time", g.get("time") || "");
+    ng.set("home", home.id);
+    ng.set("away", away.id);
+    ng.set("status", "scheduled");
+    ng.set("pool", g.get("pool") || "");
+    ng.set("game_number", Number(g.get("game_number") || 0) || 0);
+    const fid = g.get("field");
+    if (fid && fieldMap[fid]) {
+      ng.set("field", fieldMap[fid].id);
+      ng.set("field_name", fieldMap[fid].get("name"));
+    } else if (g.get("field_name")) {
+      ng.set("field_name", g.get("field_name"));
+    }
+    app.save(ng);
+  }
+
+  const bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 40, 0, { e: source.id });
+  for (let i = 0; i < bracket.length; i++) {
+    const g = bracket[i];
+    const ng = new Record(app.findCollectionByNameOrId("bracket_games"));
+    ng.set("event", rec.id);
+    ng.set("round", g.get("round"));
+    ng.set("slot", g.get("slot"));
+    if (g.get("side")) ng.set("side", g.get("side"));
+    ng.set("status", "scheduled");
+    ng.set("game_number", Number(g.get("game_number") || 0) || 0);
+    ng.set("date", g.get("date") || "");
+    ng.set("time", g.get("time") || "");
+    const fid = g.get("field");
+    if (fid && fieldMap[fid]) {
+      ng.set("field", fieldMap[fid].id);
+      ng.set("field_name", fieldMap[fid].get("name"));
+    }
+    app.save(ng);
+  }
+
+  writeLog(app, rec.id, "event", true, "Duplicated from " + source.get("slug") + " without scores, boxes, or family contacts");
+  return {
+    event: eventJson(rec, app),
+    source: source.get("slug"),
+    teams: Object.keys(teamMap).length,
+    games: games.length,
+    note: "Copied teams, fields, and the unpaid schedule. Scores, boxes, and family contacts were left behind.",
+  };
+}
+
 function applySettings(app, event, body) {
   if (body.signup_open != null) event.set("signup_open", !!body.signup_open);
   if (body.auto_sync != null) event.set("auto_sync", !!body.auto_sync);
@@ -724,6 +879,7 @@ function applySettings(app, event, body) {
   if (body.start) event.set("start", body.start);
   if (body.end) event.set("end", body.end);
   applyGuidelines(event, body);
+  try { require(__hooks + "/diamond.js").saveTiebreak(event, body); } catch (err) {}
   const schedule = require(__hooks + "/schedule.js");
   schedule.saveScheduler(app, event, body);
   schedule.applyLocation(event, body);
@@ -742,6 +898,7 @@ module.exports = {
   writeLog: writeLog,
   parsePacket: parsePacket,
   createEvent: createEvent,
+  duplicateEvent: duplicateEvent,
   signupTeam: signupTeam,
   syncEvent: syncEvent,
   publicRoster: publicRoster,

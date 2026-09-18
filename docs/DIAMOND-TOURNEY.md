@@ -34,9 +34,15 @@ Site admin manages **team profiles** (`/admin/teams`). Email is only a login tha
 | Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
 | Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Does not scrape GameChanger. Individual pool boxes that are not on the popup are not invented. |
 
-## Tiebreak (outline §6, confirmed by the deck)
+## Tiebreak (outline §6, confirmed by the deck, updated 2026-09-18)
 
-Pool order: wins, then losses, then head-to-head, then runs allowed, then runs scored.
+Default pool order (director can reorder on create / Admin setup):
+
+record (win% with a tie as half) → head-to-head → fewest runs allowed → run differential → most runs scored.
+
+Head-to-head is group-aware: it applies only for a 2-team tie, or when every pair in the tied group has a decided game. A 3-team cycle skips H2H. Each seed on the standings tab has a “why this seed” line.
+
+`lib/standings.py` and `pb/pb_hooks/diamond.js` must stay in lockstep. Do not change season-book metric formulas.
 
 ## Awards
 

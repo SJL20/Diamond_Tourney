@@ -17,13 +17,18 @@ bash scripts/install-pocketbase.sh
 bash scripts/local-server.sh
 ```
 
+The install script picks the PocketBase build for this machine (`linux_amd64` on
+the Cloud Agent, `darwin_arm64` on an Apple Silicon Mac). Codespaces / VS Code
+can also use `.devcontainer/` — it forwards **8097**. Production Fly already
+keeps SQLite on the `pb_data` volume at `/data`.
+
 That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy, then prints the Keystone Clash URLs. Do not kill a healthy listener just to “restart Preview.”
 
 Every page has a **site bar** (Find, Year, Account, Create). Tournament pages add a second **tournament bar** under it (Home, Schedule, Games, Bracket, Stats, Info, Sign up, Admin). Season books use the same split: site bar, then team-book links. The two bars do not mix.
 
 ## How to create the schedule
 
-1. **Log in** as a director (`td@local.test` / `EventTd1!` locally) and open **Create → Run it here**.
+1. **Log in** as a director (`td@local.test` / `EventTd1!` locally) and open **Create → Run it here**, or **Duplicate an existing tournament** to reuse last year’s fields and unpaid schedule.
 2. Name the weekend, then fill **Venue, address, and fields**. Set the **global** first-pitch and last-out window. Each diamond needs a name, and each date can be narrower — or unchecked if that field is dark. Auto-schedule will not put a game on a closed diamond or after that field’s last out. A field without its own pin inherits the park.
 3. Pick a **bracket type**: pool then single-elim, pool only, single-elim, or double-elim.
 4. Open signup. Put teams in the same pool letter (`A`, `B`) so pool play can pair them.

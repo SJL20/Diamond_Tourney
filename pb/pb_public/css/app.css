@@ -392,6 +392,29 @@ tr.total { font-weight: 700; background: #f3eee4; }
   .form-grid.two { grid-template-columns: 1fr 1fr; }
 }
 
+.tiebreak-order {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.tiebreak-order li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.tiebreak-order .tb-n {
+  width: 1.6rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.seed-why {
+  margin: 12px 0 0;
+  padding-left: 1.15rem;
+}
+.seed-why li { margin: 4px 0; font-size: 0.9rem; }
+
 .tabs {
   display: flex;
   flex-wrap: wrap;
