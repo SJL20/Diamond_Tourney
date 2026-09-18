@@ -56,11 +56,17 @@ const TIEBREAK_LABELS = {
 function decodeJsonField(raw) {
   if (raw == null || raw === "") return null;
   if (typeof raw === "string") {
-    try { return JSON.parse(raw); } catch (err) { return null; }
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+      try { return JSON.parse(trimmed); } catch (err) { return raw; }
+    }
+    // Director CSV ("record,ra,h2h") is not JSON. Keep the string so parseTiebreak can split it.
+    return raw;
   }
   if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "number") {
     try {
-      return JSON.parse(require(__hooks + "/softball.js").bytesToString(raw));
+      return decodeJsonField(require(__hooks + "/softball.js").bytesToString(raw));
     } catch (err) { return null; }
   }
   return raw;
@@ -104,7 +110,9 @@ function tiebreakLabel(order) {
 function saveTiebreak(event, body) {
   if (!event || !body) return;
   if (body.tiebreak_order == null && body.tiebreak == null) return;
-  event.set("tiebreak", { order: parseTiebreak(body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak) });
+  const raw = body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak;
+  // Wrap so a CSV string is read as .order, not as failed JSON.
+  event.set("tiebreak", { order: parseTiebreak({ order: raw }) });
 }
 
 function gGet(game, key) {
