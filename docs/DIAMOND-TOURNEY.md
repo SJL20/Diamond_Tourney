@@ -9,8 +9,8 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 | Vercel public pages | `pb/pb_public/` on Fly (`fly.toml`) |
 | Supabase | PocketBase (auth, files, SQLite) |
 | Claude box-score vision | Grok Bot A + `/api/bot/ingest` — coach confirms, nothing publishes unverified |
-| Resend | Not built yet (Phase 4 rain/schedule texts) |
-| diamondtourney.com | Owner still picks the domain (outline §12) |
+| Resend | PocketBase Admin SMTP for signup / verify / welcome / rain. Cloudflare DNS holds SPF/DKIM. No mail secrets in the repo. Phase 4 rain texts still later. |
+| diamondtourney.com | Live: Fly → PocketBase → Cloudflare at https://www.diamondtourney.com (apex too) |
 
 ## What we took from the deck
 
@@ -36,11 +36,13 @@ Site admin manages **team profiles** (`/admin/teams`). Email is only a login tha
 
 ## Tiebreak (outline §6, confirmed by the deck, updated 2026-09-18)
 
-Default pool order (director can reorder on create / Admin setup):
+Default pool order (director can reorder, remove steps, or pick a preset; each pool can have its own chain):
 
 record (win% with a tie as half) → head-to-head → fewest runs allowed → run differential → most runs scored.
 
-Head-to-head is group-aware: it applies only for a 2-team tie, or when every pair in the tied group has a decided game. A 3-team cycle skips H2H. Each seed on the standings tab has a “why this seed” line.
+Head-to-head is group-aware: it applies only for a 2-team tie, or when every pair in the tied group has a decided game. A 3-team cycle skips H2H. Each seed on the standings tab has a “why this seed” line. Public standings print the configured chain.
+
+Age groups are a multi-select (6U–18U, including 11U). Class A/B/C and combine-vs-split are settings only — the host does not auto-create a division per age. Keystone Clash 2026 is one combined `11U/12U-C` division. Pitching limits stay on the form and default to none.
 
 `lib/standings.py` and `pb/pb_hooks/diamond.js` must stay in lockstep. Do not change season-book metric formulas.
 

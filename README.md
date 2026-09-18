@@ -19,8 +19,10 @@ bash scripts/local-server.sh
 
 The install script picks the PocketBase build for this machine (`linux_amd64` on
 the Cloud Agent, `darwin_arm64` on an Apple Silicon Mac). Codespaces / VS Code
-can also use `.devcontainer/` — it forwards **8097**. Production Fly already
-keeps SQLite on the `pb_data` volume at `/data`.
+can also use `.devcontainer/` — it forwards **8097**. Production is
+https://www.diamondtourney.com (Fly → PocketBase → Cloudflare). Fly already
+keeps SQLite and files on the `pb_data` volume at `/data`. SMTP is PocketBase
+Admin mail; put SPF/DKIM on Cloudflare. Do not commit mail passwords.
 
 That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy, then prints the Keystone Clash URLs. Do not kill a healthy listener just to “restart Preview.”
 

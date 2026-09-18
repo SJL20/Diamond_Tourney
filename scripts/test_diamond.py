@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import os
+import struct
 import sys
 import unittest
 import urllib.request
 import uuid
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from lib.exif import strip_exif
 from lib.standings import sort_pool, parse_order, win_pct
 from scripts.pb_client import auth, request, request_multipart
 
@@ -59,6 +62,7 @@ class TiebreakTests(unittest.TestCase):
         custom = sort_pool([dict(a), dict(b)], games, ["record", "ra", "h2h", "diff", "rs"])
         self.assertEqual(custom[0]["id"], "a")
         self.assertEqual(parse_order("record, ra, h2h"), ["record", "ra", "h2h", "diff", "rs"])
+        self.assertEqual(parse_order({"order": ["record", "ra"], "explicit": True}), ["record", "ra"])
 
 
 class InstallScriptTests(unittest.TestCase):
@@ -107,6 +111,14 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("directorDuplicate", event)
         self.assertIn("/directors/duplicate", app)
         self.assertIn(".tiebreak-order", css)
+        self.assertIn("setupAgeFields", event)
+        self.assertIn('pitch_limit_mode || "none"', event)
+        self.assertIn("Nudge the map pin", event)
+        self.assertIn("tb-remove", event)
+        self.assertIn("Head to head first", event)
+        self.assertIn("Fields and facilities only", event)
+        self.assertIn("/verify", app)
+        self.assertIn("verifyPage", app)
 
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
@@ -549,6 +561,12 @@ class AccountAndYearTests(unittest.TestCase):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
         self.assertEqual(board["event"]["governing_body"], "usa_softball")
         self.assertEqual(board["event"]["pitch_limit_mode"], "ip")
+        self.assertIn("11U", board["event"]["ages"])
+        self.assertIn("12U", board["event"]["ages"])
+        self.assertFalse(board["event"]["age_split"])
+        self.assertEqual(board["event"]["age_class"], "C")
+        self.assertIn("11U", board["event"]["age_groups"]["ages"])
+        self.assertIn("12U", board["event"]["age_groups"]["ages"])
         self.assertIn("insurance", board["event"]["required_docs"])
         self.assertIn("roster", board["event"]["required_docs"])
         names = [t["name"] for t in board["roster"]]
@@ -1233,6 +1251,168 @@ class PacketPrivacyTests(unittest.TestCase):
             "intent": "director",
         })
         return auth(BASE, email, "Stranger99!")
+
+
+def _jpeg_with_exif() -> bytes:
+    tiny = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        b"\xff\xdb\x00C\x00" + bytes([16] * 64)
+        + b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
+        + b"\xff\xc4\x00\x14\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        + b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\x7f\xff\xd9"
+    )
+    payload = b"Exif\x00\x00GPS\x00" + b"\x00" * 8
+    app1 = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return tiny[:2] + app1 + tiny[2:]
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+
+def _png_with_exif() -> bytes:
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    raw = zlib.compress(b"\x00\xff\x00\x00")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"eXIf", b"GPS-EXIF")
+        + _png_chunk(b"IDAT", raw)
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+class ExifTests(unittest.TestCase):
+    def test_strips_jpeg_app1(self):
+        raw = _jpeg_with_exif()
+        self.assertIn(b"Exif", raw)
+        self.assertIn(b"GPS", raw)
+        out = strip_exif(raw)
+        self.assertTrue(out.startswith(b"\xff\xd8"))
+        self.assertNotIn(b"Exif", out)
+        self.assertNotIn(b"GPS", out)
+
+    def test_strips_png_exif_chunk(self):
+        raw = _png_with_exif()
+        self.assertIn(b"eXIf", raw)
+        out = strip_exif(raw)
+        self.assertTrue(out.startswith(b"\x89PNG"))
+        self.assertNotIn(b"eXIf", out)
+        self.assertNotIn(b"GPS-EXIF", out)
+
+
+class LiveReviewTests(unittest.TestCase):
+    def test_new_event_defaults_pitching_none_and_keeps_pin(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "live-review-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Live Review Classic",
+            "slug": slug,
+            "venue": "East End Park",
+            "address": "51 Meadow St, McDonald, PA 15057",
+            "pin_set": True,
+            "lat": 40.3668,
+            "lng": -80.2345,
+            "age_groups": ["11U", "12U"],
+            "age_class": "C",
+            "age_split": False,
+            "tiebreak_order": "record,ra",
+            "tiebreak_explicit": True,
+        })
+        ev = created["event"]
+        self.assertEqual(ev["pitch_limit_mode"], "none")
+        self.assertEqual(ev["lat"], 40.3668)
+        self.assertEqual(ev["lng"], -80.2345)
+        self.assertEqual(ev["tiebreak"]["order"], ["record", "ra"])
+        self.assertIn("11U", ev["ages"])
+        self.assertIn("12U", ev["ages"])
+        self.assertEqual(ev["age_class"], "C")
+        self.assertFalse(ev["age_split"])
+
+    def test_pool_tiebreak_and_mail_best_effort(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "pool-tb-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Pool Tiebreak Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "format": "pool-only",
+            "tiebreak_order": "record,h2h,ra,diff,rs",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Pool Hawks",
+            "pool": "A",
+            "contact_email": f"coach.{uuid.uuid4().hex[:6]}@local.test",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Pool Heat",
+            "pool": "B",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "tiebreak_order": "record,h2h,ra,diff,rs",
+            "tiebreak_explicit": True,
+            "pool_tiebreak_A": "record,ra",
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        by_name = {row["name"]: row for row in board["standings"]}
+        self.assertIn("fewest runs allowed", by_name["A"]["tiebreak_label"])
+        self.assertNotIn("head-to-head", by_name["A"]["tiebreak_label"])
+        self.assertIn("head-to-head", by_name["B"]["tiebreak_label"])
+        rain = request(BASE, "POST", f"/api/events/{slug}/rain", td, {
+            "rain_status": "watch",
+            "rain_note": "Lightning in the area.",
+        })
+        self.assertEqual(rain.get("mail_sent"), 0)
+
+    def test_venue_photo_stays_unpublished_and_strips_exif(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "photos-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Photo Classic",
+            "slug": slug,
+            "venue": "East End Park",
+            "ages": "10U",
+        })
+        raw = _png_with_exif()
+        uploaded = request_multipart(BASE, f"/api/events/{slug}/photos", td, {
+            "caption": "East lot",
+            "kind": "parking",
+        }, {
+            "image": ("lot.png", raw, "image/png"),
+        })
+        photo = uploaded["photo"]
+        self.assertFalse(photo["public"])
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertFalse(board.get("header_photo"))
+        self.assertTrue(all(not p.get("url") or p.get("public") for p in board.get("photos") or []))
+        published = request(BASE, "POST", f"/api/events/{slug}/photos/{photo['id']}/publish", td, {"public": True})
+        self.assertTrue(published["photo"]["public"])
+        self.assertTrue(published["photo"]["url"])
+        board2 = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertTrue(board2.get("header_photo"))
+        file_url = BASE + published["photo"]["url"]
+        with urllib.request.urlopen(file_url, timeout=20) as resp:
+            stored = resp.read()
+        self.assertNotIn(b"eXIf", stored)
+        self.assertNotIn(b"GPS-EXIF", stored)
+
+    def test_register_stays_verified_without_smtp(self):
+        email = f"mailcheck.{uuid.uuid4().hex[:8]}@local.test"
+        out = request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "DirectorPass1!",
+            "display_name": "Mail Check",
+            "intent": "director",
+        })
+        self.assertTrue(out.get("verified"))
+        self.assertFalse(out.get("verify_sent"))
 
 
 if __name__ == "__main__":

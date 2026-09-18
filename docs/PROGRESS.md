@@ -25,7 +25,8 @@ The running answer to "where is this thing?" Read this before you read code.
 | Repository | **public** — assume anything committed or served is world-readable |
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
-| Tests | 42 unit/integration cases + 13 acceptance checks |
+| Live URL | https://www.diamondtourney.com (this branch is not on Fly until it merges into `main`) |
+| Tests | 42 unit/integration cases + 13 acceptance checks, plus live-review coverage |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -181,12 +182,13 @@ direct unit tests for the hook modules.
 From outline §12, plus what this session added. These block work, so they are
 worth answering before the next session.
 
-1. Region display name, and the domain. Still the Fly URL until then.
+1. Region display name. Public product URL is **www.diamondtourney.com**. SMTP is PocketBase Admin mail + Cloudflare SPF/DKIM — no secrets in git.
 2. First live team: name, slug, age group. `hawks-10u` is a placeholder.
 3. First tournament: name, dates, field complex.
 4. The `team_coach` email for the first real team.
-5. ~~Pool tiebreak order~~ — directors can now reorder it. Default is record
-   (tie = half), group-aware H2H, fewest RA, run differential, most RS.
+5. ~~Pool tiebreak order~~ — directors can reorder, remove steps, and set a
+   chain per pool. Default is record (tie = half), group-aware H2H, fewest RA,
+   run differential, most RS. Presets: head-to-head first, runs first.
 6. **New — finding 2:** for a weekend imported from a public popup that does not
    publish R, BB, SO, or ER, should the board show blanks or should those games
    stay out of the leaders entirely?
@@ -197,6 +199,21 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — Derek 1:16 / 1:19 live-review package
+
+Signup confirmation, director verify + welcome, and rain/schedule emails go
+through PocketBase’s mailer. If SMTP is not configured, the request still
+succeeds and CI accounts stay verified. Age create/setup is a multi-select
+(6U–18U plus 11U), class A/B/C, combine vs split — no auto-divisions.
+Keystone is stored as combined `11U/12U-C`. Street address is geocoded;
+lat/lng stay in the record and only appear under “Nudge the map pin.”
+Pitching limits stay configurable and **default to none**. Venue photos
+upload unpublished, strip JPEG APP1/APP2 and PNG text/EXIF, and the first
+published photo is the public header. Fly already stores files on `pb_data`.
+Tiebreak order is stored on the event and on each pool; steps are removable;
+public standings print the configured chain. H2H grouping is still enforced
+in code. Finding 1 is unchanged.
 
 ### 2026-09-18 — Derek / Claude email fixes
 
