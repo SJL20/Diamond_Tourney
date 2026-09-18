@@ -113,7 +113,9 @@ every row with an empty `uploaded_by`. Always guard the clause:
 
 Also: `@request.auth.role = 'event_td'` is **not** an authorization check.
 `/api/account/register` is public and hands that role to anyone who signs up.
-Check ownership — `events.created_by`, `event_teams.account` — instead.
+Check ownership — `events.created_by`, `event_co_owners`, `event_teams.account` — instead.
+Co-owner emails stay off public `eventJson` (board / Find / year). Only `/plan`
+and owner setup routes include the list.
 
 ## Reporting something sensitive
 

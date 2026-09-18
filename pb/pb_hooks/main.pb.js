@@ -244,7 +244,7 @@ routerAdd("POST", "/api/events/create", (e) => {
     const rec = e.app.findRecordById("events", result.event.id);
     rec.set("rules_file", rules);
     e.app.save(rec);
-    result.event = host.eventJson(rec, e.app);
+    result.event = host.eventJson(rec, e.app, e.auth);
   }
   return e.json(200, result);
 }, $apis.requireAuth());
@@ -276,12 +276,12 @@ routerAdd("POST", "/api/events/{slug}/signup", (e) => {
   }
   const packet = host.refreshPacketStatus(e.app, event, rec);
   const sb = require(__hooks + "/softball.js");
-  const director = sb.isEventAdmin(event, e.auth) && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
+  const director = sb.isEventAdmin(event, e.auth, e.app) && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
   if (!packet.complete && packet.required.length && !director) {
     throw new BadRequestError("Upload the required team documents: " + packet.required_labels.join(", "));
   }
   const out = host.teamJson(rec);
-  out.packet = host.packetSummary(e.app, event, rec, host.canSeeTeamPacket(event, rec, e.auth));
+    out.packet = host.packetSummary(e.app, event, rec, host.canSeeTeamPacket(event, rec, e.auth, e.app));
   return e.json(200, { team: out, event: event.get("slug") });
 });
 
@@ -295,14 +295,14 @@ routerAdd("POST", "/api/events/{slug}/docs", (e) => {
     (team.get("account") && team.get("account") === e.auth.id)
     || (team.get("contact_email") && team.get("contact_email") === e.auth.email())
   ));
-  if (!event.get("signup_open") && !sb.isEventAdmin(event, e.auth) && !self) {
+  if (!event.get("signup_open") && !sb.isEventAdmin(event, e.auth, e.app) && !self) {
     throw new BadRequestError("Signup is closed. Ask the director to take a replacement file.");
   }
   const files = host.uploaded(e, "file") || host.uploaded(e, body.kind);
   const doc = host.saveTeamDoc(e.app, event, team, body, files, e.auth);
   return e.json(200, {
     doc: doc,
-    packet: host.packetSummary(e.app, event, team, host.canSeeTeamPacket(event, team, e.auth)),
+    packet: host.packetSummary(e.app, event, team, host.canSeeTeamPacket(event, team, e.auth, e.app)),
   });
 });
 
@@ -329,15 +329,35 @@ routerAdd("POST", "/api/events/{slug}/settings", (e) => {
   const host = require(__hooks + "/host.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   sb.requireEventAdmin(e, event);
-  const updated = host.applySettings(e.app, event, e.requestInfo().body || {});
+  const updated = host.applySettings(e.app, event, e.requestInfo().body || {}, e.auth);
   const rules = host.uploaded(e, "rules_file");
   if (rules) {
     const rec = e.app.findRecordById("events", event.id);
     rec.set("rules_file", rules);
     e.app.save(rec);
-    return e.json(200, { event: host.eventJson(rec, e.app) });
+    return e.json(200, { event: host.eventJson(rec, e.app, e.auth, { owners: true }) });
   }
   return e.json(200, { event: updated });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/co-owners", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  const row = sb.addCoOwner(e.app, event, body.email, e.auth);
+  return e.json(200, { co_owner: row, event: host.eventJson(event, e.app, e.auth, { owners: true }) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/co-owners/remove", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  const out = sb.removeCoOwner(e.app, event, body.email, e.auth);
+  return e.json(200, { removed: out.removed, event: host.eventJson(event, e.app, e.auth, { owners: true }) });
 }, $apis.requireAuth());
 
 routerAdd("GET", "/api/events/{slug}/roster", (e) => {

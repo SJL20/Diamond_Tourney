@@ -128,6 +128,10 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("canAdminEvent", chrome)
         self.assertIn("This is not your tournament", event)
         self.assertIn("Remove this tournament", event)
+        self.assertIn("Co-owners", event)
+        self.assertIn("Add co-owner", event)
+        self.assertIn("/co-owners", event)
+        self.assertIn("Public pages never show these addresses", event)
         self.assertIn(".btn.danger", (ROOT / "pb/pb_public/css/app.css").read_text())
 
     def test_match_card_starts_collapsed(self):
@@ -621,6 +625,7 @@ class AccountAndYearTests(unittest.TestCase):
         denied("GET", "/api/bot/event-boxes")
         denied("POST", "/api/events/import-popup", {})
         denied("GET", "/api/admin/events")
+        denied("POST", "/api/events/keystone-clash-2026/co-owners", {"email": email})
 
         listed = request(
             BASE, "GET",
@@ -661,6 +666,123 @@ class AccountAndYearTests(unittest.TestCase):
         owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
         inbox = request(BASE, "GET", "/api/events/keystone-clash-2026/boxes", owner)
         self.assertIn("boxes", inbox)
+
+    def test_owner_adds_co_owner_by_email(self):
+        owner_email = f"own.{uuid.uuid4().hex[:8]}@local.test"
+        helper_email = f"help.{uuid.uuid4().hex[:8]}@local.test"
+        extra_email = f"extra.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": owner_email,
+            "password": "OwnerPass1!",
+            "display_name": "Event Owner",
+            "intent": "director",
+        })
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": helper_email,
+            "password": "HelperPass1!",
+            "display_name": "Helper Director",
+            "intent": "director",
+        })
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": extra_email,
+            "password": "ExtraPass1!",
+            "display_name": "Extra Director",
+            "intent": "director",
+        })
+        owner = auth(BASE, owner_email, "OwnerPass1!")
+        helper = auth(BASE, helper_email, "HelperPass1!")
+        extra = auth(BASE, extra_email, "ExtraPass1!")
+        slug = "co-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", owner, {
+            "source": "native",
+            "name": "Co Owner Weekend",
+            "slug": slug,
+            "venue": "Co Park",
+            "ages": "10U",
+        })
+        self.assertTrue(created["event"]["can_admin"])
+        self.assertNotIn("co_owners", created["event"])
+
+        added = request(BASE, "POST", f"/api/events/{slug}/co-owners", owner, {
+            "email": helper_email.upper(),
+        })
+        emails = [row["email"] for row in added["event"]["co_owners"]]
+        self.assertEqual(emails, [helper_email])
+        self.assertTrue(added["event"]["can_manage_owners"])
+        self.assertTrue(added["co_owner"]["has_account"])
+
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", owner)
+        self.assertEqual([row["email"] for row in plan["event"]["co_owners"]], [helper_email])
+        self.assertTrue(plan["event"]["can_admin"])
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertNotIn("co_owners", board["event"])
+        self.assertNotIn("can_manage_owners", board["event"])
+        self.assertNotIn(helper_email, str(board))
+        found = request(BASE, "GET", f"/api/events/search?q={slug}")
+        self.assertNotIn("co_owners", found["events"][0])
+        self.assertNotIn(helper_email, str(found))
+
+        rest = read_or_denied("/api/collections/event_co_owners/records?perPage=200")
+        self.assertFalse(rest, "anonymous REST listed co-owner emails")
+        rest_stranger = read_or_denied(
+            "/api/collections/event_co_owners/records?perPage=200", extra,
+        )
+        self.assertFalse(rest_stranger, "a stranger listed co-owner emails")
+
+        helper_home = request(BASE, "GET", "/api/account/home", helper)
+        self.assertIn(slug, [e["slug"] for e in helper_home["created"]])
+        helper_plan = request(BASE, "GET", f"/api/events/{slug}/plan", helper)
+        self.assertTrue(helper_plan["event"]["can_admin"])
+        self.assertFalse(helper_plan["event"]["can_manage_owners"])
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", helper, {
+            "venue": "Co Park Shared",
+        })
+        self.assertEqual(saved["event"]["venue"], "Co Park Shared")
+        self.assertTrue(saved["event"]["can_admin"])
+
+        with self.assertRaises(RuntimeError) as caught:
+            request(BASE, "POST", f"/api/events/{slug}/co-owners", helper, {
+                "email": extra_email,
+            })
+        self.assertIn("403", str(caught.exception))
+
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", f"/api/events/{slug}/co-owners", extra, {
+                "email": extra_email,
+            })
+
+        owner_board = request(BASE, "GET", f"/api/event/{slug}/board", owner)
+        self.assertTrue(owner_board["event"]["can_admin"])
+        self.assertNotIn("co_owners", owner_board["event"])
+
+        pending_email = f"later.{uuid.uuid4().hex[:8]}@local.test"
+        pending = request(BASE, "POST", f"/api/events/{slug}/co-owners", owner, {
+            "email": pending_email,
+        })
+        pending_row = next(row for row in pending["event"]["co_owners"] if row["email"] == pending_email)
+        self.assertFalse(pending_row["has_account"])
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": pending_email,
+            "password": "LaterPass1!",
+            "display_name": "Later Director",
+            "intent": "director",
+        })
+        later = auth(BASE, pending_email, "LaterPass1!")
+        later_home = request(BASE, "GET", "/api/account/home", later)
+        self.assertIn(slug, [e["slug"] for e in later_home["created"]])
+        later_saved = request(BASE, "POST", f"/api/events/{slug}/settings", later, {
+            "venue": "Co Park Later",
+        })
+        self.assertEqual(later_saved["event"]["venue"], "Co Park Later")
+
+        removed = request(BASE, "POST", f"/api/events/{slug}/co-owners/remove", owner, {
+            "email": helper_email,
+        })
+        self.assertEqual(removed["removed"], helper_email)
+        self.assertEqual(removed["event"]["co_owners"], [])
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", f"/api/events/{slug}/settings", helper, {"venue": "Should Fail"})
 
     def test_find_harbor_eight_and_not_central_saturday(self):
         found = request(BASE, "GET", "/api/events/search?q=harbor")

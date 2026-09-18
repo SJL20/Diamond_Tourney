@@ -34,7 +34,7 @@ Every page has a **site bar** (Find, Year, Account, Create). Tournament pages ad
 2. Name the weekend, then fill **Venue, address, and fields**. Set the **global** first-pitch and last-out window. Each diamond needs a name, and each date can be narrower — or unchecked if that field is dark. Auto-schedule will not put a game on a closed diamond or after that field’s last out. A field without its own pin inherits the park.
 3. Pick a **bracket type**: pool then single-elim, pool only, single-elim, or double-elim.
 4. Open signup. Put teams in the same pool letter (`A`, `B`) so pool play can pair them.
-5. On **Admin**, save fields if you added more, then **Build pool schedule**. That fills round-robin games per field without double-booking a team or a diamond. **Draw bracket from standings** (or auto-schedule does it when the format is not pool-only).
+5. On **Admin**, save fields if you added more, then **Build pool schedule**. That fills round-robin games per field without double-booking a team or a diamond. **Draw bracket from standings** (or auto-schedule does it when the format is not pool-only). The owner can add extra directors by email on **Tournament setup**; public pages never show those addresses.
 6. **Rain desk** posts a public banner and can delay times, move a day, postpone games, or close a wet field and reassign.
 
 **Schedule** is the weekend grid: pool and bracket together, sorted by date, first pitch, and field. **Games** stays pool-only, grouped by diamond. Empty bracket slots still appear on **Schedule** and **Bracket** so the field number and time stay visible.

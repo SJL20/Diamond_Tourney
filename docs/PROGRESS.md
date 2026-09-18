@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly default-branch deploy after this merge) |
-| Tests | 56 unit/integration cases + 13 acceptance checks |
+| Tests | 57 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -57,8 +57,10 @@ Ranked by what would hurt most on a live weekend.
 
 ### 1. Any account can administer any tournament — **closed**
 
-See *Closed*. Director writes require `events.created_by` or site admin.
+See *Closed*. Director writes require `events.created_by`, a listed co-owner, or site admin.
 `event_td` still lets a new account create a weekend of their own.
+The owner (or site admin) adds co-owners by email on tournament setup.
+Those addresses stay off public pages.
 
 ### 2. Keystone import stores zeros for numbers the popup never published — **open**
 
@@ -137,9 +139,12 @@ direct unit tests for the hook modules.
 
 - ~~**Anyone with `event_td` could administer any tournament.**~~ Registration
   still assigns that role so a new account can create a weekend. Director
-  writes now require `events.created_by` or site admin. REST collection writes
-  were locked the same way. Covered by
-  `AccountAndYearTests.test_stranger_event_td_cannot_run_someone_elses_weekend`.
+  writes now require `events.created_by`, a listed co-owner, or site admin.
+  REST collection writes were locked the same way. The owner adds extra
+  directors by email on tournament setup; public board / Find never include
+  those addresses. Covered by
+  `AccountAndYearTests.test_stranger_event_td_cannot_run_someone_elses_weekend`
+  and `AccountAndYearTests.test_owner_adds_co_owner_by_email`.
   Fixed in this branch.
 
 - ~~**Anyone could download a child's birth certificate.**~~ `GET
@@ -170,12 +175,23 @@ worth answering before the next session.
 6. **New — finding 2:** for a weekend imported from a public popup that does not
    publish R, BB, SO, or ER, should the board show blanks or should those games
    stay out of the leaders entirely?
-7. ~~**finding 1:** one owner per event, plus site admin. No co-director invite.~~
+7. ~~**finding 1:** one owner per event, plus site admin.~~ Owner (or site
+   admin) adds co-owners by email on tournament setup. Co-owners get the Admin
+   tab. Only owner / site admin add or remove. Public pages never list those
+   emails. Archive/delete stays site admin.
 
 ## Session log
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — owner adds co-owners by email
+
+Tournament setup has a Co-owners block. The owner (or site admin) types an
+email. That address gets the Admin tab and director writes for this weekend
+only. A listed co-owner cannot invite more people. Public board, Find, and
+raw REST never return the list. `event_co_owners` collection rules are
+closed. Covered by `test_owner_adds_co_owner_by_email`.
 
 ### 2026-09-18 — finding 1 plus admin login / forgot / remove
 

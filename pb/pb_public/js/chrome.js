@@ -7,6 +7,7 @@ export function isSiteAdmin(rec) {
 export function canAdminEvent(rec, event) {
   if (!rec || rec.role === "bot") return false;
   if (isSiteAdmin(rec)) return true;
+  if (event && event.can_admin === true) return true;
   return !!(event && event.created_by && rec.id === event.created_by);
 }
 

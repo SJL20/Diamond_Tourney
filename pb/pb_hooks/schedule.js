@@ -937,7 +937,7 @@ function rainUpdate(app, event, body) {
 function plan(app, event, auth) {
   const host = require(__hooks + "/host.js");
   return {
-    event: host.eventJson(event, app),
+    event: host.eventJson(event, app, auth, { owners: true }),
     fields: eventFields(app, event.id),
     schedule: listSchedule(app, event.id, auth),
     teams: host.publicRoster(app, event, auth),

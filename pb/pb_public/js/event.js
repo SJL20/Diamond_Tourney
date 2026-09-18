@@ -383,6 +383,32 @@ function setupGuidelinesFields(ev = {}) {
   `;
 }
 
+function setupCoOwners(ev = {}) {
+  if (!ev.can_admin) return "";
+  const rows = ev.co_owners || [];
+  const manage = ev.can_manage_owners;
+  const list = rows.length
+    ? `<ul class="co-owner-list">${rows.map((row) => `
+        <li>
+          <div>
+            <b>${escapeHtml(row.email)}</b>
+            <span class="muted">${row.has_account ? "Has a login" : "No account yet — they sign in with this email"}</span>
+          </div>
+          ${manage ? `<button class="btn ghost" type="button" data-remove-co-owner="${escapeHtml(row.email)}">Remove</button>` : ""}
+        </li>`).join("")}</ul>`
+    : `<p class="muted">No co-owners yet.</p>`;
+  return `
+    <details class="setup-block" open>
+      <summary>Co-owners</summary>
+      <p class="muted">Add another director by email. They get the Admin tab for this weekend. Public pages never show these addresses.</p>
+      ${list}
+      ${manage ? `<form class="form wide" id="co-owner-form">
+        <label>Co-owner email <input name="email" type="email" required placeholder="coach@example.com" autocomplete="off"></label>
+        <button class="btn" type="submit">Add co-owner</button>
+      </form>` : `<p class="muted">Ask the owner to add or remove co-owners.</p>`}
+    </details>`;
+}
+
 function guidelinesBlock(ev) {
   if (!ev) return "";
   const req = ev.required_doc_labels || [];
@@ -1870,7 +1896,7 @@ export async function eventAdmin(slug) {
     eventRoot().innerHTML = eventChrome(ev, "admin", `
       <section class="card">
         <h2>This is not your tournament</h2>
-        <p>Only the director who created this weekend or a site admin can open the desk.</p>
+        <p>Only the owner, a listed co-owner, or a site admin can open the desk.</p>
         <p><a class="btn" data-link href="/t/${escapeHtml(ev.slug)}">Open the public board</a></p>
       </section>`);
     return;
@@ -1946,13 +1972,14 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="setup" hidden>
           <h2>Tournament setup</h2>
-          <p class="muted">Bracket type, governing body, pitch cap, and what teams must upload.</p>
+          <p class="muted">Bracket type, governing body, pitch cap, what teams must upload, and extra directors by email.</p>
           <form class="form wide" id="guide-form">
             <div class="setup-block">${setupAgeFields(ev)}</div>
             <div class="setup-block">${setupFormatFields(ev)}</div>
             ${setupGuidelinesFields(ev)}
             <button class="btn" type="submit">Save tournament setup</button>
           </form>
+          ${setupCoOwners(ev)}
         </section>
         <section class="card" data-admin-pane="venue" hidden>
           <h2>Venue setups</h2>
@@ -2195,6 +2222,29 @@ export async function eventAdmin(slug) {
       if (!confirm("Remove this pool game from the schedule?")) return;
       try {
         await adminPost(slug, "/schedule/" + btn.dataset.deleteGame + "/delete", {});
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
+  const coForm = document.getElementById("co-owner-form");
+  if (coForm) {
+    coForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const email = String(new FormData(evnt.target).get("email") || "").trim();
+      try {
+        await adminPost(slug, "/co-owners", { email });
+        flashSaved("Co-owner added");
+        history.replaceState({}, "", location.pathname + "#admin-setup");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  }
+  eventRoot().querySelectorAll("[data-remove-co-owner]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await adminPost(slug, "/co-owners/remove", { email: btn.dataset.removeCoOwner });
+        flashSaved("Co-owner removed");
+        history.replaceState({}, "", location.pathname + "#admin-setup");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });

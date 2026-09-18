@@ -163,14 +163,13 @@ function teamDocs(app, teamId, withFiles) {
   }
 }
 
-// True only for a region admin, the director who owns this event, or the
-// account that signed this team up. `event_td` alone is not enough: account
-// registration hands out that role, so it is not a trust boundary.
-function canSeeTeamPacket(event, team, auth) {
+// True only for a region admin, the director who owns this event, a listed
+// co-owner, or the account that signed this team up. `event_td` alone is not
+// enough: account registration hands out that role, so it is not a trust
+// boundary.
+function canSeeTeamPacket(event, team, auth, app) {
   if (!auth) return false;
-  if (require(__hooks + "/softball.js").isSiteAdmin(auth)) return true;
-  const creator = event.get("created_by");
-  if (creator && creator === auth.id) return true;
+  if (require(__hooks + "/softball.js").isEventAdmin(event, auth, app)) return true;
   if (team) {
     if (team.get("account") && team.get("account") === auth.id) return true;
     const email = team.get("contact_email");
@@ -336,15 +335,17 @@ const FORMAT_LABELS = {
   imported: "Imported / already drawn",
 };
 
-function eventJson(rec, app) {
+function eventJson(rec, app, auth, opts) {
   const packet = parsePacket(rec.get("packet"));
   const mode = rec.get("pitch_limit_mode") || "none";
   const format = rec.get("format") || "";
+  const sb = require(__hooks + "/softball.js");
+  const admin = sb.isEventAdmin(rec, auth, app);
   let fields = [];
   if (app) {
     try { fields = require(__hooks + "/schedule.js").eventFields(app, rec.id); } catch (err) {}
   }
-  return {
+  const out = {
     id: rec.id,
     name: rec.get("name"),
     slug: rec.get("slug"),
@@ -400,6 +401,7 @@ function eventJson(rec, app) {
     packet_notes: rec.get("packet_notes") || "",
     public: !!rec.get("public"),
     created_by: rec.get("created_by") || "",
+    can_admin: admin,
     contact: rec.get("contact") || "",
     status_note: rec.get("status_note") || "",
     dates: packet ? packet.dates : "",
@@ -427,6 +429,13 @@ function eventJson(rec, app) {
       }
     })(),
   };
+  // Co-owner emails stay off public board / Find / year. The director desk
+  // (/plan) and settings responses pass { owners: true }.
+  if (opts && opts.owners && admin) {
+    out.co_owners = sb.listCoOwners(app, rec);
+    out.can_manage_owners = sb.canManageCoOwners(rec, auth);
+  }
+  return out;
 }
 
 function teamJson(rec) {
@@ -588,7 +597,7 @@ function createEvent(app, body, auth) {
   app.save(rec);
   schedule.saveEventFields(app, rec, body);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
-  return { event: eventJson(rec, app), note: tm.note || "Tournament is live. Teams can join with or without GameChanger." };
+  return { event: eventJson(rec, app, auth), note: tm.note || "Tournament is live. Teams can join with or without GameChanger." };
 }
 
 function signupTeam(app, event, body, auth) {
@@ -599,7 +608,7 @@ function signupTeam(app, event, body, auth) {
   if (gcUrl && !isGameChangerUrl(gcUrl)) {
     throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
   }
-  const director = require(__hooks + "/softball.js").isEventAdmin(event, auth);
+  const director = require(__hooks + "/softball.js").isEventAdmin(event, auth, app);
   const asDirector = director && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
   const team = upsertEventTeam(app, event, {
     name: name,
@@ -702,6 +711,7 @@ function registerAccount(app, body) {
   const token = mail.randomToken();
   rec.set("verify_token", token);
   app.save(rec);
+  try { require(__hooks + "/softball.js").linkCoOwnerAccount(app, rec); } catch (err) {}
   let verifySent = false;
   try {
     const out = mail.directorVerify(app, rec, token);
@@ -749,10 +759,35 @@ function searchEvents(app, q) {
 function accountHome(app, auth) {
   const siteAdmin = require(__hooks + "/softball.js").isSiteAdmin(auth);
   let created = [];
+  const seenCreated = {};
   try {
     const filter = siteAdmin ? "" : "created_by = {:u}";
-    created = app.findRecordsByFilter("events", filter, "-id", 200, 0, { u: auth.id }).map(function (rec) { return eventJson(rec, app); });
+    created = app.findRecordsByFilter("events", filter, "-id", 200, 0, { u: auth.id }).map(function (rec) {
+      seenCreated[rec.id] = true;
+      return eventJson(rec, app, auth);
+    });
   } catch (err) {}
+  if (!siteAdmin) {
+    try {
+      const email = require(__hooks + "/softball.js").normalizeEmail(auth.email());
+      const rows = app.findRecordsByFilter(
+        "event_co_owners",
+        "account = {:u} || email = {:e}",
+        "email",
+        80,
+        0,
+        { u: auth.id, e: email },
+      );
+      for (let i = 0; i < rows.length; i++) {
+        const evId = rows[i].get("event");
+        if (!evId || seenCreated[evId]) continue;
+        seenCreated[evId] = true;
+        try {
+          created.push(eventJson(app.findRecordById("events", evId), app, auth));
+        } catch (err) {}
+      }
+    } catch (err) {}
+  }
   const joined = [];
   const seen = {};
   try {
@@ -833,6 +868,7 @@ function deleteEvent(app, event, body) {
   const children = [
     "event_hitting", "event_pitching", "event_boxes", "event_schedule",
     "bracket_games", "venue_photos", "sync_log", "event_teams", "pools", "fields",
+    "event_co_owners",
   ];
   for (let i = 0; i < children.length; i++) wipeByEvent(app, children[i], eventId);
   app.delete(event);
@@ -944,7 +980,7 @@ function publicRoster(app, event, auth) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
   return teams.map(function (t) {
     const row = teamJson(t);
-    row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth));
+    row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth, app));
     return row;
   });
 }
@@ -1132,7 +1168,7 @@ function duplicateEvent(app, source, body, auth) {
 
   writeLog(app, rec.id, "event", true, "Duplicated from " + source.get("slug") + " without scores, boxes, or family contacts");
   return {
-    event: eventJson(rec, app),
+    event: eventJson(rec, app, auth),
     source: source.get("slug"),
     teams: Object.keys(teamMap).length,
     games: games.length,
@@ -1140,7 +1176,7 @@ function duplicateEvent(app, source, body, auth) {
   };
 }
 
-function applySettings(app, event, body) {
+function applySettings(app, event, body, auth) {
   if (body.signup_open != null) event.set("signup_open", !!body.signup_open);
   if (body.auto_sync != null) event.set("auto_sync", !!body.auto_sync);
   if (body.venue != null) event.set("venue", body.venue);
@@ -1159,7 +1195,7 @@ function applySettings(app, event, body) {
   schedule.applyLocation(event, body);
   app.save(event);
   schedule.saveEventFields(app, event, body);
-  return eventJson(event, app);
+  return eventJson(event, app, auth, { owners: true });
 }
 
 module.exports = {
