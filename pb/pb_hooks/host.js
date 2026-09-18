@@ -1281,6 +1281,7 @@ module.exports = {
   eventJson: eventJson,
   teamJson: teamJson,
   writeLog: writeLog,
+  upsertEventTeam: upsertEventTeam,
   parsePacket: parsePacket,
   createEvent: createEvent,
   duplicateEvent: duplicateEvent,

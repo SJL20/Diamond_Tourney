@@ -1864,7 +1864,8 @@ class IssuesBacklogTests(unittest.TestCase):
         desk = next(t for t in plan["teams"] if t["name"] == "Dugout Heat")
         self.assertEqual(desk["contact"]["coach_email"], email)
         self.assertEqual(desk["contact"]["coach_phone"], "0412-555-0110")
-        logs = request(BASE, "GET", "/api/collections/sync_log/records?perPage=200&sort=-created", td)
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        logs = request(BASE, "GET", "/api/collections/sync_log/records?perPage=200", owner)
         kinds = [row.get("kind") for row in logs.get("items") or []]
         self.assertIn("signup_mail", kinds)
         mail_rows = [row for row in logs["items"] if row.get("kind") == "signup_mail"]

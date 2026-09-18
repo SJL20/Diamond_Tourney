@@ -495,6 +495,7 @@ module.exports = {
   removeCoOwner: removeCoOwner,
   linkCoOwnerAccount: linkCoOwnerAccount,
   normalizeEmail: normalizeEmail,
+  isValidEmail: isValidEmail,
   requireRole: requireRole,
   requireEventAdmin: requireEventAdmin,
   requireEventAdminOrBot: requireEventAdminOrBot,

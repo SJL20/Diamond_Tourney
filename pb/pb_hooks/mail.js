@@ -53,8 +53,10 @@ function sendMail(app, to, subject, html, kind, eventId) {
     logMail(app, eventId, kind, true, subject + " → " + redactedAddr(addr));
     return { sent: true };
   } catch (err) {
-    logMail(app, eventId, kind, false, String(err));
-    return { sent: false, reason: String(err) };
+    const raw = String(err);
+    const reason = /sendmail|smtp|dial tcp|no such host/i.test(raw) ? "smtp_not_configured" : raw;
+    logMail(app, eventId, kind, false, reason + (reason === "smtp_not_configured" ? " → " + redactedAddr(addr) : ""));
+    return { sent: false, reason: reason };
   }
 }
 

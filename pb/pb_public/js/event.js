@@ -2016,7 +2016,7 @@ function venuePhotoDesk(slug, photos) {
   return `
     <div class="venue-photo-desk">
       <h3>Field and parking photos</h3>
-      <p class="muted">Photos of fields and facilities only, please — no photos of players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload. JPG, PNG, WebP, or HEIC. 5 MB cap — the volume on Fly keeps files across redeploys.</p>
+      <p class="muted">Fields and facilities only, please — no photos of players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload. JPG, PNG, WebP, or HEIC. 5 MB cap — the volume on Fly keeps files across redeploys.</p>
       <form class="form wide" id="photo-form">
         <label>Photo <input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" required></label>
         <label>Caption <input name="caption" maxlength="200" placeholder="East lot off Meadow St"></label>

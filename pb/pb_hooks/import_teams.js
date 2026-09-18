@@ -60,11 +60,19 @@ function guessMapping(headers) {
 
 function decodeMapping(raw) {
   if (!raw) return null;
-  if (typeof raw === "string") {
-    try { return JSON.parse(raw); } catch (err) { return null; }
+  try {
+    if (typeof raw !== "string") raw = JSON.stringify(raw);
+    raw = JSON.parse(raw);
+  } catch (err) {
+    return null;
   }
-  if (typeof raw === "object") return raw;
-  return null;
+  if (!raw || typeof raw !== "object") return null;
+  const out = {};
+  const keys = Object.keys(raw);
+  for (let i = 0; i < keys.length; i++) {
+    out[String(keys[i])] = raw[keys[i]] == null ? "" : String(raw[keys[i]]);
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function loadRemembered(app, auth) {
@@ -193,7 +201,12 @@ function preview(app, event, body, auth) {
   const remembered = loadRemembered(app, auth);
   const supplied = decodeMapping(body.mapping);
   const guessed = guessMapping(table.headers);
-  const mapping = supplied || remembered || guessed;
+  const stored = supplied || remembered || {};
+  const mapping = {};
+  for (let i = 0; i < table.headers.length; i++) {
+    const h = table.headers[i];
+    mapping[h] = stored[h] || guessed[h] || "";
+  }
   const indexed = indexExisting(app, event);
   const seenNames = {};
   const seenEmails = {};

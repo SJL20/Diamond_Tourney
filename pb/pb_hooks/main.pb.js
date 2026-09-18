@@ -302,7 +302,11 @@ routerAdd("POST", "/api/events/{slug}/import-teams/preview", (e) => {
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   sb.requireEventAdmin(e, event);
   const body = e.requestInfo().body || {};
-  return e.json(200, require(__hooks + "/import_teams.js").preview(e.app, event, body, e.auth));
+  try {
+    return e.json(200, require(__hooks + "/import_teams.js").preview(e.app, event, body, e.auth));
+  } catch (err) {
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/import-teams", (e) => {
@@ -310,7 +314,11 @@ routerAdd("POST", "/api/events/{slug}/import-teams", (e) => {
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   sb.requireEventAdmin(e, event);
   const body = e.requestInfo().body || {};
-  return e.json(200, require(__hooks + "/import_teams.js").commit(e.app, event, body, e.auth));
+  try {
+    return e.json(200, require(__hooks + "/import_teams.js").commit(e.app, event, body, e.auth));
+  } catch (err) {
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
 }, $apis.requireAuth());
 
 routerAdd("GET", "/api/admin/season-teams/{slug}/contact", (e) => {
