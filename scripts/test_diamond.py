@@ -780,9 +780,15 @@ class AccountAndYearTests(unittest.TestCase):
             "email": helper_email,
         })
         self.assertEqual(removed["removed"], helper_email)
-        self.assertEqual(removed["event"]["co_owners"], [])
+        leftover = [row["email"] for row in removed["event"]["co_owners"]]
+        self.assertNotIn(helper_email, leftover)
+        self.assertEqual(leftover, [pending_email])
         with self.assertRaises(RuntimeError):
             request(BASE, "POST", f"/api/events/{slug}/settings", helper, {"venue": "Should Fail"})
+        still = request(BASE, "POST", f"/api/events/{slug}/settings", later, {
+            "venue": "Co Park Still",
+        })
+        self.assertEqual(still["event"]["venue"], "Co Park Still")
 
     def test_find_harbor_eight_and_not_central_saturday(self):
         found = request(BASE, "GET", "/api/events/search?q=harbor")
