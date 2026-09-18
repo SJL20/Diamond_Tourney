@@ -309,3 +309,80 @@ storage stay. Baseball can still turn a limit on later without a rebuild.
 - [x] Hidden when sport is softball — **not done; owner asked to keep it visible**
 - [x] Field and storage retained
 - [x] Appears when sport is baseball — section always visible; mode defaults to none
+
+- [ ] ## [ ] 10. Remove both map pin nudge controls; add a field map upload instead
+
+**High. Owner has raised this repeatedly — it is still live on the site.**
+
+Replaces items 6 and 7, which split this across two entries and left item 7
+asking to keep a draggable pin. There is no draggable pin. Remove all of it.
+
+### Remove — two places in `pb/pb_public/js/event.js`
+
+**Per-diamond**, inside `fieldRow()` around lines 106–113:
+
+    <summary>Nudge this diamond's pin</summary>
+    <label>Latitude <input name="field_lat_${i}" ...></label>
+    <label>Longitude <input name="field_lng_${i}" ...></label>
+
+**Venue level**, inside `setupVenueFields()` around lines 219–227:
+
+    <summary>Nudge the map pin</summary>
+    <label>Latitude <input name="lat" ...></label>
+    <label>Longitude <input name="lng" ...></label>
+
+Remove the `<details>` wrapper, the summary, and both coordinate inputs in each
+case. Remove the surrounding helper text about pins. Around line 1494 there is
+already `fd.delete("field_lat_" + i)` / `fd.delete("field_lng_" + i)` — that
+cleanup can go too once the inputs no longer exist.
+
+**Keep the coordinates in the data.** Geocode from the street address on save and
+store the result on the venue and field records. Directors never type or adjust
+coordinates. If geocoding lands imprecisely, accept it — the uploaded map below
+is the real wayfinding.
+
+### Add — a field map upload on `/directors/new`
+
+In place of the venue-level pin control, an upload for images that show people
+where to go. This is what the nudge control was badly trying to do.
+
+What directors will actually upload, in order of usefulness:
+
+1. **A complex map** — which diamond is Field 1 vs Field 2, where parking is,
+   where the gate is. Usually a hand-drawn or marked-up image.
+2. **The entrance and parking lot** — the hardest thing to find at an unfamiliar
+   complex, and the source of most Saturday-morning phone calls.
+3. **The fields themselves.**
+
+Keystone Clash 2026 used exactly this: a hand-made parking map linked from the
+tournament page. This makes it a first-class feature instead of a one-off.
+
+PocketBase file fields with thumbnails; nothing custom needed. Multiple images
+per venue, each with a caption. Reorderable. First image shown on the public
+tournament page. Cap 2–5 MB with server-side resizing — directors upload straight
+off a phone. Accept jpg, png, webp, heic, and pdf (complex maps are often PDFs).
+
+**Two requirements, not suggestions:**
+
+- **Strip EXIF on upload.** Phone photos carry GPS and timestamps. Publishing
+  those on a public page is a privacy leak about where children are on a given
+  weekend.
+- **No people in the images.** These pages are public and this is a youth sports
+  product. Put a plain line on the upload control: "Fields and facilities only,
+  please — no photos of players."
+
+Uploads land on the mounted Fly volume at `/data`, so they persist across
+deploys. Confirm backups cover the files directory and not only the database.
+
+### Acceptance criteria
+
+- [ ] No "Nudge this diamond's pin" control anywhere on the form
+- [ ] No "Nudge the map pin" control anywhere on the form
+- [ ] No latitude or longitude input visible to a director, at venue or field level
+- [ ] Street address geocoded on save; coordinates stored, never typed
+- [ ] Image upload present on `/directors/new`, not only on a separate venue screen
+- [ ] Multiple captioned images, reorderable, pdf accepted
+- [ ] EXIF stripped on upload
+- [ ] Guidance text shown on the upload control
+- [ ] Images render on the public tournament page
+- [ ] Uploads survive a redeploy
