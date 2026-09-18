@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from lib.metrics import batting_average, era, ip_display_to_outs, outs_to_ip_dis
 from scripts.bot_a_ingest import ingest, parse_box
 from scripts.pb_client import auth, request
 
-BASE = "http://127.0.0.1:8097"
+BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT', '8097')}"
 
 
 def fail(msg):

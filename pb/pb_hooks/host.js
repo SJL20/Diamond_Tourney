@@ -135,31 +135,53 @@ function fileUrl(app, collectionName, rec, field) {
   }
 }
 
-function docJson(app, rec) {
-  return {
+// Packet files are insurance, rosters, waivers, and birth certificates. A birth
+// certificate carries a child's birthdate and address, so the download link is
+// only ever handed to the director, a region admin, or that team's own signer.
+function docJson(app, rec, withFiles) {
+  const row = {
     id: rec.id,
     kind: rec.get("kind"),
     label: DOC_LABELS[rec.get("kind")] || rec.get("kind"),
     status: rec.get("status") || "submitted",
-    note: rec.get("note") || "",
-    original_name: rec.get("original_name") || "",
-    url: fileUrl(app, "team_docs", rec, "file"),
   };
+  if (withFiles) {
+    row.note = rec.get("note") || "";
+    row.original_name = rec.get("original_name") || "";
+    row.url = fileUrl(app, "team_docs", rec, "file");
+  }
+  return row;
 }
 
-function teamDocs(app, teamId) {
+function teamDocs(app, teamId, withFiles) {
   try {
     return app.findRecordsByFilter("team_docs", "event_team = {:t}", "kind", 40, 0, { t: teamId }).map(function (r) {
-      return docJson(app, r);
+      return docJson(app, r, withFiles);
     });
   } catch (err) {
     return [];
   }
 }
 
-function packetSummary(app, event, team) {
+// True only for a region admin, the director who owns this event, or the
+// account that signed this team up. `event_td` alone is not enough: account
+// registration hands out that role, so it is not a trust boundary.
+function canSeeTeamPacket(event, team, auth) {
+  if (!auth) return false;
+  if (auth.get("role") === "region_admin") return true;
+  const creator = event.get("created_by");
+  if (creator && creator === auth.id) return true;
+  if (team) {
+    if (team.get("account") && team.get("account") === auth.id) return true;
+    const email = team.get("contact_email");
+    if (email && email === auth.email()) return true;
+  }
+  return false;
+}
+
+function packetSummary(app, event, team, withFiles) {
   const required = requiredDocKinds(event);
-  const docs = teamDocs(app, team.id);
+  const docs = teamDocs(app, team.id, withFiles);
   const have = {};
   for (const d of docs) have[d.kind] = d;
   const missing = required.filter(function (k) { return !have[k]; });
@@ -194,6 +216,103 @@ function applyGuidelines(rec, body) {
   if (body.require_coach_cert != null) rec.set("require_coach_cert", truthy(body.require_coach_cert));
 }
 
+const AGE_CHOICES = ["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"];
+
+function decodeJson(raw) {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "string") {
+    try { return JSON.parse(raw); } catch (err) { return null; }
+  }
+  return raw;
+}
+
+function formatAgeLabel(ages, klass, split) {
+  const list = (ages || []).filter(Boolean);
+  if (!list.length) return "";
+  const suffix = klass ? "-" + klass : "";
+  if (split) return list.map(function (a) { return a + suffix; }).join(" · ");
+  return list.join("/") + suffix;
+}
+
+function agesFromText(text) {
+  const found = String(text || "").toUpperCase().match(/6U|8U|10U|11U|12U|14U|16U|18U/g) || [];
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < found.length; i++) {
+    if (!seen[found[i]]) {
+      out.push(found[i]);
+      seen[found[i]] = true;
+    }
+  }
+  return out;
+}
+
+function normalizeAgeGroups(body, rec) {
+  const allowed = {};
+  for (let i = 0; i < AGE_CHOICES.length; i++) allowed[AGE_CHOICES[i]] = true;
+  let ages = [];
+  let raw = body && body.age_groups;
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch (err) {
+      raw = String(raw).split(/[,/|]/);
+    }
+  }
+  if (raw && raw.ages) raw = raw.ages;
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < raw.length; i++) {
+      const key = String(raw[i] || "").toUpperCase();
+      if (allowed[key] && ages.indexOf(key) === -1) ages.push(key);
+    }
+  }
+  if (!ages.length && body) {
+    for (let i = 0; i < AGE_CHOICES.length; i++) {
+      const a = AGE_CHOICES[i];
+      const v = body["age_" + a] || body["age_" + a.toLowerCase()];
+      if (v === true || v === "true" || v === "on" || v === "1") ages.push(a);
+    }
+    const grouped = body.age_group;
+    const list = Array.isArray(grouped) ? grouped : (grouped ? [grouped] : []);
+    for (let i = 0; i < list.length; i++) {
+      const key = String(list[i] || "").toUpperCase();
+      if (allowed[key] && ages.indexOf(key) === -1) ages.push(key);
+    }
+  }
+  if (!ages.length) {
+    ages = agesFromText((body && body.ages) || (rec && rec.get("ages")) || "");
+  }
+  let klass = String((body && body.age_class != null) ? body.age_class : ((rec && rec.get("age_class")) || "")).toUpperCase();
+  if (klass && "ABC".indexOf(klass) === -1) klass = "";
+  if (!klass && body && body.ages && /-[ABC]\b/i.test(String(body.ages))) {
+    klass = String(body.ages).toUpperCase().replace(/^.*-([ABC]).*$/, "$1");
+  }
+  const split = !!(body && (body.age_split === true || body.age_split === "true" || body.age_split === "on" || body.age_split === "1"));
+  return { ages: ages, class: klass, split: split, label: formatAgeLabel(ages, klass, split) };
+}
+
+function applyAgeGroups(rec, body) {
+  if (!rec || !body) return;
+  if (body.age_groups == null && body.age_class == null && body.age_split == null && body.ages == null && body.age_group == null) return;
+  const parsed = normalizeAgeGroups(body, rec);
+  rec.set("age_groups", { ages: parsed.ages, class: parsed.class, split: parsed.split });
+  rec.set("age_class", parsed.class);
+  rec.set("age_split", parsed.split);
+  if (parsed.label) rec.set("ages", parsed.label);
+  else if (body.ages != null) rec.set("ages", body.ages);
+}
+
+function eventAgeJson(rec) {
+  const stored = decodeJson(rec.get("age_groups")) || {};
+  const ages = Array.isArray(stored.ages) ? stored.ages : agesFromText(rec.get("ages") || "");
+  const klass = rec.get("age_class") || stored.class || "";
+  const split = rec.get("age_split") === true || stored.split === true;
+  return {
+    ages: ages,
+    class: klass,
+    split: split,
+    label: rec.get("ages") || formatAgeLabel(ages, klass, split),
+  };
+}
+
 function dateStr(v) {
   if (!v) return "";
   const s = String(v);
@@ -219,7 +338,7 @@ const FORMAT_LABELS = {
 
 function eventJson(rec, app) {
   const packet = parsePacket(rec.get("packet"));
-  const mode = rec.get("pitch_limit_mode") || "ip";
+  const mode = rec.get("pitch_limit_mode") || "none";
   const format = rec.get("format") || "";
   let fields = [];
   if (app) {
@@ -242,8 +361,15 @@ function eventJson(rec, app) {
     end: dateStr(rec.get("end")),
     hours_start: rec.get("hours_start") || "08:00",
     hours_end: rec.get("hours_end") || "18:00",
+    scheduler: (function () {
+      try { return require(__hooks + "/schedule.js").parseScheduler(rec.get("scheduler")); }
+      catch (err) { return { games_per_team: 2, consolation: true, replace: true, draw_bracket: false, days: [] }; }
+    })(),
     fields: fields,
     ages: rec.get("ages") || "",
+    age_groups: eventAgeJson(rec),
+    age_class: rec.get("age_class") || "",
+    age_split: !!rec.get("age_split"),
     status: rec.get("status") || "",
     source: rec.get("source") || "native",
     tm_url: rec.get("tm_url") || "",
@@ -251,7 +377,7 @@ function eventJson(rec, app) {
     source_url: rec.get("source_url") || "",
     signup_open: !!rec.get("signup_open"),
     auto_sync: !!rec.get("auto_sync"),
-    pitch_limit_ip: rec.get("pitch_limit_ip") || 6,
+    pitch_limit_ip: rec.get("pitch_limit_ip") || 0,
     pitch_limit_mode: mode,
     pitch_limit_pitches: rec.get("pitch_limit_pitches") || 0,
     pitch_limit_notes: rec.get("pitch_limit_notes") || "",
@@ -278,6 +404,28 @@ function eventJson(rec, app) {
     status_note: rec.get("status_note") || "",
     dates: packet ? packet.dates : "",
     packet: packet,
+    tiebreak: (function () {
+      try {
+        const diamond = require(__hooks + "/diamond.js");
+        const order = diamond.parseTiebreak(rec.get("tiebreak"));
+        return { order: order, label: diamond.tiebreakLabel(order), explicit: true };
+      } catch (err) {
+        return { order: ["record", "h2h", "ra", "diff", "rs"], label: "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored", explicit: true };
+      }
+    })(),
+    pools: (function () {
+      if (!app) return [];
+      try {
+        const diamond = require(__hooks + "/diamond.js");
+        const rows = app.findRecordsByFilter("pools", "event = {:e}", "name", 20, 0, { e: rec.id });
+        return rows.map(function (p) {
+          const order = diamond.parseTiebreak(p.get("tiebreak") || rec.get("tiebreak"));
+          return { id: p.id, name: p.get("name"), tiebreak: { order: order, label: diamond.tiebreakLabel(order) } };
+        });
+      } catch (err) {
+        return [];
+      }
+    })(),
   };
 }
 
@@ -416,9 +564,10 @@ function createEvent(app, body, auth) {
   rec.set("source", source);
   rec.set("signup_open", body.signup_open !== false);
   rec.set("auto_sync", true);
-  rec.set("pitch_limit_ip", Number(body.pitch_limit_ip || 6));
-  rec.set("pitch_limit_mode", body.pitch_limit_mode || "ip");
+  rec.set("pitch_limit_ip", Number(body.pitch_limit_ip || 0));
+  rec.set("pitch_limit_mode", body.pitch_limit_mode || "none");
   rec.set("rain_status", body.rain_status || "clear");
+  applyAgeGroups(rec, body.age_groups != null || body.age_class != null || body.age_split != null || body.age_group != null || body.ages != null ? body : { ages: body.ages || "10U" });
   applyGuidelines(rec, body);
   const schedule = require(__hooks + "/schedule.js");
   schedule.applyLocation(rec, body);
@@ -429,6 +578,13 @@ function createEvent(app, body, auth) {
     rec.set("tm_id", tm.tmId);
   }
   if (auth) rec.set("created_by", auth.id);
+  try {
+    const diamond = require(__hooks + "/diamond.js");
+    const supplied = body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak;
+    diamond.saveTiebreak(rec, supplied != null ? { tiebreak_order: supplied, tiebreak_explicit: true } : { tiebreak_order: "record,h2h,ra,diff,rs", tiebreak_explicit: true });
+  } catch (err) {
+    rec.set("tiebreak", { order: ["record", "h2h", "ra", "diff", "rs"], explicit: true });
+  }
   app.save(rec);
   schedule.saveEventFields(app, rec, body);
   writeLog(app, rec.id, "event", true, source === "tourneymachine" ? tm.note : "Native tournament opened");
@@ -456,6 +612,7 @@ function signupTeam(app, event, body, auth) {
   });
   if (!team.get("packet_status")) team.set("packet_status", "incomplete");
   app.save(team);
+  try { require(__hooks + "/mail.js").signupConfirmation(app, event, team); } catch (err) {}
   const row = teamJson(team);
   row.packet = packetSummary(app, event, team);
   return row;
@@ -541,8 +698,43 @@ function registerAccount(app, body) {
   rec.set("role", intent);
   rec.set("display_name", name);
   rec.set("verified", true);
+  const mail = require(__hooks + "/mail.js");
+  const token = mail.randomToken();
+  rec.set("verify_token", token);
   app.save(rec);
-  return { id: rec.id, email: rec.email(), role: rec.get("role"), display_name: rec.get("display_name") || "" };
+  let verifySent = false;
+  try {
+    const out = mail.directorVerify(app, rec, token);
+    if (out && out.sent) {
+      rec.set("verified", false);
+      app.save(rec);
+      verifySent = true;
+    }
+  } catch (err) {}
+  return {
+    id: rec.id,
+    email: rec.email(),
+    role: rec.get("role"),
+    display_name: rec.get("display_name") || "",
+    verified: !!rec.get("verified"),
+    verify_sent: verifySent,
+  };
+}
+
+function verifyAccount(app, token) {
+  const t = String(token || "").trim();
+  if (!t) throw new BadRequestError("Missing verify token");
+  let user;
+  try {
+    user = app.findFirstRecordByFilter("users", "verify_token = {:t}", { t: t });
+  } catch (err) {
+    throw new BadRequestError("That confirmation link is expired or already used.");
+  }
+  user.set("verified", true);
+  user.set("verify_token", "");
+  app.save(user);
+  try { require(__hooks + "/mail.js").directorWelcome(app, user); } catch (err) {}
+  return { verified: true, email: user.email() };
 }
 
 function searchEvents(app, q) {
@@ -642,11 +834,11 @@ function syncEvent(app, event) {
   return results;
 }
 
-function publicRoster(app, event) {
+function publicRoster(app, event, auth) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
   return teams.map(function (t) {
     const row = teamJson(t);
-    row.packet = packetSummary(app, event, t);
+    row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth));
     return row;
   });
 }
@@ -690,15 +882,174 @@ function saveClub(app, body, id) {
   return clubJson(rec);
 }
 
+function duplicateEvent(app, source, body, auth) {
+  const name = String((body && body.name) || (source.get("name") + " copy")).trim();
+  if (!name) throw new BadRequestError("Tournament name is required");
+  const slug = uniqueSlug(app, slugify((body && body.slug) || name));
+  const rec = new Record(app.findCollectionByNameOrId("events"));
+  rec.set("name", name);
+  rec.set("slug", slug);
+  rec.set("venue", source.get("venue") || "");
+  rec.set("address", source.get("address") || "");
+  rec.set("lat", source.get("lat") || 0);
+  rec.set("lng", source.get("lng") || 0);
+  rec.set("ages", source.get("ages") || "10U");
+  rec.set("age_groups", source.get("age_groups") || null);
+  rec.set("age_class", source.get("age_class") || "");
+  rec.set("age_split", !!source.get("age_split"));
+  rec.set("public", true);
+  rec.set("status", "live");
+  rec.set("format", source.get("format") || "pool-to-bracket");
+  rec.set("source", "native");
+  rec.set("signup_open", true);
+  rec.set("auto_sync", true);
+  rec.set("rain_status", "clear");
+  rec.set("rain_note", "");
+  rec.set("hours_start", source.get("hours_start") || "08:00");
+  rec.set("hours_end", source.get("hours_end") || "18:00");
+  rec.set("scheduler", source.get("scheduler") || null);
+  try {
+    const diamond = require(__hooks + "/diamond.js");
+    rec.set("tiebreak", { order: diamond.parseTiebreak(source.get("tiebreak")), explicit: true });
+  } catch (err) {
+    rec.set("tiebreak", { order: ["record", "h2h", "ra", "diff", "rs"], explicit: true });
+  }
+  const copied = [
+    "governing_body", "governing_notes", "pitch_limit_mode", "pitch_limit_ip",
+    "pitch_limit_pitches", "pitch_limit_notes", "game_length_minutes", "innings_cap",
+    "mercy_rule", "umpire_count", "rules_notes", "packet_notes", "require_insurance",
+    "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert",
+  ];
+  for (let i = 0; i < copied.length; i++) rec.set(copied[i], source.get(copied[i]));
+  if (body && body.start) rec.set("start", body.start);
+  else if (source.get("start")) rec.set("start", source.get("start"));
+  if (body && body.end) rec.set("end", body.end);
+  else if (source.get("end")) rec.set("end", source.get("end"));
+  if (auth) rec.set("created_by", auth.id);
+  app.save(rec);
+
+  const fieldMap = {};
+  const fields = app.findRecordsByFilter("fields", "event = {:e}", "name", 40, 0, { e: source.id });
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const nf = new Record(app.findCollectionByNameOrId("fields"));
+    nf.set("event", rec.id);
+    nf.set("name", f.get("name"));
+    nf.set("address", f.get("address") || "");
+    nf.set("lat", f.get("lat") || 0);
+    nf.set("lng", f.get("lng") || 0);
+    nf.set("surface", f.get("surface") || "");
+    nf.set("lights", !!f.get("lights"));
+    nf.set("notes", f.get("notes") || "");
+    nf.set("status", f.get("status") || "open");
+    nf.set("availability", f.get("availability") || []);
+    app.save(nf);
+    fieldMap[f.id] = nf;
+  }
+
+  const teamMap = {};
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: source.id });
+  for (let i = 0; i < teams.length; i++) {
+    const t = teams[i];
+    const nt = new Record(app.findCollectionByNameOrId("event_teams"));
+    nt.set("event", rec.id);
+    nt.set("name", t.get("name"));
+    nt.set("slug", t.get("slug"));
+    nt.set("pool", t.get("pool") || "");
+    nt.set("is_host", !!t.get("is_host"));
+    nt.set("gamechanger_url", t.get("gamechanger_url") || "");
+    nt.set("gc_team_ref", t.get("gc_team_ref") || "");
+    if (t.get("club")) nt.set("club", t.get("club"));
+    nt.set("packet_status", "incomplete");
+    app.save(nt);
+    teamMap[t.id] = nt;
+  }
+
+  try {
+    const pools = app.findRecordsByFilter("pools", "event = {:e}", "name", 20, 0, { e: source.id });
+    for (let i = 0; i < pools.length; i++) {
+      const np = new Record(app.findCollectionByNameOrId("pools"));
+      np.set("event", rec.id);
+      np.set("name", pools[i].get("name"));
+      np.set("tiebreak_notes", pools[i].get("tiebreak_notes") || "");
+      if (pools[i].get("tiebreak")) np.set("tiebreak", pools[i].get("tiebreak"));
+      if (pools[i].get("ages")) np.set("ages", pools[i].get("ages"));
+      if (pools[i].get("class")) np.set("class", pools[i].get("class"));
+      app.save(np);
+    }
+  } catch (err) {}
+
+  const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "game_number", 400, 0, { e: source.id });
+  for (let i = 0; i < games.length; i++) {
+    const g = games[i];
+    const home = teamMap[g.get("home")];
+    const away = teamMap[g.get("away")];
+    if (!home || !away) continue;
+    const ng = new Record(app.findCollectionByNameOrId("event_schedule"));
+    ng.set("event", rec.id);
+    ng.set("date", g.get("date") || "");
+    ng.set("time", g.get("time") || "");
+    ng.set("home", home.id);
+    ng.set("away", away.id);
+    ng.set("status", "scheduled");
+    ng.set("pool", g.get("pool") || "");
+    ng.set("game_number", Number(g.get("game_number") || 0) || 0);
+    const fid = g.get("field");
+    if (fid && fieldMap[fid]) {
+      ng.set("field", fieldMap[fid].id);
+      ng.set("field_name", fieldMap[fid].get("name"));
+    } else if (g.get("field_name")) {
+      ng.set("field_name", g.get("field_name"));
+    }
+    app.save(ng);
+  }
+
+  const bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 40, 0, { e: source.id });
+  for (let i = 0; i < bracket.length; i++) {
+    const g = bracket[i];
+    const ng = new Record(app.findCollectionByNameOrId("bracket_games"));
+    ng.set("event", rec.id);
+    ng.set("round", g.get("round"));
+    ng.set("slot", g.get("slot"));
+    if (g.get("side")) ng.set("side", g.get("side"));
+    ng.set("status", "scheduled");
+    ng.set("game_number", Number(g.get("game_number") || 0) || 0);
+    ng.set("date", g.get("date") || "");
+    ng.set("time", g.get("time") || "");
+    const fid = g.get("field");
+    if (fid && fieldMap[fid]) {
+      ng.set("field", fieldMap[fid].id);
+      ng.set("field_name", fieldMap[fid].get("name"));
+    }
+    app.save(ng);
+  }
+
+  writeLog(app, rec.id, "event", true, "Duplicated from " + source.get("slug") + " without scores, boxes, or family contacts");
+  return {
+    event: eventJson(rec, app),
+    source: source.get("slug"),
+    teams: Object.keys(teamMap).length,
+    games: games.length,
+    note: "Copied teams, fields, and the unpaid schedule. Scores, boxes, and family contacts were left behind.",
+  };
+}
+
 function applySettings(app, event, body) {
   if (body.signup_open != null) event.set("signup_open", !!body.signup_open);
   if (body.auto_sync != null) event.set("auto_sync", !!body.auto_sync);
   if (body.venue != null) event.set("venue", body.venue);
   if (body.ages != null) event.set("ages", body.ages);
+  applyAgeGroups(event, body);
   if (body.start) event.set("start", body.start);
   if (body.end) event.set("end", body.end);
   applyGuidelines(event, body);
+  try {
+    const diamond = require(__hooks + "/diamond.js");
+    diamond.saveTiebreak(event, body);
+    diamond.savePoolTiebreaks(app, event, body);
+  } catch (err) {}
   const schedule = require(__hooks + "/schedule.js");
+  schedule.saveScheduler(app, event, body);
   schedule.applyLocation(event, body);
   app.save(event);
   schedule.saveEventFields(app, event, body);
@@ -715,11 +1066,16 @@ module.exports = {
   writeLog: writeLog,
   parsePacket: parsePacket,
   createEvent: createEvent,
+  duplicateEvent: duplicateEvent,
   signupTeam: signupTeam,
   syncEvent: syncEvent,
   publicRoster: publicRoster,
   applySettings: applySettings,
   registerAccount: registerAccount,
+  verifyAccount: verifyAccount,
+  fileUrl: fileUrl,
+  applyAgeGroups: applyAgeGroups,
+  AGE_CHOICES: AGE_CHOICES,
   searchEvents: searchEvents,
   accountHome: accountHome,
   listClubs: listClubs,
@@ -727,6 +1083,7 @@ module.exports = {
   applyGuidelines: applyGuidelines,
   requiredDocKinds: requiredDocKinds,
   packetSummary: packetSummary,
+  canSeeTeamPacket: canSeeTeamPacket,
   refreshPacketStatus: refreshPacketStatus,
   saveTeamDoc: saveTeamDoc,
   reviewDoc: reviewDoc,

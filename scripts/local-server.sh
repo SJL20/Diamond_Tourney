@@ -11,6 +11,7 @@ cat <<EOF
 Diamond Tourney is serving on ${BASE}
 
   Hosted Keystone board   ${BASE}/t/keystone-clash-2026
+  Harbor Eight (FAKE)     ${BASE}/t/harbor-eight
   Full stats              ${BASE}/t/keystone-clash-2026/stats
   Info / parking / raffle ${BASE}/t/keystone-clash-2026/info
   Original popup pages    ${BASE}/popup/index.html

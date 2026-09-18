@@ -1,0 +1,24 @@
+# Every pull request gets the owner's review by default.
+* @SJL20
+
+# The rules, the spec, and the state of the project. Change these deliberately.
+/AGENTS.md                            @SJL20
+/SOFTBALL-PLATFORM-BOT-OUTLINE.md     @SJL20
+/CURSOR-GROK-INTEGRATION.md           @SJL20
+/docs/                                @SJL20
+/.cursor/                             @SJL20
+
+# Schema and API rules. A wrong rule here publishes private data, and a merged
+# migration has already run on the production volume.
+/pb/pb_migrations/                    @SJL20
+
+# The metric formulas. Youth ERA base 7, BA, Contact%, Strike%, IP thirds.
+# AGENTS.md forbids changing them.
+/lib/metrics.py                       @SJL20
+/pb/pb_hooks/softball.js              @SJL20
+/pb/pb_public/js/metrics.js           @SJL20
+
+# Deploy path.
+/fly.toml                             @SJL20
+/Dockerfile                           @SJL20
+/.github/workflows/                   @SJL20

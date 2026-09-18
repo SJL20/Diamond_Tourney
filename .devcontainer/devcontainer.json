@@ -1,0 +1,25 @@
+{
+  "name": "Diamond Tourney",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    }
+  },
+  "forwardPorts": [8097],
+  "portsAttributes": {
+    "8097": {
+      "label": "Diamond Tourney",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends curl unzip && bash scripts/install-pocketbase.sh",
+  "postStartCommand": "bash scripts/ensure-pocketbase.sh",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

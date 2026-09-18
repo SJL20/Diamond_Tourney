@@ -1,4 +1,4 @@
-import { pageShell } from "./chrome.js";
+import { flashSaved, pageShell } from "./chrome.js";
 
 const flowRoot = () => document.getElementById("app");
 const flowPb = new PocketBase(location.origin);
@@ -65,6 +65,12 @@ function bindRegister(form) {
     if (!res.ok) {
       err.hidden = false;
       err.textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    if (out.verify_sent) {
+      err.hidden = false;
+      err.textContent = "Check your email to confirm this address, then log in.";
       return;
     }
     try {
@@ -151,7 +157,7 @@ export async function startGate(forcedTab) {
     ${tab === "register" ? `
       <section class="card">
         <h2>Create an account</h2>
-        <p class="muted">Directors create weekends. Teams join them. You can do both from the same login.</p>
+        <p class="muted">Directors create weekends. Teams join them. You can do both from the same login. If PocketBase Admin mail is configured, we send a confirmation link first.</p>
         <form class="form wide" id="register-form">
           <label>Your name <input name="display_name" required placeholder="Pat Rivera"></label>
           <label>Email <input name="email" type="email" autocomplete="email" required></label>
@@ -170,7 +176,7 @@ export async function startGate(forcedTab) {
         <h2>Find a tournament</h2>
         <p class="muted">Search public boards. Join with a GameChanger URL, or open the live standings.</p>
         <form class="form wide" id="find-form">
-          <label>Name, venue, or age <input name="q" placeholder="Central Saturday, 10U, Harbor"></label>
+          <label>Name, venue, or age <input name="q" placeholder="Keystone, Harbor Eight, 10U"></label>
           <button class="btn" type="submit">Search</button>
         </form>
       </section>
@@ -305,6 +311,7 @@ export async function adminTeams() {
       if (err) { err.hidden = false; err.textContent = await res2.text(); }
       return;
     }
+    flashSaved("Club saved");
     adminTeams();
   };
   document.getElementById("club-new").addEventListener("submit", (ev) => {
@@ -363,4 +370,27 @@ export async function yearPage(year) {
         ${table(["Player", "Team", "IP", "ER", "SO", "ERA"], pit)}</div>
     </section>
   `);
+}
+
+export async function verifyPage() {
+  const token = new URLSearchParams(location.search).get("token") || "";
+  flowRoot().innerHTML = pageShell({
+    pb: flowPb,
+    site: "verify",
+    body: `<section class="page-head"><h1>Confirm your email</h1></section>
+      <section class="card"><p class="muted" id="verify-note">Checking that link…</p></section>`,
+  });
+  const note = document.getElementById("verify-note");
+  if (!token) {
+    note.textContent = "That confirmation link is missing a token.";
+    return;
+  }
+  try {
+    const res = await fetch("/api/account/verify?token=" + encodeURIComponent(token));
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.message || "That confirmation link is expired or already used.");
+    note.innerHTML = `Email confirmed${out.email ? " for " + escapeHtml(out.email) : ""}. <a class="btn" data-link href="/login">Log in</a>`;
+  } catch (err) {
+    note.textContent = err.message || String(err);
+  }
 }

@@ -1,11 +1,11 @@
 import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
-  directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
-  eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall, eventPools,
-  eventSchedule, eventSignup, eventStats, startTournament,
+  directorDuplicate, directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
+  eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
+  eventSchedule, eventSignup, eventStandings, eventStats, startTournament,
 } from "./event.js";
-import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
-import { pageShell } from "./chrome.js";
+import { accountHome, adminTeams, findPage, startGate, verifyPage, yearPage } from "./flow.js";
+import { flashSaved, pageShell } from "./chrome.js";
 
 const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
@@ -13,6 +13,7 @@ const app = document.getElementById("app");
 const ROUTES = [
   [/^\/login\/?$/, "login"],
   [/^\/register\/?$/, "register"],
+  [/^\/verify\/?$/, "verify"],
   [/^\/find\/?$/, "find"],
   [/^\/account\/?$/, "account"],
   [/^\/admin\/teams\/?$/, "adminTeams"],
@@ -23,8 +24,10 @@ const ROUTES = [
   [/^\/directors\/link-tm\/?$/, "linktm"],
   [/^\/directors\/import\/?$/, "import"],
   [/^\/directors\/import-popup\/?$/, "importpopup"],
+  [/^\/directors\/duplicate\/?$/, "duplicate"],
   [/^\/t\/?$/, "events"],
-  [/^\/t\/([^/]+)\/pools\/?$/, "epools"],
+  [/^\/t\/([^/]+)\/standings\/?$/, "estandings"],
+  [/^\/t\/([^/]+)\/pools\/?$/, "estandings"],
   [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
   [/^\/t\/([^/]+)\/overall\/?$/, "eoverall"],
   [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
@@ -348,6 +351,7 @@ async function review(slug) {
         btn.disabled = false;
         return;
       }
+      flashSaved(btn.dataset.act === "approve" ? "Game approved" : "Game rejected");
       render();
     });
   });
@@ -362,6 +366,7 @@ async function render() {
   try {
     if (name === "login") return login();
     if (name === "register") return startGate("register");
+    if (name === "verify") return verifyPage();
     if (name === "find") return findPage();
     if (name === "account") return accountHome();
     if (name === "adminTeams") return adminTeams();
@@ -375,9 +380,10 @@ async function render() {
     if (name === "linktm") return directorLinkTm();
     if (name === "import") return directorImport();
     if (name === "importpopup") return directorImportPopup();
+    if (name === "duplicate") return directorDuplicate();
     if (name === "events") return eventList();
     if (name === "ehome") return eventHome(params[0]);
-    if (name === "epools") return eventPools(params[0]);
+    if (name === "estandings" || name === "epools") return eventStandings(params[0]);
     if (name === "ebracket") return eventBracket(params[0]);
     if (name === "eoverall") return eventOverall(params[0]);
     if (name === "eschedule") return eventSchedule(params[0]);

@@ -39,7 +39,7 @@ Login works and the demo hitting table renders (`/teams/demo/hitting` after `coa
 
 ## Diamond Tourney (partner deck)
 
-Derek’s concept lives in `docs/partner/Diamond_Tourney.pptx` and `docs/DIAMOND-TOURNEY.md`. Public event board: `/t/central-saturday`. Start: `/start`. Team signup with GameChanger: `/t/{slug}/signup`. Hosted sync is a PocketBase job, not a Cursor bot. Schedule paste: `/directors/import`. Pricing stays unbuilt.
+Derek’s concept lives in `docs/partner/Diamond_Tourney.pptx` and `docs/DIAMOND-TOURNEY.md`. Public event boards: `/t/keystone-clash-2026` and the FAKE practice weekend `/t/harbor-eight`. Start: `/start`. Team signup with GameChanger: `/t/{slug}/signup`. Hosted sync is a PocketBase job, not a Cursor bot. Schedule paste: `/directors/import`. Pricing stays unbuilt.
 
 ## Phase 1 done when
 

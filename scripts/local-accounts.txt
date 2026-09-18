@@ -20,3 +20,13 @@ team_coach — Rivals 10U (ACL fixture)
 
 event_td
   td@local.test / EventTd1!
+
+Harbor Eight (FAKE) head coaches — each can post a result for their own games
+  coach.oaks@local.test  / CoachOaks1!   Harbor Oaks 10U (FAKE)
+  coach.river@local.test / CoachRiver1!  River City 10U (FAKE)
+  coach.maple@local.test / CoachMaple1!  Maple Ridge 10U (FAKE)
+  coach.lake@local.test  / CoachLake1!   Lakeview 10U (FAKE)
+  coach.iron@local.test  / CoachIron1!   Iron Bridge 10U (FAKE)
+  coach.pine@local.test  / CoachPine1!   Pine Hollow 10U (FAKE)
+  coach.cedar@local.test / CoachCedar1!  Cedar Falls 10U (FAKE)
+  coach.west@local.test  / CoachWest1!   Westfield 10U (FAKE)

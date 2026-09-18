@@ -2,6 +2,10 @@
 
 Public GitHub home: [github.com/SJL20/Diamond_Tourney](https://github.com/SJL20/Diamond_Tourney).
 
+New here? `docs/PROGRESS.md` is where the project actually stands and what is
+still broken. `CONTRIBUTING.md` is how to run it, test it, and open a pull
+request. Found private data where it should not be? `SECURITY.md`.
+
 Wholly hosted tournament site: start an event natively or by linking a Tourney Machine page, teams sign up with a GameChanger URL, and this host pulls those public pages. Season team books stay behind a coach login. Bots are optional leftovers for screenshot ingest — they are not required to run a weekend.
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md`.
@@ -13,13 +17,20 @@ bash scripts/install-pocketbase.sh
 bash scripts/local-server.sh
 ```
 
+The install script picks the PocketBase build for this machine (`linux_amd64` on
+the Cloud Agent, `darwin_arm64` on an Apple Silicon Mac). Codespaces / VS Code
+can also use `.devcontainer/` — it forwards **8097**. Production is
+https://www.diamondtourney.com (Fly → PocketBase → Cloudflare). Fly already
+keeps SQLite and files on the `pb_data` volume at `/data`. SMTP is PocketBase
+Admin mail; put SPF/DKIM on Cloudflare. Do not commit mail passwords.
+
 That starts PocketBase on **http://127.0.0.1:8097** if it is not already healthy, then prints the Keystone Clash URLs. Do not kill a healthy listener just to “restart Preview.”
 
 Every page has a **site bar** (Find, Year, Account, Create). Tournament pages add a second **tournament bar** under it (Home, Schedule, Games, Bracket, Stats, Info, Sign up, Admin). Season books use the same split: site bar, then team-book links. The two bars do not mix.
 
 ## How to create the schedule
 
-1. **Log in** as a director (`td@local.test` / `EventTd1!` locally) and open **Create → Run it here**.
+1. **Log in** as a director (`td@local.test` / `EventTd1!` locally) and open **Create → Run it here**, or **Duplicate an existing tournament** to reuse last year’s fields and unpaid schedule.
 2. Name the weekend, then fill **Venue, address, and fields**. Set the **global** first-pitch and last-out window. Each diamond needs a name, and each date can be narrower — or unchecked if that field is dark. Auto-schedule will not put a game on a closed diamond or after that field’s last out. A field without its own pin inherits the park.
 3. Pick a **bracket type**: pool then single-elim, pool only, single-elim, or double-elim.
 4. Open signup. Put teams in the same pool letter (`A`, `B`) so pool play can pair them.
@@ -62,7 +73,25 @@ Lines land in the weekend leaders only when someone (bot or person) types them. 
 | `/t/{slug}/admin` | Director desk — left rail for tournament setup, venue, scheduler, rain, teams, stats |
 | `/t/{slug}/games/{id}` | Four stats doors — GC mobile PDF, public box URL, Grok bot, director PDF |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
-| `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
+| `/t/{slug}/pools` | Pool standings on their own, without the rest of the home page |
+| `/t/{slug}/leaders` | Weekend leaders with the gates applied (min 8 AB, min 3.0 IP) |
+| `/t/{slug}/awards` | All-tournament team, printed Sunday on the field |
+| `/t/harbor-eight` | FAKE 8-team practice weekend — two pools, empty Sunday bracket, one coach login per club |
+| `/login`, `/register`, `/account` | Log in, create a director or team account, see the weekends you run |
+| `/admin/teams` | Region admin club desk — team profiles, GameChanger link optional |
+| `/directors/new`, `/directors/link-tm`, `/directors/import` | The three doors: start it here, link a Tourney Machine page, paste a schedule you already have |
+
+Season books stay behind a coach login. They are not part of the public product:
+
+| Page | What it is |
+|---|---|
+| `/teams/{slug}` | Public team card — W-L only, no player stats |
+| `/teams/{slug}/home` | Coach home — record, next game, last five |
+| `/teams/{slug}/roster` | Name, number, positions, bats/throws, grad year |
+| `/teams/{slug}/hitting` | AB R H RBI BB SO, BA, Contact%, with team totals |
+| `/teams/{slug}/pitching` | IP H R ER BB SO, pitches/strikes, ERA, Strike% |
+| `/teams/{slug}/games`, `/teams/{slug}/games/{id}` | Game log and a single game's box |
+| `/teams/{slug}/admin/review` | Approve or reject what a bot staged |
 
 Keystone Clash 2026 is imported from the public popup. Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger. Individual Friday/Saturday pool boxes are not on the popup, so they are not invented here.
 
@@ -70,6 +99,7 @@ Keystone Clash 2026 is imported from the public popup. Directors can refresh it 
 |---|---|---|
 | region admin | owner@local.test | RegionAdmin1! |
 | event director | td@local.test | EventTd1! |
+| Harbor Oaks coach (FAKE) | coach.oaks@local.test | CoachOaks1! |
 | demo coach | coach.demo@local.test | CoachDemo1! |
 | Hawks 10U coach | coach.hawks@local.test | CoachHawks1! |
 | bot (optional) | bot@local.test | BotStaging1! |

@@ -47,6 +47,33 @@ button, input, select, textarea { font: inherit; }
 }
 .skip:focus { top: 8px; }
 
+#save-toast {
+  position: fixed;
+  z-index: 90;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--navy);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 8px 24px rgba(18, 38, 61, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#save-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.game-no {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .wrap { width: min(var(--max), calc(100% - 28px)); margin: 0 auto; }
 
 .site-bar {
@@ -365,6 +392,44 @@ tr.total { font-weight: 700; background: #f3eee4; }
   .form-grid.two { grid-template-columns: 1fr 1fr; }
 }
 
+.tiebreak-order {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.tiebreak-order li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.tiebreak-order .tb-n {
+  width: 1.6rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.tb-add, .tb-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.age-picks { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+.age-checks { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
+.pin-nudge { margin: 8px 0 12px; }
+.event-hero { margin: 0 0 16px; }
+.event-hero img, .photo-grid img, .photo-review img {
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.photo-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.photo-review { list-style: none; padding: 0; }
+.photo-review li { display: grid; gap: 8px; grid-template-columns: 88px 1fr auto; align-items: center; margin: 10px 0; }
+.photo-review img { width: 88px; height: 64px; max-height: none; }
+.seed-why {
+  margin: 12px 0 0;
+  padding-left: 1.15rem;
+}
+.seed-why li { margin: 4px 0; font-size: 0.9rem; }
+
 .tabs {
   display: flex;
   flex-wrap: wrap;
@@ -450,7 +515,12 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .rain-banner.postponed, .rain-banner.moved { background: #f8d7d0; }
 .rain-banner.clear { background: #eef4ea; }
 .bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; padding: 8px 12px 10px; }
+.bk-desk-box .bk-score { border-top: 1px solid var(--line); }
 .bk-score input { width: 4.2rem; }
+/* Author display:grid / display:flex on the desk would otherwise keep a
+   closed <details> looking expanded. Hide everything but the summary. */
+.bk-desk-box:not([open]) > *:not(summary) { display: none !important; }
+.bk-desk-box:not([open]) > summary { color: var(--muted); padding: 4px 12px; }
 .bk-when {
   display: flex;
   flex-wrap: wrap;
@@ -654,7 +724,7 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   display: flex;
   flex-direction: column;
   justify-content: space-around;
-  gap: 24px;
+  gap: 14px;
   position: relative;
   padding-right: 20px;
 }
@@ -680,7 +750,7 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }

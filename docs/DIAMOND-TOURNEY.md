@@ -9,8 +9,8 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 | Vercel public pages | `pb/pb_public/` on Fly (`fly.toml`) |
 | Supabase | PocketBase (auth, files, SQLite) |
 | Claude box-score vision | Grok Bot A + `/api/bot/ingest` — coach confirms, nothing publishes unverified |
-| Resend | Not built yet (Phase 4 rain/schedule texts) |
-| diamondtourney.com | Owner still picks the domain (outline §12) |
+| Resend | PocketBase Admin SMTP for signup / verify / welcome / rain. Cloudflare DNS holds SPF/DKIM. No mail secrets in the repo. Phase 4 rain texts still later. |
+| diamondtourney.com | Live: Fly → PocketBase → Cloudflare at https://www.diamondtourney.com (apex too) |
 
 ## What we took from the deck
 
@@ -30,13 +30,21 @@ Site admin manages **team profiles** (`/admin/teams`). Email is only a login tha
 |---|---|
 | You already have a schedule | **Live** — CSV import + public board (`/directors/import`) |
 | Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
-| Team signup | **Live** — director or team, GameChanger URL required (`/t/{slug}/signup`). Hosted sync reads those public pages. No bot required. |
+| Team signup | **Live** — director or team (`/t/{slug}/signup`). GameChanger is optional; a paper team signs up without one. When a URL is there, hosted sync reads that public page. No bot required. |
 | Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
 | Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Does not scrape GameChanger. Individual pool boxes that are not on the popup are not invented. |
 
-## Tiebreak (outline §6, confirmed by the deck)
+## Tiebreak (outline §6, confirmed by the deck, updated 2026-09-18)
 
-Pool order: wins, then losses, then head-to-head, then runs allowed, then runs scored.
+Default pool order (director can reorder, remove steps, or pick a preset; each pool can have its own chain):
+
+record (win% with a tie as half) → head-to-head → fewest runs allowed → run differential → most runs scored.
+
+Head-to-head is group-aware: it applies only for a 2-team tie, or when every pair in the tied group has a decided game. A 3-team cycle skips H2H. Each seed on the standings tab has a “why this seed” line. Public standings print the configured chain.
+
+Age groups are a multi-select (6U–18U, including 11U). Class A/B/C and combine-vs-split are settings only — the host does not auto-create a division per age. Keystone Clash 2026 is one combined `11U/12U-C` division. Pitching limits stay on the form and default to none.
+
+`lib/standings.py` and `pb/pb_hooks/diamond.js` must stay in lockstep. Do not change season-book metric formulas.
 
 ## Awards
 

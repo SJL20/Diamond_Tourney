@@ -1,4 +1,4 @@
-import { pageShell } from "./chrome.js";
+import { flashSaved, pageShell } from "./chrome.js";
 
 const eventRoot = () => document.getElementById("app");
 const eventPb = new PocketBase(location.origin);
@@ -26,6 +26,23 @@ function isDirector() {
 
 function authHeader() {
   return eventPb.authStore.token ? { Authorization: eventPb.authStore.token } : {};
+}
+
+// Packet files (insurance, rosters, birth certificates) are protected, so a
+// plain /api/files link 403s. Mint a short-lived file token for this director.
+async function fileToken() {
+  if (!eventPb.authStore.token) return "";
+  try {
+    return await eventPb.files.getToken();
+  } catch (err) {
+    return "";
+  }
+}
+
+function withFileToken(url, token) {
+  if (!url) return "";
+  if (!token) return url;
+  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
 }
 
 function eventChrome(event, page, body) {
@@ -83,10 +100,15 @@ function fieldRow(f = {}, i = 0, dates = [], globalStart = "08:00", globalEnd = 
       <label>Surface <input name="field_surface_${i}" value="${escapeHtml(f.surface || "")}" placeholder="grass"></label>
     </div>
     <label>Field address <input name="field_address_${i}" value="${escapeHtml(f.address || "")}" placeholder="Same as the park if blank"></label>
-    <div class="form-grid two">
-      <label>Latitude <input name="field_lat_${i}" value="${f.lat || ""}" placeholder="40.3668"></label>
-      <label>Longitude <input name="field_lng_${i}" value="${f.lng || ""}" placeholder="-80.2345"></label>
-    </div>
+    <p class="muted">${f.lat && f.lng ? `Pin ${f.lat}, ${f.lng}` : "Pin is set from this address, or from the park, when you save."}</p>
+    <details class="pin-nudge">
+      <summary>Nudge this diamond’s pin</summary>
+      <label class="check"><input type="checkbox" name="field_pin_set_${i}"> Use these coordinates instead of geocoding</label>
+      <div class="form-grid two">
+        <label>Latitude <input name="field_lat_${i}" value="${f.lat || ""}" inputmode="decimal"></label>
+        <label>Longitude <input name="field_lng_${i}" value="${f.lng || ""}" inputmode="decimal"></label>
+      </div>
+    </details>
     <label class="check"><input type="checkbox" name="field_lights_${i}" ${f.lights ? "checked" : ""}> Lights</label>
     <p class="muted">This diamond’s hours. Uncheck a day if it is dark or rented out. Times narrower than the global window are allowed; times outside it are not used.</p>
     <div class="field-avail">${fieldAvailDays(f, i, dates, globalStart, globalEnd)}</div>
@@ -162,10 +184,16 @@ function setupVenueFields(ev = {}, fields = []) {
   return `
     <label>Complex / park name <input name="venue" value="${escapeHtml(ev.venue || "")}" placeholder="East End Park"></label>
     <label>Street address <input name="address" value="${escapeHtml(ev.address || "")}" placeholder="51 Meadow St, McDonald, PA 15057"></label>
-    <div class="form-grid two">
-      <label>Latitude <input name="lat" value="${ev.lat || ""}" placeholder="40.3668"></label>
-      <label>Longitude <input name="lng" value="${ev.lng || ""}" placeholder="-80.2345"></label>
-    </div>
+    <p class="muted">${ev.lat && ev.lng ? `Map pin ${ev.lat}, ${ev.lng}.` : "The pin is geocoded from the street address. You do not type latitude and longitude."}</p>
+    <details class="pin-nudge">
+      <summary>Nudge the map pin</summary>
+      <p class="muted">Only if the geocoder dropped the pin on the wrong diamond.</p>
+      <label class="check"><input type="checkbox" name="pin_set"> Use these coordinates instead of geocoding</label>
+      <div class="form-grid two">
+        <label>Latitude <input name="lat" value="${ev.lat || ""}" inputmode="decimal"></label>
+        <label>Longitude <input name="lng" value="${ev.lng || ""}" inputmode="decimal"></label>
+      </div>
+    </details>
     <div class="form-grid two">
       <label>First day <input name="start" type="date" value="${dateInput(ev.start)}"></label>
       <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
@@ -177,7 +205,7 @@ function setupVenueFields(ev = {}, fields = []) {
         <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
       </div>
     </div>
-    <p class="muted">Use GPS or a street address. Each diamond can have its own pin; blank fields inherit the park.</p>
+    <p class="muted">Each diamond can have its own street address. Blank fields inherit the park pin.</p>
     <div id="field-rows">${rows.map((f, i) => fieldRow(f, i, dates, hoursStart, hoursEnd)).join("")}</div>
     <button class="btn ghost" type="button" id="add-field">Add another field</button>
   `;
@@ -213,6 +241,18 @@ function rainBanner(ev) {
   </section>`;
 }
 
+function photoGallery(photos) {
+  const list = (photos || []).filter((p) => p.public && p.url);
+  if (!list.length) return "";
+  return `<section class="card venue-photos">
+    <h2>Fields and parking</h2>
+    <div class="photo-grid">${list.map((p) => `<figure>
+      <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || p.kind || "Field")}">
+      ${p.caption ? `<figcaption>${escapeHtml(p.caption)}</figcaption>` : ""}
+    </figure>`).join("")}</div>
+  </section>`;
+}
+
 function fieldsBlock(ev, fields) {
   const list = fields || ev.fields || [];
   if (!list.length && !ev.address && !ev.venue) return "";
@@ -241,6 +281,16 @@ function scoreText(g) {
   return `${g.home_runs ?? "—"}–${g.away_runs ?? "—"}`;
 }
 
+function gameNo(g) {
+  const n = Number(g?.game_number || 0);
+  return n > 0 ? "Game " + n : "";
+}
+
+function gameNoCell(g) {
+  const label = gameNo(g);
+  return label ? `<span class="game-no">${escapeHtml(label)}</span>` : "—";
+}
+
 function realPoolGames(games) {
   return (games || []).filter((g) => g.home && g.away && g.id);
 }
@@ -257,7 +307,8 @@ function scheduleByField(games, slug) {
   return Object.keys(groups).sort().map((name) => `
     <div class="sched-field">
       <h3>${escapeHtml(name)}</h3>
-      ${table(["When", "Pool", "Home", "Away", "Score", ""], groups[name].map((g) => `<tr>
+      ${table(["Game", "When", "Pool", "Home", "Away", "Score", ""], groups[name].map((g) => `<tr>
+        <td>${gameNoCell(g)}</td>
         <td>${escapeHtml(g.date || "")} ${escapeHtml(g.time || "")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
         <td>${escapeHtml(g.pool || "")}</td>
         <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
@@ -291,7 +342,7 @@ function setupGuidelinesFields(ev = {}) {
     <details class="setup-block">
       <summary>Pitching limits</summary>
       <label>How you cap pitching
-        ${sel("pitch_limit_mode", ev.pitch_limit_mode || "ip", [
+        ${sel("pitch_limit_mode", ev.pitch_limit_mode || "none", [
           ["ip", "Innings pitched"],
           ["pitch_count", "Pitch count"],
           ["both", "IP and pitch count"],
@@ -299,7 +350,7 @@ function setupGuidelinesFields(ev = {}) {
         ])}
       </label>
       <div class="form-grid two">
-        <label>Weekend IP cap <input name="pitch_limit_ip" type="number" min="0" step="0.1" value="${ev.pitch_limit_ip ?? 6}"></label>
+        <label>Weekend IP cap <input name="pitch_limit_ip" type="number" min="0" step="0.1" value="${ev.pitch_limit_mode && ev.pitch_limit_mode !== "none" ? (ev.pitch_limit_ip ?? 6) : (ev.pitch_limit_ip || "")}"></label>
         <label>Weekend pitch cap <input name="pitch_limit_pitches" type="number" min="0" value="${ev.pitch_limit_pitches || ""}" placeholder="Leave blank if IP only"></label>
       </div>
       <label>How it is enforced <textarea name="pitch_limit_notes" rows="2" placeholder="6.0 IP for the weekend. A pitcher may finish the batter.">${escapeHtml(ev.pitch_limit_notes || "")}</textarea></label>
@@ -326,6 +377,7 @@ function setupGuidelinesFields(ev = {}) {
       ${check("require_coach_cert", "Coach certification / background")}
       <label>Notes to coaches <textarea name="packet_notes" rows="3" placeholder="Insurance and roster before first pitch. Bring birth certificates to the plate meeting only if asked.">${escapeHtml(ev.packet_notes || "")}</textarea></label>
     </details>
+    ${setupTiebreakFields(ev)}
   `;
 }
 
@@ -342,6 +394,7 @@ function guidelinesBlock(ev) {
   return `<section class="card facts">
     <h2>Weekend guidelines</h2>
     ${[
+      ["Ages", ev.ages],
       ["Governing body", [ev.governing_label, ev.governing_notes].filter(Boolean).join(" — ")],
       ["Format", ev.format_label],
       ["Pitching cap", [pitch, ev.pitch_limit_notes].filter(Boolean).join(" — ")],
@@ -352,6 +405,7 @@ function guidelinesBlock(ev) {
       ["Rules", ev.rules_notes],
       ["Team must upload", req.join(", ")],
       ["Packet notes", ev.packet_notes],
+      ["Pool tiebreak", ev.tiebreak && ev.tiebreak.label],
     ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}${k === "Rules" && ev.rules_file_url ? ` · <a href="${escapeHtml(ev.rules_file_url)}">Download attachment</a>` : ""}</dd></div>`).join("")}
   </section>`;
 }
@@ -369,13 +423,15 @@ function standingsBlock(standings) {
     <div class="card">
       <h2>${pool.name === "All teams" ? "Pool standings" : "Pool " + escapeHtml(pool.name)}</h2>
       ${pool.note ? `<p class="muted">${escapeHtml(pool.note)}</p>` : ""}
-      ${table(["#", "Team", "W", "L", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
+      ${table(["#", "Team", "W", "L", "T", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
         <td>${t.seed}</td>
         <td>${t.gamechanger_url ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">${escapeHtml(t.name)}</a>` : escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
-        <td>${t.w}</td><td>${t.l}</td>
+        <td>${t.w}</td><td>${t.l}</td><td>${t.t || 0}</td>
         <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
-      <p class="muted">Tiebreak: record, then fewest runs allowed, then run differential. Official seeds follow Tourney Machine — the director may apply head-to-head.</p>
+      ${(pool.teams || []).some((t) => t.seed_reason) ? `<ul class="seed-why">${pool.teams.map((t) =>
+        `<li><b>Seed ${t.seed} ${escapeHtml(t.name)}</b> — ${escapeHtml(t.seed_reason)}</li>`).join("")}</ul>` : ""}
+      <p class="muted">Tiebreak: ${escapeHtml(pool.tiebreak_label || "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored")}.</p>
     </div>`).join("");
 }
 
@@ -527,15 +583,17 @@ function matchCard(g, roster = [], plan = null) {
   const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
   const fieldLabel = g.field || "—";
   const timeLabel = g.time || "—";
-  const meta = [g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
+  const meta = [gameNo(g), g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
   const def = plan?.defaults.get(g.id) || {};
   const chosenField = g.field || def.field || "";
   const chosenTime = g.time || def.time || "";
   const chosenDate = g.date || def.date || "";
   const set = slotIsSet(g);
+  // Never start open. Field, time, sides, and the final sit behind one toggle
+  // so a four-game quarterfinal column stays a tree, not a stack of forms.
   const desk = isDirector() && g.id ? `
-    <details class="bk-desk-box" ${set ? "" : "open"}>
-      <summary>${set ? "Edit slot" : "Set field and time"}</summary>
+    <details class="bk-desk-box">
+      <summary>Edit game</summary>
       <form class="bk-desk" data-bk-desk="${escapeHtml(g.id)}">
         <label>Field
           <select name="field">${optionList(plan?.fields || [], chosenField)}</select>
@@ -557,12 +615,12 @@ function matchCard(g, roster = [], plan = null) {
           ${g.status === "final" ? `<button class="btn ghost" type="button" data-reopen>Reopen</button>` : ""}
         </div>
       </form>
-    </details>
-    ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
-      <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
-      <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
-      <button class="btn ghost" type="submit">Final</button>
-    </form>` : ""}` : "";
+      ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
+        <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
+        <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
+        <button class="btn ghost" type="submit">Final</button>
+      </form>` : ""}
+    </details>` : "";
   return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""} ${set ? "slot-set" : "slot-open"}">
     <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
       <span>${escapeHtml(g.home || "TBD")}</span>
@@ -572,10 +630,10 @@ function matchCard(g, roster = [], plan = null) {
       <span>${escapeHtml(g.away || "TBD")}</span>
       <b>${g.status === "final" ? g.away_runs : ""}</b>
     </div>
-    <div class="bk-when">
+    ${set ? `<div class="bk-when">
       <span class="bk-chip"><em>Field</em> ${escapeHtml(fieldLabel)}</span>
       <span class="bk-chip"><em>Time</em> ${escapeHtml(timeLabel)}</span>
-    </div>
+    </div>` : ""}
     <p class="bk-meta">${escapeHtml(meta.join(" · "))}${g.protest_note ? ` · ${escapeHtml(g.protest_note)}` : ""}</p>
     ${desk}
   </article>`;
@@ -665,7 +723,10 @@ function bindBracketDesk(slug, root) {
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
       const data = Object.fromEntries(new FormData(form));
-      if (await post("/bracket/" + form.dataset.bkId + "/score", data)) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkId + "/score", data)) {
+        flashSaved("Score saved");
+        eventBracket(slug);
+      }
     });
   });
   root.querySelectorAll("[data-bk-desk]").forEach((form) => {
@@ -692,13 +753,22 @@ function bindBracketDesk(slug, root) {
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
       const data = Object.fromEntries(new FormData(form));
-      if (await post("/bracket/" + form.dataset.bkDesk, data)) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkDesk, data)) {
+        flashSaved("Game saved");
+        eventBracket(slug);
+      }
     });
     form.querySelector("[data-swap]")?.addEventListener("click", async () => {
-      if (await post("/bracket/" + form.dataset.bkDesk, { swap: true })) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkDesk, { swap: true })) {
+        flashSaved("Sides swapped");
+        eventBracket(slug);
+      }
     });
     form.querySelector("[data-reopen]")?.addEventListener("click", async () => {
-      if (await post("/bracket/" + form.dataset.bkDesk, { reopen: true })) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkDesk, { reopen: true })) {
+        flashSaved("Game reopened");
+        eventBracket(slug);
+      }
     });
   });
   const swap = root.querySelector("#bk-swap");
@@ -714,7 +784,10 @@ function bindBracketDesk(slug, root) {
         to_id: toId,
         to_seat: toSeat,
         protest_note: data.protest_note,
-      })) eventBracket(slug);
+      })) {
+        flashSaved("Seats swapped");
+        eventBracket(slug);
+      }
     });
   }
 }
@@ -741,7 +814,9 @@ export async function eventHome(slug) {
   const ev = board.event;
   const packet = board.packet || ev.packet;
   const champ = packet?.champion;
+  const hero = board.header_photo;
   eventRoot().innerHTML = eventChrome(ev, "home", `
+    ${hero && hero.url ? `<figure class="event-hero"><img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.caption || ev.venue || "Field")}">${hero.caption ? `<figcaption>${escapeHtml(hero.caption)}</figcaption>` : ""}</figure>` : ""}
     <section class="page-head">
       <p class="lede">${escapeHtml(ev.status_note || packet?.status || "Live standings. The bracket fills when scores are final.")}</p>
       <p class="muted">${escapeHtml([ev.dates || packet?.dates, ev.format_label, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
@@ -766,9 +841,19 @@ export async function eventHome(slug) {
   `);
 }
 
-export async function eventPools(slug) {
+export async function eventStandings(slug) {
   const board = await fetchBoard(slug);
-  eventRoot().innerHTML = eventChrome(board.event, "pools", `<section class="grid two">${standingsBlock(board.standings)}</section>`);
+  eventRoot().innerHTML = eventChrome(board.event, "standings", `
+    <section class="page-head">
+      <h1>Standings</h1>
+      <p class="muted">Each pool prints the order the director saved. Default is record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Head-to-head stays group-aware.</p>
+    </section>
+    <section class="grid two">${standingsBlock(board.standings) || `<section class="card empty">No teams signed up yet.</section>`}</section>
+  `);
+}
+
+export async function eventPools(slug) {
+  return eventStandings(slug);
 }
 
 export async function eventBracket(slug) {
@@ -777,7 +862,7 @@ export async function eventBracket(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head">
       <h1>Bracket</h1>
-      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game. Field and first pitch sit on every card${isDirector() ? ". A set game stays collapsed — open Edit slot to change it. New games default to the next open field and time" : ""}.</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${isDirector() ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
     </section>
     ${board.bracket.length ? bracketBoards(board.bracket, board.roster, plan) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
     ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
@@ -796,13 +881,14 @@ export async function eventOverall(slug) {
     </section>
     ${rainBanner(board.event)}
     <section class="card">
-      ${rows.length ? table(["When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
+      ${rows.length ? table(["Game", "When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
         const when = [g.date, g.time].filter(Boolean).join(" ");
         const kind = g.kind === "bracket" ? (ROUND_META[g.round]?.label || g.round || "Bracket") : (g.round || "Pool");
         const href = g.kind === "pool" && g.id
           ? `/t/${escapeHtml(slug)}/games/${g.id}`
           : `/t/${escapeHtml(slug)}/bracket`;
         return `<tr>
+          <td>${gameNoCell(g)}</td>
           <td>${escapeHtml(when || "TBD")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
           <td>${escapeHtml(g.field || "—")}</td>
           <td><span class="ov-kind ${escapeHtml(g.kind || "")}">${escapeHtml(kind)}</span></td>
@@ -847,7 +933,7 @@ export async function eventGame(slug, id) {
   const can = !!g.can_score;
   eventRoot().innerHTML = eventChrome(ev, "schedule", `
     <section class="page-head">
-      <h1>${escapeHtml(g.home)} vs ${escapeHtml(g.away)}</h1>
+      <h1>${gameNo(g) ? `${escapeHtml(gameNo(g))} · ` : ""}${escapeHtml(g.home)} vs ${escapeHtml(g.away)}</h1>
       <p class="muted">${escapeHtml([g.date, g.time, g.field, g.pool ? "Pool " + g.pool : ""].filter(Boolean).join(" · "))}</p>
       <p><a data-link href="/t/${escapeHtml(slug)}/schedule">Back to games</a></p>
     </section>
@@ -886,21 +972,21 @@ export async function eventGame(slug, id) {
       <details class="setup-block" open>
         <summary>1. GameChanger mobile PDF</summary>
         <p class="muted">From the GC app: share / export the box as PDF, then drop it here. Team managers use this after the game.</p>
-        <form class="form wide" id="gc-pdf-form">
+        <form class="form wide" id="gc-pdf-form" data-autosave-box>
           <input type="hidden" name="source" value="gc_pdf">
-          <label>GameChanger PDF <input name="file" type="file" accept=".pdf,application/pdf" required></label>
+          <label>GameChanger PDF <input name="file" type="file" accept=".pdf,application/pdf" required data-autosave-box></label>
           <label>Note <input name="note" placeholder="Saturday 9:00, Harbor 1"></label>
-          <button class="btn" type="submit">Queue GC PDF</button>
+          <p class="muted">Choosing a file saves it. You do not need another click.</p>
           <p class="error" id="gc-pdf-err" hidden></p>
         </form>
       </details>
       <details class="setup-block" open>
         <summary>2. Public GameChanger box URL</summary>
         <p class="muted">Paste the public web box, like web.gc.com/teams/…/schedule/…/box-score. We store the link and check that the page is reachable. We do not copy numbers off that page.</p>
-        <form class="form wide" id="gc-url-form">
+        <form class="form wide" id="gc-url-form" data-autosave-box>
           <input type="hidden" name="source" value="gc_url">
           <label>Box-score URL <input name="gc_url" type="url" required placeholder="https://web.gc.com/teams/…/schedule/…/box-score" value="${escapeHtml(box?.gc_url || "")}"></label>
-          <button class="btn" type="submit">Save GC link for a bot</button>
+          <p class="muted">Paste or finish the URL — it saves when you leave the field.</p>
           <p class="error" id="gc-url-err" hidden></p>
         </form>
       </details>
@@ -911,12 +997,12 @@ export async function eventGame(slug, id) {
       ${detail.director ? `<details class="setup-block" open>
         <summary>4. Director PDF</summary>
         <p class="muted">Your upload as the tournament director. Use a GC export or a scorebook scan. Check the box if this file is the book of record and a bot does not need to type it.</p>
-        <form class="form wide" id="td-pdf-form">
+        <form class="form wide" id="td-pdf-form" data-autosave-box>
           <input type="hidden" name="source" value="director_pdf">
-          <label>PDF or photo <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" required></label>
+          <label>PDF or photo <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" required data-autosave-box></label>
           <label class="check"><input type="checkbox" name="approve_file"> Official book — do not wait on a bot</label>
           <label>Note <input name="note" placeholder="TD copy from the plate meeting"></label>
-          <button class="btn" type="submit">Upload director PDF</button>
+          <p class="muted">Choosing a file saves it. You do not need another click.</p>
           <p class="error" id="td-pdf-err" hidden></p>
         </form>
       </details>` : ""}
@@ -941,10 +1027,11 @@ export async function eventGame(slug, id) {
         body: JSON.stringify(data),
       });
       if (!out.ok) return show("score-err", new Error(await out.text()));
+      flashSaved("Score saved");
       eventGame(slug, id);
     });
   }
-  const postBox = async (form, errId) => {
+  const postBox = async (form, errId, savedMsg) => {
     const fd = new FormData(form);
     if (form.querySelector("[name=approve_file]")) {
       fd.set("approve_file", form.querySelector("[name=approve_file]").checked ? "true" : "false");
@@ -955,15 +1042,25 @@ export async function eventGame(slug, id) {
       body: fd,
     });
     if (!out.ok) return show(errId, new Error(await out.text()));
+    flashSaved(savedMsg || "Box score saved");
     eventGame(slug, id);
   };
-  [["gc-pdf-form", "gc-pdf-err"], ["gc-url-form", "gc-url-err"], ["td-pdf-form", "td-pdf-err"]].forEach(([fid, eid]) => {
+  [["gc-pdf-form", "gc-pdf-err", "GameChanger PDF queued"], ["gc-url-form", "gc-url-err", "GameChanger link saved"], ["td-pdf-form", "td-pdf-err", "Director box saved"]].forEach(([fid, eid, ok]) => {
     const form = document.getElementById(fid);
     if (!form) return;
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
-      postBox(evnt.target, eid);
+      postBox(form, eid, ok);
     });
+    form.querySelector("input[type=file]")?.addEventListener("change", () => {
+      if (form.querySelector("input[type=file]").files.length) postBox(form, eid, ok);
+    });
+    const url = form.querySelector("input[name=gc_url]");
+    if (url) {
+      url.addEventListener("change", () => {
+        if (url.value && url.checkValidity()) postBox(form, eid, ok);
+      });
+    }
   });
 }
 
@@ -1097,6 +1194,11 @@ export async function startTournament() {
         <h3>Import the popup</h3>
         <p>Public JSON only — teams, GameChanger links, pool records, and Sunday scores.</p>
       </a>
+      <a class="choice" data-link href="/directors/duplicate">
+        <p class="muted">Copy a weekend</p>
+        <h3>Duplicate an existing tournament</h3>
+        <p>Reuse last year’s fields, teams, and unpaid schedule. Scores, boxes, and family contacts stay behind.</p>
+      </a>
     </section>
   `);
 }
@@ -1130,6 +1232,7 @@ export async function directorImportPopup() {
       document.getElementById("popup-err").textContent = await res.text();
       return;
     }
+    flashSaved("Popup imported");
     goEvent("/t/keystone-clash-2026");
   });
 }
@@ -1227,6 +1330,7 @@ export async function eventInfo(slug) {
     </section>
     ${rainBanner(board.event)}
     ${fieldsBlock(board.event, board.fields)}
+    ${photoGallery(board.photos || [])}
     ${guidelinesBlock(board.event)}
     ${local ? `<section class="card infomap">
       <h2>Parking</h2>
@@ -1258,12 +1362,178 @@ export async function eventInfo(slug) {
   `);
 }
 
+function dropUnusedPins(fd) {
+  if (fd.get("pin_set") !== "on") {
+    fd.delete("lat");
+    fd.delete("lng");
+  }
+  for (const key of [...fd.keys()]) {
+    if (!key.startsWith("field_pin_set_")) continue;
+    if (fd.get(key) === "on") continue;
+    const i = key.slice("field_pin_set_".length);
+    fd.delete("field_lat_" + i);
+    fd.delete("field_lng_" + i);
+  }
+  return fd;
+}
+
 function packGuidelines(form) {
-  const fd = new FormData(form);
+  const fd = dropUnusedPins(new FormData(form));
   for (const k of ["require_insurance", "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert"]) {
     fd.set(k, form.querySelector(`[name="${k}"]`)?.checked ? "true" : "false");
   }
+  const ages = [...form.querySelectorAll("[name=age_group]:checked")].map((el) => el.value);
+  if (ages.length) {
+    fd.set("age_groups", JSON.stringify(ages));
+    fd.set("ages", ages.join("/"));
+  }
+  if (form.querySelector("[name=age_class]")) fd.set("age_class", form.querySelector("[name=age_class]").value || "");
+  if (form.querySelector("[name=age_split]")) fd.set("age_split", form.querySelector("[name=age_split]").value || "false");
+  fd.set("tiebreak_explicit", "true");
+  form.querySelectorAll(".tiebreak-order").forEach((list) => {
+    const keys = [...list.querySelectorAll("[data-tiebreak]")].map((el) => el.value);
+    if (!keys.length) return;
+    if (list.dataset.pool) fd.set("pool_tiebreak_" + list.dataset.pool, keys.join(","));
+    else fd.set("tiebreak_order", keys.join(","));
+  });
   return fd;
+}
+
+function setupAgeFields(ev = {}) {
+  const picked = (ev.age_groups && ev.age_groups.ages)
+    || String(ev.ages || "").toUpperCase().match(/6U|8U|10U|11U|12U|14U|16U|18U/g)
+    || ["10U"];
+  const klass = ev.age_class || (ev.age_groups && ev.age_groups.class) || "";
+  const split = ev.age_split || (ev.age_groups && ev.age_groups.split);
+  const ages = ["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"];
+  return `
+    <fieldset class="age-picks">
+      <legend>Age groups</legend>
+      <p class="muted">Check every age this weekend hosts. Combining 11U and 12U-C stays one division. The host does not invent a pool per age — you name pools when teams sign up.</p>
+      <div class="age-checks">
+        ${ages.map((a) => `<label class="check"><input type="checkbox" name="age_group" value="${a}" ${picked.includes(a) ? "checked" : ""}> ${a}</label>`).join("")}
+      </div>
+      <div class="form-grid two">
+        <label>Class
+          <select name="age_class">
+            <option value="" ${!klass ? "selected" : ""}>No class</option>
+            ${["A", "B", "C"].map((c) => `<option value="${c}" ${String(klass).toUpperCase() === c ? "selected" : ""}>${c}</option>`).join("")}
+          </select>
+        </label>
+        <label>Divisions
+          <select name="age_split">
+            <option value="false" ${!split ? "selected" : ""}>Combine into one division</option>
+            <option value="true" ${split ? "selected" : ""}>Split each age (you still name the pools)</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>`;
+}
+
+const TIEBREAK_OPTS = [
+  ["record", "Record (win% — a tie counts as half)"],
+  ["h2h", "Head-to-head (2-team ties, or a finished group)"],
+  ["ra", "Fewest runs allowed"],
+  ["diff", "Run differential"],
+  ["rs", "Most runs scored"],
+];
+
+function tiebreakItem(key, i, total) {
+  const label = TIEBREAK_OPTS.find((row) => row[0] === key)?.[1] || key;
+  return `<li>
+    <input type="hidden" data-tiebreak value="${escapeHtml(key)}">
+    <span class="tb-n">${i + 1}.</span>
+    <span>${escapeHtml(label)}</span>
+    <button type="button" class="btn ghost tb-up"${i === 0 ? " disabled" : ""}>Up</button>
+    <button type="button" class="btn ghost tb-down"${i === total - 1 ? " disabled" : ""}>Down</button>
+    <button type="button" class="btn ghost tb-remove">Remove</button>
+  </li>`;
+}
+
+function tiebreakListMarkup(order, pool) {
+  const keys = order && order.length ? order : ["record", "h2h", "ra", "diff", "rs"];
+  const unused = TIEBREAK_OPTS.filter((row) => !keys.includes(row[0]));
+  return `
+    <ol class="tiebreak-order" ${pool ? `data-pool="${escapeHtml(pool)}" id="tiebreak-order-${escapeHtml(pool)}"` : `id="tiebreak-order"`}>
+      ${keys.map((key, i) => tiebreakItem(key, i, keys.length)).join("")}
+    </ol>
+    <div class="tb-add">
+      <select data-tb-add>
+        <option value="">Add a step</option>
+        ${unused.map(([k, l]) => `<option value="${k}">${escapeHtml(l)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="tb-presets">
+      <button type="button" class="btn ghost" data-tb-preset="record,h2h,ra,diff,rs">Standard</button>
+      <button type="button" class="btn ghost" data-tb-preset="h2h,record,ra,diff,rs">Head to head first</button>
+      <button type="button" class="btn ghost" data-tb-preset="record,ra,diff,rs,h2h">Runs first</button>
+    </div>`;
+}
+
+function setupTiebreakFields(ev = {}) {
+  const order = (ev.tiebreak && ev.tiebreak.order) || ["record", "h2h", "ra", "diff", "rs"];
+  const pools = ev.pools || [];
+  return `
+    <details class="setup-block" open>
+      <summary>Pool tiebreak order</summary>
+      <p class="muted">Default for every pool: record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Remove a step if this weekend does not use it. Head-to-head is still skipped on a 3-team cycle or when the tied teams have not all played each other.</p>
+      ${tiebreakListMarkup(order)}
+      ${pools.length ? `<div class="pool-tiebreaks">${pools.map((p) => `
+        <details class="setup-block">
+          <summary>Pool ${escapeHtml(p.name)} — own order</summary>
+          ${tiebreakListMarkup((p.tiebreak && p.tiebreak.order) || order, p.name)}
+        </details>`).join("")}</div>` : ""}
+    </details>`;
+}
+
+function bindTiebreakOrder(root) {
+  const paint = (list) => {
+    const used = [...list.querySelectorAll("[data-tiebreak]")].map((el) => el.value);
+    [...list.children].forEach((el, i) => {
+      const n = el.querySelector(".tb-n");
+      if (n) n.textContent = (i + 1) + ".";
+      const up = el.querySelector(".tb-up");
+      const down = el.querySelector(".tb-down");
+      if (up) up.disabled = i === 0;
+      if (down) down.disabled = i === list.children.length - 1;
+    });
+    const add = list.parentElement?.querySelector("[data-tb-add]");
+    if (add) {
+      const unused = TIEBREAK_OPTS.filter((row) => !used.includes(row[0]));
+      add.innerHTML = `<option value="">Add a step</option>` + unused.map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
+    }
+  };
+  root.querySelectorAll(".tiebreak-order").forEach((list) => {
+    paint(list);
+    list.addEventListener("click", (evnt) => {
+      const li = evnt.target.closest("li");
+      if (!li) return;
+      if (evnt.target.classList.contains("tb-up") && li.previousElementSibling) {
+        li.parentNode.insertBefore(li, li.previousElementSibling);
+      }
+      if (evnt.target.classList.contains("tb-down") && li.nextElementSibling) {
+        li.parentNode.insertBefore(li.nextElementSibling, li);
+      }
+      if (evnt.target.classList.contains("tb-remove") && list.children.length > 1) {
+        li.remove();
+      }
+      paint(list);
+    });
+    list.parentElement?.querySelector("[data-tb-add]")?.addEventListener("change", (evnt) => {
+      const key = evnt.target.value;
+      if (!key) return;
+      list.insertAdjacentHTML("beforeend", tiebreakItem(key, list.children.length, list.children.length + 1));
+      evnt.target.value = "";
+      paint(list);
+    });
+    list.parentElement?.querySelectorAll("[data-tb-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const keys = String(btn.dataset.tbPreset || "").split(",").filter(Boolean);
+        list.innerHTML = keys.map((key, i) => tiebreakItem(key, i, keys.length)).join("");
+        paint(list);
+      });
+    });
+  });
 }
 
 export async function directorNative() {
@@ -1275,10 +1545,8 @@ export async function directorNative() {
     </section>
     <section class="card">
       <form class="form wide" id="native-form">
-        <div class="form-grid two">
-          <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
-          <label>Age group <input name="ages" value="10U"></label>
-        </div>
+        <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
+        ${setupAgeFields({ age_groups: { ages: ["10U"] } })}
         <label>Slug (optional) <input name="slug" placeholder="labor-day-classic"></label>
         ${setupLocationFields({ format: "pool-to-bracket" })}
         ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
@@ -1287,6 +1555,7 @@ export async function directorNative() {
       </form>
     </section>`);
   bindFieldRows(eventRoot(), 2, {});
+  bindTiebreakOrder(eventRoot());
   document.getElementById("native-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = packGuidelines(ev.target);
@@ -1302,6 +1571,7 @@ export async function directorNative() {
       return;
     }
     const out = await res.json();
+    flashSaved("Tournament saved");
     goEvent("/t/" + out.event.slug + "/admin");
   });
 }
@@ -1318,10 +1588,8 @@ export async function directorLinkTm() {
         <label>Tourney Machine URL
           <input name="tm_url" type="url" required placeholder="https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=">
         </label>
-        <div class="form-grid two">
-          <label>Name override (optional) <input name="name" placeholder="Public page title if blank"></label>
-          <label>Age group <input name="ages" value="10U"></label>
-        </div>
+        <label>Name override (optional) <input name="name" placeholder="Public page title if blank"></label>
+        ${setupAgeFields({ age_groups: { ages: ["10U"] } })}
         ${setupLocationFields({ format: "imported" })}
         ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
         <button class="btn" type="submit">Link and open signup</button>
@@ -1329,6 +1597,7 @@ export async function directorLinkTm() {
       </form>
     </section>`);
   bindFieldRows(eventRoot(), 2, {});
+  bindTiebreakOrder(eventRoot());
   document.getElementById("tm-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const fd = packGuidelines(ev.target);
@@ -1344,6 +1613,59 @@ export async function directorLinkTm() {
       return;
     }
     const out = await res.json();
+    flashSaved("Tournament saved");
+    goEvent("/t/" + out.event.slug + "/admin");
+  });
+}
+
+export async function directorDuplicate() {
+  if (!directorGate()) return;
+  const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
+  eventRoot().innerHTML = eventChrome(null, "create", `
+    <section class="page-head">
+      <h1>Duplicate a tournament</h1>
+      <p class="muted">Copies fields, clubs, and the unpaid schedule. Scores, box files, packets, and family emails stay on the original.</p>
+    </section>
+    <section class="card">
+      <form class="form wide" id="dup-form">
+        <label>Copy from
+          <select name="source" required>
+            <option value="">Choose a weekend</option>
+            ${events.map((row) => `<option value="${escapeHtml(row.slug)}"${row.slug === new URLSearchParams(location.search).get("from") ? " selected" : ""}>${escapeHtml(row.name)}</option>`).join("")}
+          </select>
+        </label>
+        <div class="form-grid two">
+          <label>New name <input name="name" required placeholder="Harbor Eight 2027"></label>
+          <label>New slug (optional) <input name="slug" placeholder="harbor-eight-2027"></label>
+          <label>First day <input name="start" type="date"></label>
+          <label>Last day <input name="end" type="date"></label>
+        </div>
+        <button class="btn" type="submit">Duplicate weekend</button>
+        <p class="error" id="dup-err" hidden></p>
+      </form>
+    </section>`);
+  document.getElementById("dup-form").addEventListener("submit", async (evnt) => {
+    evnt.preventDefault();
+    const fd = new FormData(evnt.target);
+    const source = String(fd.get("source") || "");
+    if (!source) return;
+    const res = await fetch("/api/events/" + encodeURIComponent(source) + "/duplicate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({
+        name: fd.get("name"),
+        slug: fd.get("slug"),
+        start: fd.get("start"),
+        end: fd.get("end"),
+      }),
+    });
+    if (!res.ok) {
+      document.getElementById("dup-err").hidden = false;
+      document.getElementById("dup-err").textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    flashSaved("Tournament copied");
     goEvent("/t/" + out.event.slug + "/admin");
   });
 }
@@ -1408,6 +1730,7 @@ export async function eventSignup(slug) {
       document.getElementById("signup-err").textContent = await res.text();
       return;
     }
+    flashSaved("Team saved");
     goEvent("/t/" + slug);
   });
 }
@@ -1448,6 +1771,89 @@ function bindAdminRail(root) {
   setPane(adminPaneFromHash());
 }
 
+function bindVenuePhotos(slug, photos, showErr) {
+  const form = document.getElementById("photo-form");
+  if (form) {
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      try {
+        const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/photos", {
+          method: "POST",
+          headers: { ...authHeader() },
+          body: new FormData(evnt.target),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved("Photo queued for review");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  }
+  eventRoot().querySelectorAll("[data-photo-pub]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/photos/" + encodeURIComponent(btn.dataset.photoPub) + "/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ public: btn.dataset.public !== "false" }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved(btn.dataset.public === "false" ? "Photo unpublished" : "Photo published");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
+  eventRoot().querySelectorAll("[data-photo-up]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const ids = [...eventRoot().querySelectorAll("#photo-review [data-photo-id]")].map((el) => el.dataset.photoId);
+      const i = ids.indexOf(btn.dataset.photoUp);
+      if (i < 1) return;
+      [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
+      try {
+        const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/photos/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved("Photo order saved");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
+}
+
+function venuePhotoDesk(slug, photos) {
+  const rows = photos || [];
+  return `
+    <div class="venue-photo-desk">
+      <h3>Field and parking photos</h3>
+      <p class="muted">Fields and facilities only — no players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload.</p>
+      <form class="form wide" id="photo-form">
+        <label>Photo <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+        <label>Caption <input name="caption" maxlength="200" placeholder="East lot off Meadow St"></label>
+        <label>Kind
+          <select name="kind">
+            <option value="entrance">Entrance</option>
+            <option value="parking">Parking</option>
+            <option value="layout">Layout</option>
+            <option value="field" selected>Field</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <button class="btn" type="submit">Upload for review</button>
+      </form>
+      ${rows.length ? `<ol class="photo-review" id="photo-review">${rows.map((p, i) => `<li data-photo-id="${escapeHtml(p.id)}">
+        ${p.url ? `<img src="${escapeHtml(p.url)}" alt="">` : ""}
+        <div>
+          <b>${escapeHtml(p.caption || p.kind || "Photo")}</b>
+          <span class="badge ${p.public ? "approved" : "incomplete"}">${p.public ? "published" : "unpublished"}</span>
+        </div>
+        <button type="button" class="btn ghost" data-photo-pub="${escapeHtml(p.id)}" data-public="${p.public ? "false" : "true"}">${p.public ? "Unpublish" : "Publish"}</button>
+        ${i ? `<button type="button" class="btn ghost" data-photo-up="${escapeHtml(p.id)}">Earlier</button>` : ""}
+      </li>`).join("")}</ol>` : `<p class="empty">No field photos yet.</p>`}
+    </div>`;
+}
+
 export async function eventAdmin(slug) {
   if (!directorGate()) return;
   const plan = await fetch("/api/events/" + encodeURIComponent(slug) + "/plan", {
@@ -1460,6 +1866,7 @@ export async function eventAdmin(slug) {
   const fields = plan.fields || ev.fields || [];
   const games = plan.schedule || [];
   const teams = plan.teams || [];
+  const docToken = await fileToken();
   const showErr = async (err) => {
     const box = document.getElementById("admin-err");
     box.hidden = false;
@@ -1502,6 +1909,7 @@ export async function eventAdmin(slug) {
             <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
             <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
             <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+            <button class="btn ghost" id="duplicate-event" type="button">Duplicate this weekend</button>
             ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
           </div>
           <ul class="admin-jump">
@@ -1515,6 +1923,7 @@ export async function eventAdmin(slug) {
           <h2>Tournament setup</h2>
           <p class="muted">Bracket type, governing body, pitch cap, and what teams must upload.</p>
           <form class="form wide" id="guide-form">
+            <div class="setup-block">${setupAgeFields(ev)}</div>
             <div class="setup-block">${setupFormatFields(ev)}</div>
             ${setupGuidelinesFields(ev)}
             <button class="btn" type="submit">Save tournament setup</button>
@@ -1522,32 +1931,34 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="venue" hidden>
           <h2>Venue setups</h2>
-          <p class="muted">Park, GPS, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
+          <p class="muted">Park, street address, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
           <form class="form wide" id="fields-form">
             ${setupVenueFields(ev, fields.length ? fields : [{}, {}])}
             <button class="btn" type="submit">Save venue</button>
           </form>
+          ${venuePhotoDesk(slug, plan.photos || [])}
         </section>
         <section class="card" data-admin-pane="scheduler" hidden>
           <h2>Scheduler</h2>
           <p class="muted">Round-robin inside each pool. A diamond is only used while it is open that day.</p>
           <form class="form wide" id="auto-form">
             <div class="form-grid two">
-              <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml([ev.start, ev.end].filter(Boolean).join("\n") || "")}</textarea></label>
-              <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="2"></label>
+              <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml((ev.scheduler && ev.scheduler.days && ev.scheduler.days.length ? ev.scheduler.days : [ev.start, ev.end].filter(Boolean)).join("\n") || "")}</textarea></label>
+              <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="${escapeHtml(String((ev.scheduler && ev.scheduler.games_per_team) || 2))}"></label>
               <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
               <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
             </div>
-            <label class="check"><input type="checkbox" name="consolation" checked> If you draw a bracket, include consolation games</label>
-            <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed pool games</label>
-            <label class="check"><input type="checkbox" name="draw_bracket"> Also draw empty bracket slots now</label>
+            <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> If you draw a bracket, include consolation games</label>
+            <label class="check"><input type="checkbox" name="replace"${!ev.scheduler || ev.scheduler.replace !== false ? " checked" : ""}> Replace unplayed pool games</label>
+            <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also draw empty bracket slots now</label>
             <div class="actions">
               <button class="btn" type="submit">Build pool schedule</button>
               <button class="btn ghost" id="build-bracket" type="button">Draw bracket from standings</button>
             </div>
           </form>
           <h3>Games by field</h3>
-          ${games.length ? table(["When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
+          ${games.length ? table(["Game", "When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
+            <td>${gameNoCell(g)}</td>
             <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
                 <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
             <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
@@ -1579,7 +1990,7 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="rain" hidden>
           <h2>Rain notice</h2>
-          <p class="muted">Posts a public banner and can delay times, move a day, postpone games, or close a wet field.</p>
+          <p class="muted">Posts a public banner and emails each unique coach address when PocketBase Admin mail is configured. Failures are logged; the notice still saves.</p>
           ${rainBanner(ev)}
           <form class="form wide" id="rain-form">
             <label>Status
@@ -1619,7 +2030,7 @@ export async function eventAdmin(slug) {
               <td>${escapeHtml(t.name)}</td>
               <td><span class="badge ${p.status || "incomplete"}">${escapeHtml(p.status || "incomplete")}</span></td>
               <td>${(p.missing || []).map((k) => escapeHtml(k)).join(", ") || "—"}</td>
-              <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(d.url)}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
+              <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(withFileToken(d.url, docToken))}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
             </tr>`;
           }))}
           ${rosterBlock(teams)}
@@ -1639,6 +2050,8 @@ export async function eventAdmin(slug) {
   `);
   bindAdminRail(eventRoot());
   bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
+  bindTiebreakOrder(eventRoot());
+  bindVenuePhotos(slug, plan.photos || [], showErr);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 
   document.getElementById("fields-form").addEventListener("submit", async (evnt) => {
@@ -1647,33 +2060,44 @@ export async function eventAdmin(slug) {
       await fetch("/api/events/" + encodeURIComponent(slug) + "/settings", {
         method: "POST",
         headers: { ...authHeader() },
-        body: new FormData(evnt.target),
+        body: dropUnusedPins(new FormData(evnt.target)),
       }).then(async (r) => { if (!r.ok) throw new Error(await r.text()); });
+      flashSaved("Venue saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
+  function schedulerBody(fd) {
+    return {
+      days: String(fd.get("days") || ""),
+      games_per_team: Number(fd.get("games_per_team") || 2),
+      start_time: fd.get("start_time") || "08:00",
+      end_time: fd.get("end_time") || "18:00",
+      hours_start: fd.get("start_time") || "08:00",
+      hours_end: fd.get("end_time") || "18:00",
+      consolation: fd.get("consolation") === "on",
+      replace: fd.get("replace") === "on",
+      draw_bracket: fd.get("draw_bracket") === "on",
+      format: ev.format || "pool-to-bracket",
+    };
+  }
   document.getElementById("auto-form").addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
-    const fd = new FormData(evnt.target);
+    const body = schedulerBody(new FormData(evnt.target));
     try {
-      const out = await adminPost(slug, "/schedule/auto", {
-        days: String(fd.get("days") || ""),
-        games_per_team: Number(fd.get("games_per_team") || 2),
-        start_time: fd.get("start_time") || "08:00",
-        end_time: fd.get("end_time") || "18:00",
-        consolation: fd.get("consolation") === "on",
-        replace: fd.get("replace") === "on",
-        draw_bracket: fd.get("draw_bracket") === "on",
-        format: ev.format || "pool-to-bracket",
-      });
+      await adminPost(slug, "/settings", body);
+      const out = await adminPost(slug, "/schedule/auto", body);
       note("Scheduled " + out.games + " game(s) on " + (out.fields || []).join(", ") + (out.leftover ? " · " + out.leftover + " leftover" : ""));
+      flashSaved("Pool schedule saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
   document.getElementById("build-bracket").addEventListener("click", async () => {
+    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
     try {
-      const out = await adminPost(slug, "/bracket/build", { consolation: true, replace: true, format: ev.format || "pool-to-bracket" });
+      await adminPost(slug, "/settings", body);
+      const out = await adminPost(slug, "/bracket/build", body);
       note("Bracket drawn · " + out.games + " games from " + out.seeds + " seeds");
+      flashSaved("Bracket saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1693,6 +2117,7 @@ export async function eventAdmin(slug) {
         postpone: fd.get("postpone") === "on",
       });
       note("Rain posted · shifted " + out.shifted + " · moved " + out.moved + " · postponed " + out.postponed + " · reassigned " + out.reassigned);
+      flashSaved("Rain notice saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1701,6 +2126,7 @@ export async function eventAdmin(slug) {
     const data = Object.fromEntries(new FormData(evnt.target));
     try {
       await adminPost(slug, "/schedule/game", data);
+      flashSaved("Game added");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1719,6 +2145,7 @@ export async function eventAdmin(slug) {
       try {
         await adminPost(slug, "/schedule/" + id, body);
         note("Game updated");
+        flashSaved("Game saved");
       } catch (err) { showErr(err); }
     });
   });
@@ -1733,6 +2160,7 @@ export async function eventAdmin(slug) {
       });
       try {
         await adminPost(slug, "/schedule/" + id + "/score", body);
+        flashSaved("Score saved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
@@ -1757,6 +2185,7 @@ export async function eventAdmin(slug) {
           body: packGuidelines(evnt.target),
         });
         if (!res.ok) throw new Error(await res.text());
+        flashSaved("Tournament setup saved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
@@ -1765,10 +2194,17 @@ export async function eventAdmin(slug) {
     btn.addEventListener("click", async () => {
       try {
         await adminPost(slug, "/docs/" + btn.dataset.approve + "/review", { status: "approved" });
+        flashSaved("Packet approved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
   });
+  const dupBtn = document.getElementById("duplicate-event");
+  if (dupBtn) {
+    dupBtn.addEventListener("click", () => {
+      goEvent("/directors/duplicate?from=" + encodeURIComponent(ev.slug));
+    });
+  }
   document.getElementById("sync-now").addEventListener("click", async (btnEv) => {
     const btn = btnEv.currentTarget;
     btn.disabled = true;
@@ -1782,6 +2218,7 @@ export async function eventAdmin(slug) {
   document.getElementById("toggle-signup").addEventListener("click", async () => {
     try {
       await adminPost(slug, "/settings", { signup_open: !ev.signup_open });
+      flashSaved(ev.signup_open ? "Signup closed" : "Signup saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1841,6 +2278,7 @@ export async function directorImport() {
       document.getElementById("import-err").textContent = await res.text();
       return;
     }
+    flashSaved("Schedule published");
     goEvent("/t/" + data.event_slug);
   });
 }

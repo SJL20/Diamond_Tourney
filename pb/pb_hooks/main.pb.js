@@ -139,6 +139,27 @@ routerAdd("POST", "/api/account/register", (e) => {
   return e.json(200, host.registerAccount(e.app, body));
 });
 
+routerAdd("GET", "/api/account/verify", (e) => {
+  const host = require(__hooks + "/host.js");
+  const q = e.requestInfo().query || {};
+  return e.json(200, host.verifyAccount(e.app, q.token || ""));
+});
+
+routerAdd("POST", "/api/account/verify", (e) => {
+  const host = require(__hooks + "/host.js");
+  const body = e.requestInfo().body || {};
+  const q = e.requestInfo().query || {};
+  return e.json(200, host.verifyAccount(e.app, body.token || q.token || ""));
+});
+
+routerAdd("GET", "/api/geo/lookup", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const q = (e.requestInfo().query || {}).q || "";
+  const hit = require(__hooks + "/geo.js").geocodeAddress(q);
+  return e.json(200, hit ? { found: true, lat: hit.lat, lng: hit.lng, label: hit.label } : { found: false });
+}, $apis.requireAuth());
+
 routerAdd("GET", "/api/account/home", (e) => {
   const host = require(__hooks + "/host.js");
   if (!e.auth) throw new UnauthorizedError("login required");
@@ -193,6 +214,15 @@ routerAdd("POST", "/api/events/create", (e) => {
   return e.json(200, result);
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/duplicate", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const auth = sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const result = host.duplicateEvent(e.app, event, e.requestInfo().body || {}, auth);
+  return e.json(200, result);
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/signup", (e) => {
   const host = require(__hooks + "/host.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
@@ -212,7 +242,7 @@ routerAdd("POST", "/api/events/{slug}/signup", (e) => {
     throw new BadRequestError("Upload the required team documents: " + packet.required_labels.join(", "));
   }
   const out = host.teamJson(rec);
-  out.packet = host.packetSummary(e.app, event, rec);
+  out.packet = host.packetSummary(e.app, event, rec, host.canSeeTeamPacket(event, rec, e.auth));
   return e.json(200, { team: out, event: event.get("slug") });
 });
 
@@ -226,7 +256,10 @@ routerAdd("POST", "/api/events/{slug}/docs", (e) => {
   const team = e.app.findRecordById("event_teams", body.team_id || body.event_team);
   const files = host.uploaded(e, "file") || host.uploaded(e, body.kind);
   const doc = host.saveTeamDoc(e.app, event, team, body, files, e.auth);
-  return e.json(200, { doc: doc, packet: host.packetSummary(e.app, event, team) });
+  return e.json(200, {
+    doc: doc,
+    packet: host.packetSummary(e.app, event, team, host.canSeeTeamPacket(event, team, e.auth)),
+  });
 });
 
 routerAdd("POST", "/api/events/{slug}/docs/{id}/review", (e) => {
@@ -269,7 +302,7 @@ routerAdd("GET", "/api/events/{slug}/roster", (e) => {
   if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
   return e.json(200, {
     event: host.eventJson(event, e.app),
-    teams: host.publicRoster(e.app, event),
+    teams: host.publicRoster(e.app, event, e.auth),
   });
 });
 
@@ -398,6 +431,34 @@ routerAdd("POST", "/api/events/{slug}/rain", (e) => {
   return e.json(200, schedule.rainUpdate(e.app, event, e.requestInfo().body || {}));
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/photos", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const photos = require(__hooks + "/photos.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const files = host.uploaded(e, "image") || host.uploaded(e, "file") || host.uploaded(e, "photo");
+  return e.json(200, { photo: photos.savePhoto(e.app, event, e.requestInfo().body || {}, files, e.auth) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/photos/{id}/publish", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const photos = require(__hooks + "/photos.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const body = e.requestInfo().body || {};
+  return e.json(200, { photo: photos.publishPhoto(e.app, event, e.request.pathValue("id"), body.public) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/photos/reorder", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const photos = require(__hooks + "/photos.js");
+  sb.requireRole(e, ["region_admin", "event_td"]);
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const body = e.requestInfo().body || {};
+  return e.json(200, { photos: photos.reorderPhotos(e.app, event, body.ids || body.order) });
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/bracket/swap", (e) => {
   const sb = require(__hooks + "/softball.js");
   const schedule = require(__hooks + "/schedule.js");
@@ -420,11 +481,15 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
   sb.requireRole(e, ["region_admin", "event_td"]);
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   const body = e.requestInfo().body || {};
+  const prefs = schedule.saveScheduler(e.app, event, body);
   if (body.format) {
     event.set("format", body.format);
     e.app.save(event);
   }
-  return e.json(200, schedule.buildBracket(e.app, event, body));
+  return e.json(200, schedule.buildBracket(e.app, event, {
+    consolation: prefs.consolation,
+    replace: body.replace !== false,
+  }));
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/bracket/{id}", (e) => {
@@ -529,6 +594,16 @@ onRecordCreateRequest((e) => {
   if (role === "region_admin" || role === "bot" || !role) e.record.set("role", "event_td");
   e.next();
 }, "users");
+
+onRecordCreateRequest((e) => {
+  if (!e.hasSuperuserAuth()) e.record.set("public", false);
+  e.next();
+}, "venue_photos");
+
+onRecordAfterCreateSuccess((e) => {
+  try { require(__hooks + "/photos.js").stripSavedImage(e.app, e.record); } catch (err) {}
+  if (e.next) e.next();
+}, "venue_photos");
 
 onRecordUpdateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();
