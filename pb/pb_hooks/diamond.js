@@ -56,11 +56,17 @@ const TIEBREAK_LABELS = {
 function decodeJsonField(raw) {
   if (raw == null || raw === "") return null;
   if (typeof raw === "string") {
-    try { return JSON.parse(raw); } catch (err) { return null; }
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+      try { return JSON.parse(trimmed); } catch (err) { return raw; }
+    }
+    // Director CSV ("record,ra,h2h") is not JSON. Keep the string so parseTiebreak can split it.
+    return raw;
   }
   if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "number") {
     try {
-      return JSON.parse(require(__hooks + "/softball.js").bytesToString(raw));
+      return decodeJsonField(require(__hooks + "/softball.js").bytesToString(raw));
     } catch (err) { return null; }
   }
   return raw;
@@ -117,7 +123,8 @@ function saveTiebreak(event, body) {
   if (body.tiebreak_order == null && body.tiebreak == null) return;
   const raw = body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak;
   const forceExplicit = body.tiebreak_explicit === true || body.tiebreak_explicit === "true" || body.tiebreak_explicit === "1";
-  const order = parseTiebreak(forceExplicit ? { order: raw, explicit: true } : raw);
+  // Wrap CSV so decodeJsonField keeps the string and parseTiebreak can split it.
+  const order = parseTiebreak(forceExplicit ? { order: raw, explicit: true } : { order: raw });
   event.set("tiebreak", { order: order, explicit: true });
 }
 

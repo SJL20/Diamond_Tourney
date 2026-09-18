@@ -278,7 +278,7 @@ class DerekFixesLiveTests(unittest.TestCase):
     def test_duplicate_skips_scores_and_family_email(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
         src = "dup-src-" + uuid.uuid4().hex[:8]
-        request(BASE, "POST", "/api/events/create", td, {
+        created = request(BASE, "POST", "/api/events/create", td, {
             "source": "native",
             "name": "Original Weekend",
             "slug": src,
@@ -288,6 +288,7 @@ class DerekFixesLiveTests(unittest.TestCase):
             "tiebreak_order": "record,ra,h2h,diff,rs",
             "fields": [{"name": "East 1"}],
         })
+        self.assertEqual(created["event"]["tiebreak"]["order"][:2], ["record", "ra"])
         family = f"parent.{uuid.uuid4().hex[:8]}@family.test"
         request(BASE, "POST", f"/api/events/{src}/signup", td, {
             "team_name": "Oaks FAKE",
