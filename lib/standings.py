@@ -228,10 +228,9 @@ def sort_group(
     split = len(buckets) > 1
     for value in sorted(buckets.keys(), reverse=True):
         bucket = buckets[value]
-        if reasons is not None and split:
+        if reasons is not None and split and len(bucket) == 1:
             label = _reason_label(crit, mode, suffix)
-            for team in bucket:
-                reasons.setdefault(team["id"], label)
+            reasons.setdefault(bucket[0]["id"], label)
         next_suffix = "" if split else suffix
         ranked.extend(sort_group(bucket, games, rest, reasons, next_suffix))
     return ranked

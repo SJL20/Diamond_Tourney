@@ -268,11 +268,8 @@ function sortGroup(teams, games, order, reasons, suffix) {
   const ranked = [];
   for (let i = 0; i < keys.length; i++) {
     const bucket = buckets[keys[i]].teams;
-    if (reasons && split) {
-      const label = reasonLabel(crit, mode, suffix);
-      for (let j = 0; j < bucket.length; j++) {
-        if (!reasons[bucket[j].id]) reasons[bucket[j].id] = label;
-      }
+    if (reasons && split && bucket.length === 1 && !reasons[bucket[0].id]) {
+      reasons[bucket[0].id] = reasonLabel(crit, mode, suffix);
     }
     ranked.push.apply(ranked, sortGroup(bucket, games, rest, reasons, split ? "" : suffix));
   }

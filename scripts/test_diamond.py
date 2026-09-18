@@ -105,7 +105,7 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("seed-why", event)
         self.assertIn("setupTiebreakFields", event)
         self.assertIn("directorDuplicate", event)
-        self.assertIn("/directors/duplicate", app)
+        self.assertIn("directors\\/duplicate", app)
         self.assertIn(".tiebreak-order", css)
 
     def test_match_card_starts_collapsed(self):

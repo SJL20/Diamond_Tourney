@@ -465,7 +465,9 @@ function createEvent(app, body, auth) {
   }
   if (auth) rec.set("created_by", auth.id);
   try {
-    require(__hooks + "/diamond.js").saveTiebreak(rec, body.tiebreak_order != null || body.tiebreak != null ? body : { tiebreak_order: "record,h2h,ra,diff,rs" });
+    const diamond = require(__hooks + "/diamond.js");
+    const supplied = body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak;
+    diamond.saveTiebreak(rec, supplied != null ? { tiebreak_order: supplied } : { tiebreak_order: "record,h2h,ra,diff,rs" });
   } catch (err) {
     rec.set("tiebreak", { order: ["record", "h2h", "ra", "diff", "rs"] });
   }
@@ -753,7 +755,12 @@ function duplicateEvent(app, source, body, auth) {
   rec.set("hours_start", source.get("hours_start") || "08:00");
   rec.set("hours_end", source.get("hours_end") || "18:00");
   rec.set("scheduler", source.get("scheduler") || null);
-  rec.set("tiebreak", source.get("tiebreak") || { order: ["record", "h2h", "ra", "diff", "rs"] });
+  try {
+    const diamond = require(__hooks + "/diamond.js");
+    rec.set("tiebreak", { order: diamond.parseTiebreak(source.get("tiebreak")) });
+  } catch (err) {
+    rec.set("tiebreak", { order: ["record", "h2h", "ra", "diff", "rs"] });
+  }
   const copied = [
     "governing_body", "governing_notes", "pitch_limit_mode", "pitch_limit_ip",
     "pitch_limit_pitches", "pitch_limit_notes", "game_length_minutes", "innings_cap",
