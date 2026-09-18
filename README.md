@@ -77,7 +77,8 @@ Lines land in the weekend leaders only when someone (bot or person) types them. 
 | `/t/{slug}/leaders` | Weekend leaders with the gates applied (min 8 AB, min 3.0 IP) |
 | `/t/{slug}/awards` | All-tournament team, printed Sunday on the field |
 | `/t/harbor-eight` | FAKE 8-team practice weekend — two pools, empty Sunday bracket, one coach login per club |
-| `/login`, `/register`, `/account` | Log in, create a director or team account, see the weekends you run |
+| `/login`, `/register`, `/forgot`, `/reset`, `/account` | Log in (including the PocketBase admin account), reset a password, see the weekends you run |
+| `/admin/events` | Site admin — hide a tournament from Find or delete it |
 | `/admin/teams` | Region admin club desk — team profiles, GameChanger link optional |
 | `/directors/new`, `/directors/link-tm`, `/directors/import` | The three doors: start it here, link a Tourney Machine page, paste a schedule you already have |
 
@@ -97,6 +98,7 @@ Keystone Clash 2026 is imported from the public popup. Directors can refresh it 
 
 | Role | Email | Password |
 |---|---|---|
+| PocketBase / site admin | admin@local.test | SoftballAdmin1! |
 | region admin | owner@local.test | RegionAdmin1! |
 | event director | td@local.test | EventTd1! |
 | Harbor Oaks coach (FAKE) | coach.oaks@local.test | CoachOaks1! |

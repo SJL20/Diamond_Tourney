@@ -82,6 +82,13 @@ function directorVerify(app, user, token) {
   return sendMail(app, user.email(), "Confirm your Diamond Tourney email", html, "verify_mail", "");
 }
 
+function passwordReset(app, email, token) {
+  const html = "<p>Reset the password for this Diamond Tourney login.</p>"
+    + "<p><a href=\"" + publicUrl("/reset?token=" + encodeURIComponent(token)) + "\">Choose a new password</a></p>"
+    + "<p>If you did not ask for this, you can ignore the email.</p>";
+  return sendMail(app, email, "Reset your Diamond Tourney password", html, "reset_mail", "");
+}
+
 function directorWelcome(app, user) {
   const html = "<p>Your director email is confirmed.</p>"
     + "<p><a href=\"" + publicUrl("/directors/new") + "\">Open a tournament</a></p>";
@@ -121,6 +128,7 @@ module.exports = {
   sendMail: sendMail,
   signupConfirmation: signupConfirmation,
   directorVerify: directorVerify,
+  passwordReset: passwordReset,
   directorWelcome: directorWelcome,
   rainNotice: rainNotice,
   randomToken: randomToken,

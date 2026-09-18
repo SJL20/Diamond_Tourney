@@ -306,6 +306,24 @@ function seasonTables(app, teamId) {
   return { hitting: hitting, pitching: pitching, record: rebuildTeamRecord(app, teamId) };
 }
 
+function isSiteAdmin(auth) {
+  if (!auth) return false;
+  try { if (auth.isSuperuser()) return true; } catch (err) {}
+  return auth.get("role") === "region_admin";
+}
+
+// Registration hands out event_td. That role lets someone create a weekend.
+// It is not permission to run someone else's.
+function isEventOwner(event, auth) {
+  if (!auth || !event) return false;
+  const creator = event.get("created_by");
+  return !!(creator && creator === auth.id);
+}
+
+function isEventAdmin(event, auth) {
+  return isSiteAdmin(auth) || isEventOwner(event, auth);
+}
+
 function requireRole(e, roles) {
   const auth = e.auth;
   if (!auth) throw new UnauthorizedError("login required");
@@ -314,6 +332,20 @@ function requireRole(e, roles) {
     throw new ForbiddenError("role not allowed");
   }
   return auth;
+}
+
+function requireEventAdmin(e, event) {
+  const auth = e.auth;
+  if (!auth) throw new UnauthorizedError("login required");
+  if (isEventAdmin(event, auth)) return auth;
+  throw new ForbiddenError("Only the director who created this tournament or a site admin can do that.");
+}
+
+function requireEventAdminOrBot(e, event) {
+  const auth = e.auth;
+  if (!auth) throw new UnauthorizedError("login required");
+  if (auth.get("role") === "bot" || isEventAdmin(event, auth)) return auth;
+  throw new ForbiddenError("Only a bot, the director who created this tournament, or a site admin can do that.");
 }
 
 module.exports = {
@@ -327,7 +359,12 @@ module.exports = {
   findPlayer: findPlayer,
   applyStaging: applyStaging,
   seasonTables: seasonTables,
+  isSiteAdmin: isSiteAdmin,
+  isEventOwner: isEventOwner,
+  isEventAdmin: isEventAdmin,
   requireRole: requireRole,
+  requireEventAdmin: requireEventAdmin,
+  requireEventAdminOrBot: requireEventAdminOrBot,
   notifyBotB: notifyBotB,
   rebuildTeamRecord: rebuildTeamRecord,
 };

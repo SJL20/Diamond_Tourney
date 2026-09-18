@@ -168,7 +168,7 @@ function teamDocs(app, teamId, withFiles) {
 // registration hands out that role, so it is not a trust boundary.
 function canSeeTeamPacket(event, team, auth) {
   if (!auth) return false;
-  if (auth.get("role") === "region_admin") return true;
+  if (require(__hooks + "/softball.js").isSiteAdmin(auth)) return true;
   const creator = event.get("created_by");
   if (creator && creator === auth.id) return true;
   if (team) {
@@ -599,7 +599,7 @@ function signupTeam(app, event, body, auth) {
   if (gcUrl && !isGameChangerUrl(gcUrl)) {
     throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
   }
-  const director = auth && (auth.get("role") === "event_td" || auth.get("role") === "region_admin");
+  const director = require(__hooks + "/softball.js").isEventAdmin(event, auth);
   const asDirector = director && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
   const team = upsertEventTeam(app, event, {
     name: name,
@@ -738,7 +738,7 @@ function verifyAccount(app, token) {
 }
 
 function searchEvents(app, q) {
-  const rows = app.findRecordsByFilter("events", "public = true", "-start", 80, 0);
+  const rows = app.findRecordsByFilter("events", "public = true && status != 'archived'", "-start", 80, 0);
   const needle = String(q || "").trim().toLowerCase();
   return rows.map(function (rec) { return eventJson(rec, app); }).filter(function (ev) {
     if (!needle) return true;
@@ -747,9 +747,11 @@ function searchEvents(app, q) {
 }
 
 function accountHome(app, auth) {
+  const siteAdmin = require(__hooks + "/softball.js").isSiteAdmin(auth);
   let created = [];
   try {
-    created = app.findRecordsByFilter("events", "created_by = {:u}", "-id", 80, 0, { u: auth.id }).map(function (rec) { return eventJson(rec, app); });
+    const filter = siteAdmin ? "" : "created_by = {:u}";
+    created = app.findRecordsByFilter("events", filter, "-id", 200, 0, { u: auth.id }).map(function (rec) { return eventJson(rec, app); });
   } catch (err) {}
   const joined = [];
   const seen = {};
@@ -778,12 +780,116 @@ function accountHome(app, auth) {
     user: {
       id: auth.id,
       email: auth.email(),
-      role: auth.get("role"),
-      display_name: auth.get("display_name") || "",
+      role: siteAdmin ? (auth.get("role") || "region_admin") : (auth.get("role") || ""),
+      display_name: auth.get("display_name") || (siteAdmin ? "Site admin" : ""),
+      site_admin: siteAdmin,
     },
     created: created,
     joined: joined,
   };
+}
+
+function listAdminEvents(app) {
+  return app.findRecordsByFilter("events", "", "-start", 400, 0).map(function (rec) {
+    return eventJson(rec, app);
+  });
+}
+
+function archiveEvent(app, event) {
+  event.set("status", "archived");
+  event.set("public", false);
+  event.set("signup_open", false);
+  app.save(event);
+  writeLog(app, event.id, "event", true, "Site admin removed " + event.get("slug") + " from the public board");
+  return eventJson(event, app);
+}
+
+function wipeByEvent(app, name, eventId) {
+  try {
+    const rows = app.findRecordsByFilter(name, "event = {:e}", "", 400, 0, { e: eventId });
+    for (let i = 0; i < rows.length; i++) app.delete(rows[i]);
+  } catch (err) {}
+}
+
+function deleteEvent(app, event, body) {
+  const slug = event.get("slug");
+  if (body.confirm !== true && body.confirm !== "true") {
+    throw new BadRequestError("Confirm the delete. This cannot be undone.");
+  }
+  if (String(body.slug || "") !== slug) {
+    throw new BadRequestError("Type the tournament slug to delete it.");
+  }
+  const eventId = event.id;
+  writeLog(app, eventId, "event", true, "Site admin deleted " + slug);
+  try {
+    const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "", 400, 0, { e: eventId });
+    for (let i = 0; i < teams.length; i++) {
+      try {
+        const docs = app.findRecordsByFilter("team_docs", "event_team = {:t}", "", 40, 0, { t: teams[i].id });
+        for (let j = 0; j < docs.length; j++) app.delete(docs[j]);
+      } catch (err) {}
+    }
+  } catch (err) {}
+  const children = [
+    "event_hitting", "event_pitching", "event_boxes", "event_schedule",
+    "bracket_games", "venue_photos", "sync_log", "event_teams", "pools", "fields",
+  ];
+  for (let i = 0; i < children.length; i++) wipeByEvent(app, children[i], eventId);
+  app.delete(event);
+  return { ok: true, slug: slug, deleted: true };
+}
+
+function requestPasswordReset(app, email) {
+  const addr = String(email || "").trim().toLowerCase();
+  if (!addr || addr.indexOf("@") === -1) return { ok: true };
+  const mail = require(__hooks + "/mail.js");
+  const token = mail.randomToken() + mail.randomToken();
+  let rec = null;
+  let collection = "users";
+  try { rec = app.findAuthRecordByEmail("users", addr); } catch (err) {}
+  if (!rec) {
+    try {
+      rec = app.findAuthRecordByEmail("_superusers", addr);
+      collection = "_superusers";
+    } catch (err) {}
+  }
+  if (!rec) return { ok: true };
+  if (collection === "users") {
+    rec.set("reset_token", token);
+    app.save(rec);
+  } else {
+    const row = new Record(app.findCollectionByNameOrId("login_resets"));
+    row.set("token", token);
+    row.set("collection", collection);
+    row.set("record_id", rec.id);
+    app.save(row);
+  }
+  try { mail.passwordReset(app, rec.email(), token); } catch (err) {}
+  return { ok: true };
+}
+
+function confirmPasswordReset(app, token, password) {
+  const key = String(token || "").trim();
+  const pass = String(password || "");
+  if (!key) throw new BadRequestError("That reset link is missing a token.");
+  if (pass.length < 8) throw new BadRequestError("Use a password of at least 8 characters.");
+  let rec = null;
+  try { rec = app.findFirstRecordByFilter("users", "reset_token = {:t}", { t: key }); } catch (err) {}
+  if (!rec) {
+    try {
+      const row = app.findFirstRecordByFilter("login_resets", "token = {:t}", { t: key });
+      rec = app.findRecordById(row.get("collection"), row.get("record_id"));
+      app.delete(row);
+    } catch (err) {}
+  }
+  if (!rec) throw new BadRequestError("That reset link is expired or already used.");
+  rec.set("password", pass);
+  rec.set("passwordConfirm", pass);
+  try {
+    if (rec.collection().name === "users") rec.set("reset_token", "");
+  } catch (err) {}
+  app.save(rec);
+  return { ok: true, email: rec.email() };
 }
 
 function syncGameChangerTeam(app, team) {
@@ -1078,6 +1184,11 @@ module.exports = {
   AGE_CHOICES: AGE_CHOICES,
   searchEvents: searchEvents,
   accountHome: accountHome,
+  listAdminEvents: listAdminEvents,
+  archiveEvent: archiveEvent,
+  deleteEvent: deleteEvent,
+  requestPasswordReset: requestPasswordReset,
+  confirmPasswordReset: confirmPasswordReset,
   listClubs: listClubs,
   saveClub: saveClub,
   applyGuidelines: applyGuidelines,

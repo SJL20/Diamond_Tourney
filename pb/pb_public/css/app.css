@@ -659,6 +659,24 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .muted-row { color: var(--muted); }
 
 .error { color: var(--loss); }
+.btn.danger { background: var(--loss); color: #fff; }
+.danger-zone {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+.inline-delete { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inline-delete input { min-width: 12rem; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 .empty {
   padding: 20px;
   color: var(--muted);

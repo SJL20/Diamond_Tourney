@@ -718,7 +718,7 @@ function publicBoard(app, event, auth) {
     })(),
     photos: (function () {
       try {
-        const director = auth && (auth.get("role") === "event_td" || auth.get("role") === "region_admin");
+        const director = require(__hooks + "/softball.js").isEventAdmin(event, auth);
         return require(__hooks + "/photos.js").listPhotos(app, eventId, !director);
       } catch (err) {
         return [];

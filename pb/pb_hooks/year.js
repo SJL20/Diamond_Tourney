@@ -60,7 +60,7 @@ function clubKey(app, eventTeam) {
 }
 
 function yearEvents(app, year) {
-  const all = app.findRecordsByFilter("events", "public = true", "name", 80, 0);
+  const all = app.findRecordsByFilter("events", "public = true && status != 'archived'", "name", 80, 0);
   return all.filter(function (ev) { return eventYear(ev, year) === String(year); });
 }
 

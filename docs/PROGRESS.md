@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly default-branch deploy after this merge) |
-| Tests | 52 unit/integration cases + 13 acceptance checks |
+| Tests | finding-1 ownership + admin-login coverage + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -55,38 +55,10 @@ Phases are from outline §10.
 
 Ranked by what would hurt most on a live weekend.
 
-### 1. Any account can administer any tournament — **open**
+### 1. Any account can administer any tournament — **closed**
 
-`/api/account/register` is public, and the server assigns every new account the
-`event_td` role. About twenty director routes guard on
-`requireRole(["region_admin", "event_td"])`, which that role satisfies. So a
-stranger can edit a tournament they have nothing to do with.
-
-Verified against the local server with a freshly registered account:
-
-```
-self-registered stranger.8cdd6161@nowhere.test
-  role assigned by the server: 'event_td'
-
-Attempts against keystone-clash-2026, an event this account has nothing to do with:
-  ALLOWED  change event settings          (venue became "STRANGER WAS HERE")
-  ALLOWED  post a rain notice             (public board read "STRANGER POSTED THIS")
-  ALLOWED  close someone else's signup
-  ALLOWED  read the stats inbox
-```
-
-The demo data was restored afterwards.
-
-On a live Saturday this is a stranger posting "games cancelled" on a real
-tournament's public board. The shape of the fix is to stop treating a role name
-as authority and check event ownership instead — `events.created_by`, plus a
-backfill for the seeded events, which currently have no owner. It touches every
-director route and its tests, which is why it is not folded into the packet
-privacy fix.
-
-Related, same root cause: `event_boxes` has `createRule` and `updateRule` of
-`@request.auth.id != ''` (`pb/pb_migrations/1700000012_game_scores.js`), so any
-account can attach or overwrite a box score on any game.
+See *Closed*. Director writes require `events.created_by` or site admin.
+`event_td` still lets a new account create a weekend of their own.
 
 ### 2. Keystone import stores zeros for numbers the popup never published — **open**
 
@@ -163,6 +135,13 @@ direct unit tests for the hook modules.
 
 ### Closed
 
+- ~~**Anyone with `event_td` could administer any tournament.**~~ Registration
+  still assigns that role so a new account can create a weekend. Director
+  writes now require `events.created_by` or site admin. REST collection writes
+  were locked the same way. Covered by
+  `AccountAndYearTests.test_stranger_event_td_cannot_run_someone_elses_weekend`.
+  Fixed in this branch.
+
 - ~~**Anyone could download a child's birth certificate.**~~ `GET
   /api/events/{slug}/roster` needed no credentials and returned
   `packet.docs[].url` for every team; `/plan` and `/event/{slug}/board` did the
@@ -191,13 +170,21 @@ worth answering before the next session.
 6. **New — finding 2:** for a weekend imported from a public popup that does not
    publish R, BB, SO, or ER, should the board show blanks or should those games
    stay out of the leaders entirely?
-7. **New — finding 1:** should a director be able to invite a co-director, or is
-   one owner per event enough? The answer changes the ownership check.
+7. ~~**finding 1:** one owner per event, plus site admin. No co-director invite.~~
 
 ## Session log
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — finding 1 plus admin login / forgot / remove
+
+Director routes and REST write rules now check `events.created_by` (or site
+admin). A self-registered `event_td` cannot change Keystone settings, post
+rain, read the inbox, or PATCH the events collection. They can still open
+their own weekend. PocketBase `/_/` admin signs in on `/login` as site admin.
+`/forgot` and `/reset` exist. Site admin can archive or delete a tournament
+after typing the slug; directors cannot.
 
 ### 2026-09-18 — land PRs #1–#6 and #4 on `main`
 
@@ -205,9 +192,17 @@ Merged the stacked product PRs onto `main` (packet privacy, Harbor Eight,
 collapsed bracket, standings/game numbers, Derek tiebreak + CSV persist,
 mail/ages/photos/per-pool tiebreak) plus the GameChanger public-page monitor
 from #4. Bots may poll stored public GC URLs (~5 min when live) through
-`GET /api/bot/gc-monitor`. No GC login, no unofficial API. Finding 1 is still
-open. Admin login / forgot-password / site-admin delete is **not** in this
-merge.
+`GET /api/bot/gc-monitor`. No GC login, no unofficial API.
+
+### 2026-09-18 — PocketBase admin login, forgot password, remove tournaments
+
+The public `/login` form tries the `users` collection first, then PocketBase
+`_superusers`. The `/_/` admin password (`admin@local.test` locally) is a site
+admin on the main site: account home, `/admin/events`, `/admin/teams`, and
+director desks. `/forgot` and `/reset` send a reset link when Admin SMTP is on;
+the API never says whether the email exists. Site admin can hide a weekend from
+Find (`status=archived`, `public=false`) or delete it after typing the slug.
+Directors cannot. Delete stays `region_admin` / superuser only.
 
 ### 2026-09-18 — Derek 1:16 / 1:19 live-review package
 
