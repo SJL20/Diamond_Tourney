@@ -846,6 +846,7 @@ function findBracketSlot(app, event, round, slot, flight) {
       { e: event.id, r: round, s: slot, f: fl },
     );
   } catch (err) {
+    if (fl) return null;
     try {
       return app.findFirstRecordByFilter(
         "bracket_games",

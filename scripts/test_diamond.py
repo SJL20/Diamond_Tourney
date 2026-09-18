@@ -2002,6 +2002,7 @@ class AdminTeamsBracketsTests(unittest.TestCase):
             "alt_email": f"mgr.{uuid.uuid4().hex[:6]}@local.test",
         })
         self.assertEqual(saved["team"]["name"], "Dugout Heat Renamed")
+        self.assertEqual(saved["team"]["slug"], "dugout-heat-renamed")
         self.assertEqual(saved["team"]["pool"], "C")
         self.assertEqual(saved["team"]["gamechanger_url"], "https://web.gc.com/team/dugout-heat")
         self.assertEqual(saved["team"]["contact"]["coach_phone"], phone)

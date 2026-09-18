@@ -675,7 +675,22 @@ function updateEventTeam(app, event, team, body, auth) {
     throw new ForbiddenError("Only this team's coach or the director can edit the contact.");
   }
   if (admin) {
-    if (body.name) team.set("name", String(body.name).trim());
+    if (body.name) {
+      const name = String(body.name).trim();
+      team.set("name", name);
+      const next = slugify(name);
+      if (next && next !== team.get("slug")) {
+        try {
+          app.findFirstRecordByFilter(
+            "event_teams",
+            "event = {:e} && slug = {:s}",
+            { e: event.id, s: next },
+          );
+        } catch (err) {
+          team.set("slug", next);
+        }
+      }
+    }
     if (body.pool != null) team.set("pool", body.pool);
     if (body.gamechanger_url != null) {
       const gcUrl = String(body.gamechanger_url || "").trim();
@@ -787,7 +802,7 @@ function removeEventTeam(app, event, team, auth) {
     app.delete(players[i]);
   }
   app.delete(team);
-  writeLog(app, event.id, "team_remove", true, "Removed " + name);
+  writeLog(app, event.id, "event", true, "Removed team " + name);
   return { deleted: teamId, name: name };
 }
 
