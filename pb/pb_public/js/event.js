@@ -1730,6 +1730,20 @@ export async function eventSignup(slug) {
         </label>
         <label>Contact name <input name="contact_name" ${director ? "" : "required"}></label>
         <label>Contact email <input name="contact_email" type="email"></label>
+        <label>Contact phone <input name="coach_phone" type="text" inputmode="tel" placeholder="412-555-0100"></label>
+        <label>Age group
+          <select name="age_group">
+            <option value="">—</option>
+            ${["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"].map((a) => `<option value="${a}">${a}</option>`).join("")}
+          </select>
+        </label>
+        <fieldset class="setup-block">
+          <legend>Second contact (optional)</legend>
+          <p class="muted">Whoever registers is often not the person in the dugout Saturday.</p>
+          <label>Name <input name="alt_name"></label>
+          <label>Email <input name="alt_email" type="email"></label>
+          <label>Phone <input name="alt_phone" type="text" inputmode="tel"></label>
+        </fieldset>
         ${req.length ? `<fieldset class="setup-block">
           <legend>Required uploads</legend>
           <p class="muted">${escapeHtml(ev.packet_notes || "PDF or photo. The director reviews these before first pitch.")}</p>
@@ -1758,7 +1772,11 @@ export async function eventSignup(slug) {
       document.getElementById("signup-err").textContent = await res.text();
       return;
     }
-    flashSaved("Team saved");
+    const saved = await res.json();
+    const mail = saved.team && saved.team.mail;
+    flashSaved(mail && !mail.sent
+      ? "Team saved. Confirmation email was not sent (" + (mail.reason || "SMTP is not configured") + ")."
+      : "Team saved");
     goEvent("/t/" + slug);
   });
 }
@@ -1850,14 +1868,157 @@ function bindVenuePhotos(slug, photos, showErr) {
   });
 }
 
+function teamImportDesk() {
+  return `
+    <details class="setup-block" id="team-import">
+      <summary>Import teams from a spreadsheet</summary>
+      <p class="muted">Google Forms CSV, Excel saved as CSV, or paste from Excel. Map columns once — we remember your mapping on this login. Re-import matches coach email, then team name, so the same file does not create duplicates. Phone stays text so leading zeros survive.</p>
+      <p><a href="/templates/diamond-tourney-team-signup.csv" download>Download a Google Form / Excel template</a></p>
+      <form class="form wide" id="import-teams-form">
+        <label>Spreadsheet file <input name="file" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"></label>
+        <label>Or paste rows <textarea name="csv" rows="6" placeholder="Team Name,Coach Email,Coach Phone,..."></textarea></label>
+        <button type="button" class="btn" id="import-preview-btn">Detect columns</button>
+      </form>
+      <div id="import-map" hidden></div>
+      <div id="import-preview" hidden></div>
+    </details>`;
+}
+
+function importFieldOptions(fields, selected) {
+  return `<option value="">— skip —</option>` + fields.map((f) =>
+    `<option value="${escapeHtml(f.key)}" ${selected === f.key ? "selected" : ""}>${escapeHtml(f.label)}${f.required ? " (required)" : ""}</option>`
+  ).join("");
+}
+
+function bindContactEdits(slug, showErr) {
+  document.querySelectorAll("[data-edit-contact]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = document.querySelector(`[data-contact-edit="${btn.dataset.editContact}"]`);
+      if (row) row.hidden = !row.hidden;
+    });
+  });
+  document.querySelectorAll("[data-contact-form]").forEach((form) => {
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const fd = new FormData(form);
+      const body = Object.fromEntries(fd.entries());
+      try {
+        await adminPost(slug, "/teams/" + form.dataset.contactForm, body);
+        flashSaved("Contact saved");
+        location.reload();
+      } catch (err) {
+        showErr(err);
+      }
+    });
+  });
+}
+
+async function readImportText(form) {
+  const pasted = String(form.csv.value || "").trim();
+  const file = form.file.files && form.file.files[0];
+  if (!file) return pasted;
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    throw new Error("Save the Excel file as CSV (File → Save As → CSV) and upload that. Pasting from Excel also works.");
+  }
+  const text = await file.text();
+  return text || pasted;
+}
+
+function renderImportMap(data) {
+  const box = document.getElementById("import-map");
+  box.hidden = false;
+  box.innerHTML = `
+    <h3>Match columns</h3>
+    <p class="muted">${data.remembered ? "Using the mapping saved on this login." : "Guessed from the header names. Change any that look wrong."}</p>
+    <div class="import-map">${data.headers.map((h) => `<label>${escapeHtml(h)}
+      <select data-map-header="${escapeHtml(h)}">${importFieldOptions(data.fields, data.mapping[h] || "")}</select>
+    </label>`).join("")}</div>
+    <p class="muted">Sample rows</p>
+    <div class="table-wrap"><table><thead><tr>${data.headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
+      <tbody>${(data.samples || []).map((row) => `<tr>${data.headers.map((h) => `<td>${escapeHtml(row[h] || "")}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table></div>
+    <button type="button" class="btn" id="import-apply-map">Preview what will be created</button>`;
+}
+
+function renderImportPreview(data) {
+  const box = document.getElementById("import-preview");
+  const c = data.counts || {};
+  box.hidden = false;
+  box.innerHTML = `
+    <h3>Preview</h3>
+    <p><b>${c.new || 0} new</b>, ${c.exists || 0} already present, ${c.problems || 0} rows with problems. Nothing is written until you confirm.</p>
+    <label class="check"><input type="checkbox" id="import-update-existing"> Update already-present teams instead of skipping them</label>
+    <div class="table-wrap"><table><thead><tr><th>Row</th><th>Team</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
+      <tbody>${(data.rows || []).map((r) => `<tr>
+        <td>${r.line}</td>
+        <td>${escapeHtml(r.name || "")}</td>
+        <td>${escapeHtml(r.coach_email || "")}</td>
+        <td>${escapeHtml(r.coach_phone || "")}</td>
+        <td>${r.status === "problem" ? `<span class="badge l">${escapeHtml((r.problems || []).join("; ") || "problem")}</span>`
+          : r.status === "exists" ? `<span class="badge">${escapeHtml(r.match === "email" ? "match email" : "match name")}</span>`
+          : `<span class="badge w">new</span>`}</td>
+      </tr>`).join("")}</tbody></table></div>
+    <button type="button" class="btn" id="import-commit-btn">Import ${c.new || 0} new team${(c.new || 0) === 1 ? "" : "s"}</button>`;
+}
+
+function currentImportMapping() {
+  const mapping = {};
+  document.querySelectorAll("[data-map-header]").forEach((sel) => {
+    mapping[sel.dataset.mapHeader] = sel.value || "";
+  });
+  return mapping;
+}
+
+function bindTeamImport(slug, showErr) {
+  const form = document.getElementById("import-teams-form");
+  if (!form) return;
+  const previewBtn = document.getElementById("import-preview-btn");
+  const runPreview = async (withMap) => {
+    try {
+      const csv = await readImportText(form);
+      if (!csv) throw new Error("Choose a CSV or paste rows.");
+      const body = { csv };
+      if (withMap) body.mapping = currentImportMapping();
+      const data = await adminPost(slug, "/import-teams/preview", body);
+      renderImportMap(data);
+      if (withMap || data.mapping && Object.values(data.mapping).includes("name")) {
+        renderImportPreview(data);
+      }
+      const apply = document.getElementById("import-apply-map");
+      if (apply) apply.onclick = () => runPreview(true);
+      const commit = document.getElementById("import-commit-btn");
+      if (commit) {
+        commit.onclick = async () => {
+          try {
+            const result = await adminPost(slug, "/import-teams", {
+              csv,
+              mapping: currentImportMapping(),
+              on_match: document.getElementById("import-update-existing")?.checked ? "update" : "skip",
+            });
+            const n = result.counts || {};
+            flashSaved(`${n.new || 0} new, ${n.updated || 0} updated, ${n.skipped || 0} skipped`);
+            location.reload();
+          } catch (err) {
+            showErr(err);
+          }
+        };
+      }
+    } catch (err) {
+      showErr(err);
+    }
+  };
+  previewBtn.addEventListener("click", () => runPreview(false));
+}
+
 function venuePhotoDesk(slug, photos) {
   const rows = photos || [];
   return `
     <div class="venue-photo-desk">
       <h3>Field and parking photos</h3>
-      <p class="muted">Fields and facilities only — no players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload.</p>
+      <p class="muted">Fields and facilities only, please — no photos of players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload. JPG, PNG, WebP, or HEIC. 5 MB cap — the volume on Fly keeps files across redeploys.</p>
       <form class="form wide" id="photo-form">
-        <label>Photo <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+        <label>Photo <input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" required></label>
         <label>Caption <input name="caption" maxlength="200" placeholder="East lot off Meadow St"></label>
         <label>Kind
           <select name="kind">
@@ -2071,10 +2232,34 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="teams" hidden>
           <h2>Teams</h2>
-          <p class="muted">Packets and the public roster. Add a club from Overview or the signup page.</p>
+          <p class="muted">Coach email and phone stay on the director desk. Public pages never show them.</p>
           <div class="actions">
             <a class="btn" data-link href="/t/${ev.slug}/signup">Add a team</a>
           </div>
+          ${teamImportDesk()}
+          <h3>Roster contacts</h3>
+          ${table(["Team", "Coach", "Phone", "Second contact", ""], teams.map((t) => {
+            const c = t.contact || {};
+            return `<tr data-team-row="${escapeHtml(t.id)}">
+              <td>${escapeHtml(t.name)}${t.age_group ? `<div class="muted">${escapeHtml(t.age_group)}${t.klass ? " " + escapeHtml(t.klass) : ""}</div>` : ""}</td>
+              <td>${escapeHtml(c.coach_email || t.contact_name || "—")}</td>
+              <td>${escapeHtml(c.coach_phone || "—")}</td>
+              <td>${escapeHtml([c.alt_name, c.alt_email, c.alt_phone].filter(Boolean).join(" · ") || "—")}</td>
+              <td><button type="button" class="btn ghost" data-edit-contact="${escapeHtml(t.id)}">Edit</button></td>
+            </tr>
+            <tr hidden data-contact-edit="${escapeHtml(t.id)}"><td colspan="5">
+              <form class="form wide contact-edit" data-contact-form="${escapeHtml(t.id)}">
+                <div class="form-grid two">
+                  <label>Coach email <input name="coach_email" type="email" value="${escapeHtml(c.coach_email || "")}"></label>
+                  <label>Coach phone <input name="coach_phone" type="text" inputmode="tel" value="${escapeHtml(c.coach_phone || "")}"></label>
+                  <label>Second name <input name="alt_name" value="${escapeHtml(c.alt_name || "")}"></label>
+                  <label>Second email <input name="alt_email" type="email" value="${escapeHtml(c.alt_email || "")}"></label>
+                  <label>Second phone <input name="alt_phone" type="text" inputmode="tel" value="${escapeHtml(c.alt_phone || "")}"></label>
+                </div>
+                <button class="btn" type="submit">Save contact</button>
+              </form>
+            </td></tr>`;
+          }))}
           <h3>Packets</h3>
           ${table(["Team", "Packet", "Missing", "Files"], teams.map((t) => {
             const p = t.packet || {};
@@ -2104,6 +2289,8 @@ export async function eventAdmin(slug) {
   bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
   bindTiebreakOrder(eventRoot());
   bindVenuePhotos(slug, plan.photos || [], showErr);
+  bindTeamImport(slug, showErr);
+  bindContactEdits(slug, showErr);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 
   document.getElementById("fields-form").addEventListener("submit", async (evnt) => {

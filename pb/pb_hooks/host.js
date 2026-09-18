@@ -174,6 +174,9 @@ function canSeeTeamPacket(event, team, auth, app) {
     if (team.get("account") && team.get("account") === auth.id) return true;
     const email = team.get("contact_email");
     if (email && email === auth.email()) return true;
+    try {
+      if (require(__hooks + "/contacts.js").canSeeEventContact(event, team, auth, app)) return true;
+    } catch (err) {}
   }
   return false;
 }
@@ -540,6 +543,11 @@ function upsertEventTeam(app, event, data) {
   rec.set("signed_up_by", data.signed_up_by || "team");
   rec.set("gc_sync_status", isGameChangerUrl(data.gamechanger_url) ? "linked" : "unlinked");
   if (data.account) rec.set("account", data.account);
+  if (data.age_group) rec.set("age_group", String(data.age_group).toUpperCase());
+  if (data.klass || data.class) rec.set("klass", String(data.klass || data.class).toUpperCase());
+  if (data.notes != null) rec.set("notes", data.notes);
+  if (data.paid != null) rec.set("paid", data.paid === true || data.paid === "true" || data.paid === "1");
+  if (data.registered_at) rec.set("registered_at", data.registered_at);
   try {
     const year = require(__hooks + "/year.js");
     const club = year.upsertClub(app, {
@@ -615,15 +623,80 @@ function signupTeam(app, event, body, auth) {
     pool: body.pool || "",
     gamechanger_url: gcUrl,
     contact_name: body.contact_name || (auth ? auth.email() : ""),
-    contact_email: body.contact_email || (auth ? auth.email() : ""),
+    contact_email: body.contact_email || body.coach_email || (auth ? auth.email() : ""),
     signed_up_by: asDirector ? "director" : "team",
     account: auth ? auth.id : "",
+    age_group: body.age_group || "",
+    klass: body.klass || body.class || "",
+    notes: body.notes || "",
   });
   if (!team.get("packet_status")) team.set("packet_status", "incomplete");
   app.save(team);
-  try { require(__hooks + "/mail.js").signupConfirmation(app, event, team); } catch (err) {}
+  const contacts = require(__hooks + "/contacts.js");
+  const contactRec = contacts.upsertForEventTeam(app, event, team, {
+    coach_email: body.coach_email || body.contact_email || team.get("contact_email") || "",
+    coach_phone: body.coach_phone || body.contact_phone || "",
+    alt_name: body.alt_name || "",
+    alt_email: body.alt_email || "",
+    alt_phone: body.alt_phone || "",
+    role: body.role || "head_coach",
+  });
+  const contact = contacts.contactJson(contactRec);
+  let mailResult = { sent: false, reason: "not_attempted" };
+  try {
+    mailResult = require(__hooks + "/mail.js").signupConfirmation(app, event, team, contact);
+  } catch (err) {
+    mailResult = { sent: false, reason: String(err) };
+    writeLog(app, event.id, "signup_mail", false, String(err));
+  }
   const row = teamJson(team);
   row.packet = packetSummary(app, event, team);
+  row.mail = mailResult;
+  row.contact = contact;
+  return row;
+}
+
+function updateEventTeam(app, event, team, body, auth) {
+  const sb = require(__hooks + "/softball.js");
+  const contacts = require(__hooks + "/contacts.js");
+  const admin = sb.isEventAdmin(event, auth, app);
+  const own = contacts.canSeeEventContact(event, team, auth, app);
+  if (!admin && !own) {
+    throw new ForbiddenError("Only this team's coach or the director can edit the contact.");
+  }
+  if (admin) {
+    if (body.name) team.set("name", String(body.name).trim());
+    if (body.pool != null) team.set("pool", body.pool);
+    if (body.gamechanger_url != null) {
+      const gcUrl = String(body.gamechanger_url || "").trim();
+      if (gcUrl && !isGameChangerUrl(gcUrl)) {
+        throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
+      }
+      team.set("gamechanger_url", gcUrl);
+      team.set("gc_team_ref", gcRef(gcUrl));
+      team.set("gc_sync_status", isGameChangerUrl(gcUrl) ? "linked" : "unlinked");
+    }
+    if (body.age_group != null) team.set("age_group", String(body.age_group || "").toUpperCase());
+    if (body.klass != null || body.class != null) team.set("klass", String(body.klass || body.class || "").toUpperCase());
+    if (body.notes != null) team.set("notes", body.notes);
+    if (body.paid != null) team.set("paid", body.paid === true || body.paid === "true" || body.paid === "1");
+    if (body.registered_at != null) team.set("registered_at", body.registered_at);
+  }
+  if (body.contact_name != null) team.set("contact_name", body.contact_name);
+  if (body.contact_email != null || body.coach_email != null) {
+    team.set("contact_email", String(body.coach_email || body.contact_email || "").trim().toLowerCase());
+  }
+  app.save(team);
+  const contactRec = contacts.upsertForEventTeam(app, event, team, {
+    coach_email: body.coach_email != null ? body.coach_email : (body.contact_email != null ? body.contact_email : undefined),
+    coach_phone: body.coach_phone != null ? body.coach_phone : body.contact_phone,
+    alt_name: body.alt_name,
+    alt_email: body.alt_email,
+    alt_phone: body.alt_phone,
+    role: body.role,
+  });
+  const row = teamJson(team);
+  row.contact = contacts.contactJson(contactRec);
   return row;
 }
 
@@ -713,14 +786,15 @@ function registerAccount(app, body) {
   app.save(rec);
   try { require(__hooks + "/softball.js").linkCoOwnerAccount(app, rec); } catch (err) {}
   let verifySent = false;
-  try {
-    const out = mail.directorVerify(app, rec, token);
-    if (out && out.sent) {
-      rec.set("verified", false);
-      app.save(rec);
-      verifySent = true;
-    }
-  } catch (err) {}
+  let verifyReason = "";
+  const out = mail.directorVerify(app, rec, token);
+  if (out && out.sent) {
+    rec.set("verified", false);
+    app.save(rec);
+    verifySent = true;
+  } else {
+    verifyReason = (out && out.reason) || "not_sent";
+  }
   return {
     id: rec.id,
     email: rec.email(),
@@ -728,6 +802,7 @@ function registerAccount(app, body) {
     display_name: rec.get("display_name") || "",
     verified: !!rec.get("verified"),
     verify_sent: verifySent,
+    verify_reason: verifyReason,
   };
 }
 
@@ -743,8 +818,8 @@ function verifyAccount(app, token) {
   user.set("verified", true);
   user.set("verify_token", "");
   app.save(user);
-  try { require(__hooks + "/mail.js").directorWelcome(app, user); } catch (err) {}
-  return { verified: true, email: user.email() };
+  const welcome = require(__hooks + "/mail.js").directorWelcome(app, user);
+  return { verified: true, email: user.email(), welcome_sent: !!(welcome && welcome.sent), welcome_reason: (welcome && welcome.reason) || "" };
 }
 
 function searchEvents(app, q) {
@@ -867,8 +942,8 @@ function deleteEvent(app, event, body) {
   } catch (err) {}
   const children = [
     "event_hitting", "event_pitching", "event_boxes", "event_schedule",
-    "bracket_games", "venue_photos", "sync_log", "event_teams", "pools", "fields",
-    "event_co_owners",
+    "bracket_games", "venue_photos", "sync_log", "team_contacts", "event_teams",
+    "pools", "fields", "event_co_owners",
   ];
   for (let i = 0; i < children.length; i++) wipeByEvent(app, children[i], eventId);
   app.delete(event);
@@ -900,7 +975,7 @@ function requestPasswordReset(app, email) {
     row.set("record_id", rec.id);
     app.save(row);
   }
-  try { mail.passwordReset(app, rec.email(), token); } catch (err) {}
+  mail.passwordReset(app, rec.email(), token);
   return { ok: true };
 }
 
@@ -1206,10 +1281,12 @@ module.exports = {
   eventJson: eventJson,
   teamJson: teamJson,
   writeLog: writeLog,
+  upsertEventTeam: upsertEventTeam,
   parsePacket: parsePacket,
   createEvent: createEvent,
   duplicateEvent: duplicateEvent,
   signupTeam: signupTeam,
+  updateEventTeam: updateEventTeam,
   syncEvent: syncEvent,
   publicRoster: publicRoster,
   applySettings: applySettings,

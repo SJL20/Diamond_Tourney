@@ -929,18 +929,25 @@ function rainUpdate(app, event, body) {
     schedule: listSchedule(app, event.id),
     mail_sent: (function () {
       try { return require(__hooks + "/mail.js").rainNotice(app, event).sent || 0; }
-      catch (err) { return 0; }
+      catch (err) {
+        try { require(__hooks + "/host.js").writeLog(app, event.id, "rain_mail", false, String(err)); }
+        catch (logErr) {}
+        return 0;
+      }
     })(),
   };
 }
 
 function plan(app, event, auth) {
   const host = require(__hooks + "/host.js");
+  const teams = host.publicRoster(app, event, auth);
+  try { require(__hooks + "/contacts.js").attachVisible(app, event, teams, auth); }
+  catch (err) {}
   return {
     event: host.eventJson(event, app, auth, { owners: true }),
     fields: eventFields(app, event.id),
     schedule: listSchedule(app, event.id, auth),
-    teams: host.publicRoster(app, event, auth),
+    teams: teams,
     pending_boxes: require(__hooks + "/score.js").listPendingBoxes(app, event.id),
     photos: (function () {
       try { return require(__hooks + "/photos.js").listPhotos(app, event.id, false); }

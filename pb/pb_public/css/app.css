@@ -412,6 +412,15 @@ tr.total { font-weight: 700; background: #f3eee4; }
 .tb-add, .tb-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
 .age-picks { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .age-checks { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
+.import-map {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+@media (min-width: 720px) {
+  .import-map { grid-template-columns: 1fr 1fr; }
+}
+.contact-edit { margin: 8px 0 12px; }
 .pin-nudge { margin: 8px 0 12px; }
 .event-hero { margin: 0 0 16px; }
 .event-hero img, .photo-grid img, .photo-review img {

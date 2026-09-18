@@ -3,17 +3,7 @@ function slugify(name) {
 }
 
 function parseCsv(text) {
-  const lines = String(text || "").split(/\r?\n/).filter(function (l) { return l.trim(); });
-  if (!lines.length) return [];
-  const headers = lines[0].split(",").map(function (h) { return h.trim().toLowerCase(); });
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",").map(function (c) { return c.trim(); });
-    const row = {};
-    for (let j = 0; j < headers.length; j++) row[headers[j]] = cols[j] || "";
-    rows.push(row);
-  }
-  return rows;
+  return require(__hooks + "/csv.js").parseCsv(text);
 }
 
 function upsertEventTeam(app, eventId, name, pool) {
