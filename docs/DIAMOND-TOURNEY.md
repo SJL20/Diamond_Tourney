@@ -30,7 +30,7 @@ Site admin manages **team profiles** (`/admin/teams`). Email is only a login tha
 |---|---|
 | You already have a schedule | **Live** — CSV import + public board (`/directors/import`) |
 | Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
-| Team signup | **Live** — director or team, GameChanger URL required (`/t/{slug}/signup`). Hosted sync reads those public pages. No bot required. |
+| Team signup | **Live** — director or team (`/t/{slug}/signup`). GameChanger is optional; a paper team signs up without one. When a URL is there, hosted sync reads that public page. No bot required. |
 | Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
 | Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Does not scrape GameChanger. Individual pool boxes that are not on the popup are not invented. |
 

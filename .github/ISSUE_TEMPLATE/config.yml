@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a data-exposure or authorization bug (private)
+    url: https://github.com/SJL20/Diamond_Tourney/security/advisories/new
+    about: >-
+      Do not file a public issue if private data was reachable — a family email,
+      an address, a birthdate, an uploaded packet document, or a season player
+      stat. Report it privately. See SECURITY.md.
+  - name: Where the project stands
+    url: https://github.com/SJL20/Diamond_Tourney/blob/main/docs/PROGRESS.md
+    about: Known gaps and open findings are already tracked on the progress board.

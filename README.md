@@ -2,6 +2,10 @@
 
 Public GitHub home: [github.com/SJL20/Diamond_Tourney](https://github.com/SJL20/Diamond_Tourney).
 
+New here? `docs/PROGRESS.md` is where the project actually stands and what is
+still broken. `CONTRIBUTING.md` is how to run it, test it, and open a pull
+request. Found private data where it should not be? `SECURITY.md`.
+
 Wholly hosted tournament site: start an event natively or by linking a Tourney Machine page, teams sign up with a GameChanger URL, and this host pulls those public pages. Season team books stay behind a coach login. Bots are optional leftovers for screenshot ingest — they are not required to run a weekend.
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md`.
@@ -62,7 +66,25 @@ Lines land in the weekend leaders only when someone (bot or person) types them. 
 | `/t/{slug}/admin` | Director desk — left rail for tournament setup, venue, scheduler, rain, teams, stats |
 | `/t/{slug}/games/{id}` | Four stats doors — GC mobile PDF, public box URL, Grok bot, director PDF |
 | `/t/{slug}/signup` | Director or team signs up — GameChanger optional |
+| `/t/{slug}/pools` | Pool standings on their own, without the rest of the home page |
+| `/t/{slug}/leaders` | Weekend leaders with the gates applied (min 8 AB, min 3.0 IP) |
+| `/t/{slug}/awards` | All-tournament team, printed Sunday on the field |
 | `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
+| `/login`, `/register`, `/account` | Log in, create a director or team account, see the weekends you run |
+| `/admin/teams` | Region admin club desk — team profiles, GameChanger link optional |
+| `/directors/new`, `/directors/link-tm`, `/directors/import` | The three doors: start it here, link a Tourney Machine page, paste a schedule you already have |
+
+Season books stay behind a coach login. They are not part of the public product:
+
+| Page | What it is |
+|---|---|
+| `/teams/{slug}` | Public team card — W-L only, no player stats |
+| `/teams/{slug}/home` | Coach home — record, next game, last five |
+| `/teams/{slug}/roster` | Name, number, positions, bats/throws, grad year |
+| `/teams/{slug}/hitting` | AB R H RBI BB SO, BA, Contact%, with team totals |
+| `/teams/{slug}/pitching` | IP H R ER BB SO, pitches/strikes, ERA, Strike% |
+| `/teams/{slug}/games`, `/teams/{slug}/games/{id}` | Game log and a single game's box |
+| `/teams/{slug}/admin/review` | Approve or reject what a bot staged |
 
 Keystone Clash 2026 is imported from the public popup. Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger. Individual Friday/Saturday pool boxes are not on the popup, so they are not invented here.
 
