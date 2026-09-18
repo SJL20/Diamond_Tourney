@@ -705,16 +705,6 @@ routerAdd("POST", "/api/events/import-popup", (e) => {
   return e.json(200, result);
 }, $apis.requireAuth());
 
-function wantsCreateEvent(body) {
-  return body.create === true || body.create === "true" || body.create === "1" || body.create === 1;
-}
-
-function placeholderWeekend(body) {
-  const slug = String(body.event_slug || "").trim().toLowerCase();
-  const name = String(body.event_name || "").trim().toLowerCase();
-  return slug === "clipboard-open" || name === "clipboard open";
-}
-
 routerAdd("POST", "/api/event/import-schedule", (e) => {
   const sb = require(__hooks + "/softball.js");
   const diamond = require(__hooks + "/diamond.js");
@@ -732,11 +722,11 @@ routerAdd("POST", "/api/event/import-schedule", (e) => {
     const result = diamond.importIntoEvent(e.app, event, body.csv, body.replace);
     return e.json(200, { event: event.get("slug"), imported: result.imported, standings: result.standings, created: false });
   }
-  if (!wantsCreateEvent(body)) {
+  if (!diamond.wantsCreateEvent(body)) {
     throw new BadRequestError("This tournament does not exist. Import from that weekend's Admin, or type a new name and choose Create a new tournament.");
   }
   const name = String(body.event_name || "").trim();
-  if (!name || placeholderWeekend(body)) {
+  if (!name || diamond.isPlaceholderWeekend(body)) {
     throw new BadRequestError("Name this weekend to create it. The sample Clipboard Open name is not used.");
   }
   const slug = host.uniqueSlug(e.app, host.slugify(body.event_slug || name));

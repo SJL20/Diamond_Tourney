@@ -465,6 +465,16 @@ function importIntoEvent(app, event, csv, replace) {
   return importSchedule(app, event, csv);
 }
 
+function wantsCreateEvent(body) {
+  return body.create === true || body.create === "true" || body.create === "1" || body.create === 1;
+}
+
+function isPlaceholderWeekend(body) {
+  const slug = String(body.event_slug || "").trim().toLowerCase();
+  const name = String(body.event_name || "").trim().toLowerCase();
+  return slug === "clipboard-open" || name === "clipboard open";
+}
+
 function inferSide(round, side) {
   if (side === "losers" || side === "winners" || side === "championship" || side === "consolation") return side;
   if (side) return side;
@@ -753,6 +763,8 @@ module.exports = {
   poolStandings: poolStandings,
   importSchedule: importSchedule,
   importIntoEvent: importIntoEvent,
+  wantsCreateEvent: wantsCreateEvent,
+  isPlaceholderWeekend: isPlaceholderWeekend,
   advanceBracket: advanceBracket,
   eventLeaders: eventLeaders,
   publicBoard: publicBoard,
