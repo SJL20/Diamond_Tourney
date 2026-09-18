@@ -26,7 +26,23 @@ class TiebreakTests(unittest.TestCase):
         self.assertEqual(ranked[0]["id"], "b")
 
 
-class BracketCardTests(unittest.TestCase):
+class TournamentUiTests(unittest.TestCase):
+    def test_standings_tab_game_numbers_and_save_toast(self):
+        chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
+        event = (ROOT / "pb/pb_public/js/event.js").read_text()
+        app = (ROOT / "pb/pb_public/js/app.js").read_text()
+        css = (ROOT / "pb/pb_public/css/app.css").read_text()
+        self.assertIn("`/t/${slug}/standings`", chrome)
+        self.assertIn('"Standings"', chrome)
+        self.assertIn("export function flashSaved", chrome)
+        self.assertIn("#save-toast", css)
+        self.assertIn("eventStandings", app)
+        self.assertIn("/standings", app)
+        self.assertIn("data-autosave-box", event)
+        self.assertIn("flashSaved", event)
+        self.assertIn("function gameNo", event)
+        self.assertIn('input[type=file]', event)
+
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
         css = (ROOT / "pb/pb_public/css/app.css").read_text()
@@ -40,6 +56,64 @@ class BracketCardTests(unittest.TestCase):
 
 
 class BoardTests(unittest.TestCase):
+    def test_harbor_eight_game_numbers(self):
+        board = request(BASE, "GET", "/api/event/harbor-eight/board")
+        pool = [g for g in board["schedule"] if g.get("home") and g.get("away")]
+        bracket = board["bracket"]
+        self.assertGreaterEqual(len(pool), 12)
+        self.assertGreaterEqual(len(bracket), 4)
+        nums = [int(g.get("game_number") or 0) for g in pool + bracket]
+        self.assertTrue(all(n > 0 for n in nums), nums)
+        self.assertEqual(len(nums), len(set(nums)))
+        overall = [int(g.get("game_number") or 0) for g in board["overall"]]
+        self.assertTrue(all(n > 0 for n in overall), overall)
+
+    def test_new_event_assigns_game_numbers(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "game-numbers-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Game Numbers Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "start": "2026-10-10",
+            "end": "2026-10-11",
+            "format": "pool-to-bracket",
+            "hours_start": "08:00",
+            "hours_end": "18:00",
+            "fields": [{"name": "Harbor 1"}, {"name": "Harbor 2"}],
+        })
+        for name, pool in (("Num Hawks", "A"), ("Num Heat", "A"), ("Num Cats", "B"), ("Num Fox", "B")):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": pool,
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-10-10"],
+            "games_per_team": 1,
+            "replace": True,
+            "draw_bracket": True,
+            "format": "pool-to-bracket",
+        })
+        self.assertGreaterEqual(auto["games"], 2)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        pool_nums = [int(g.get("game_number") or 0) for g in board["schedule"]]
+        bracket_nums = [int(g.get("game_number") or 0) for g in board["bracket"]]
+        self.assertTrue(all(n > 0 for n in pool_nums), pool_nums)
+        self.assertTrue(all(n > 0 for n in bracket_nums), bracket_nums)
+        self.assertEqual(len(pool_nums + bracket_nums), len(set(pool_nums + bracket_nums)))
+        added = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Num Hawks",
+            "away": "Num Heat",
+            "date": "2026-10-11",
+            "time": "09:00",
+            "field": "Harbor 1",
+            "pool": "A",
+        })
+        self.assertGreater(int(added["game"]["game_number"] or 0), max(pool_nums))
+
     def test_harbor_eight_board(self):
         board = request(BASE, "GET", "/api/event/harbor-eight/board")
         self.assertEqual(board["event"]["slug"], "harbor-eight")

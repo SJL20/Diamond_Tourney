@@ -37,6 +37,7 @@ export function eventBar(event, page = "", pb = null) {
   const statsOn = ["stats", "leaders", "awards"].includes(page);
   const links = [
     [`/t/${slug}`, "home", "Home"],
+    [`/t/${slug}/standings`, "standings", "Standings"],
     [`/t/${slug}/overall`, "overall", "Schedule"],
     [`/t/${slug}/schedule`, "schedule", "Games"],
     [`/t/${slug}/bracket`, "bracket", "Bracket"],
@@ -56,7 +57,7 @@ export function eventBar(event, page = "", pb = null) {
         </div>
         <nav class="event-nav" aria-label="Tournament">
           ${links.map(([href, key, label]) => {
-            const on = page === key || (key === "stats" && statsOn) || (key === "signup" && page === "sign up");
+            const on = page === key || (key === "stats" && statsOn) || (key === "standings" && page === "pools") || (key === "signup" && page === "sign up");
             return `<a class="${on ? "active" : ""}" data-link href="${href}">${label}</a>`;
           }).join("")}
         </nav>
@@ -115,4 +116,20 @@ function escapeText(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
+}
+
+export function flashSaved(message = "Saved") {
+  let host = document.getElementById("save-toast");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "save-toast";
+    host.setAttribute("role", "status");
+    host.setAttribute("aria-live", "polite");
+    document.body.appendChild(host);
+  }
+  host.textContent = message;
+  host.hidden = false;
+  host.classList.add("show");
+  clearTimeout(host._hide);
+  host._hide = setTimeout(() => host.classList.remove("show"), 2800);
 }

@@ -25,7 +25,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Repository | **public** — assume anything committed or served is world-readable |
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
-| Tests | 33 unit/integration cases + 13 acceptance checks |
+| Tests | 36 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -197,6 +197,17 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — Standings tab, game numbers, save toast
+
+Tournament nav now has **Standings** at `/t/{slug}/standings` (old `/pools` still works).
+Every pool and bracket game gets a weekend `game_number` (`Game 7`) assigned on
+create and backfilled by `1700000019_game_numbers.js`. The number shows on
+Schedule, Games, Admin, the game page, and bracket cards.
+
+Any successful save shows a toast on the page (`flashSaved`). Choosing a
+box-score PDF or photo queues it immediately — no second button. A GameChanger
+box URL saves when the field blurs.
 
 ### 2026-09-18 — Bracket cards start collapsed
 

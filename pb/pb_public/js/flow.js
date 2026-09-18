@@ -1,4 +1,4 @@
-import { pageShell } from "./chrome.js";
+import { flashSaved, pageShell } from "./chrome.js";
 
 const flowRoot = () => document.getElementById("app");
 const flowPb = new PocketBase(location.origin);
@@ -305,6 +305,7 @@ export async function adminTeams() {
       if (err) { err.hidden = false; err.textContent = await res2.text(); }
       return;
     }
+    flashSaved("Club saved");
     adminTeams();
   };
   document.getElementById("club-new").addEventListener("submit", (ev) => {

@@ -1,4 +1,4 @@
-import { pageShell } from "./chrome.js";
+import { flashSaved, pageShell } from "./chrome.js";
 
 const eventRoot = () => document.getElementById("app");
 const eventPb = new PocketBase(location.origin);
@@ -258,6 +258,16 @@ function scoreText(g) {
   return `${g.home_runs ?? "—"}–${g.away_runs ?? "—"}`;
 }
 
+function gameNo(g) {
+  const n = Number(g?.game_number || 0);
+  return n > 0 ? "Game " + n : "";
+}
+
+function gameNoCell(g) {
+  const label = gameNo(g);
+  return label ? `<span class="game-no">${escapeHtml(label)}</span>` : "—";
+}
+
 function realPoolGames(games) {
   return (games || []).filter((g) => g.home && g.away && g.id);
 }
@@ -274,7 +284,8 @@ function scheduleByField(games, slug) {
   return Object.keys(groups).sort().map((name) => `
     <div class="sched-field">
       <h3>${escapeHtml(name)}</h3>
-      ${table(["When", "Pool", "Home", "Away", "Score", ""], groups[name].map((g) => `<tr>
+      ${table(["Game", "When", "Pool", "Home", "Away", "Score", ""], groups[name].map((g) => `<tr>
+        <td>${gameNoCell(g)}</td>
         <td>${escapeHtml(g.date || "")} ${escapeHtml(g.time || "")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
         <td>${escapeHtml(g.pool || "")}</td>
         <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
@@ -392,7 +403,7 @@ function standingsBlock(standings) {
         <td>${t.w}</td><td>${t.l}</td>
         <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
-      <p class="muted">Tiebreak: record, then fewest runs allowed, then run differential. Official seeds follow Tourney Machine — the director may apply head-to-head.</p>
+      <p class="muted">Tiebreak: wins, then losses, then head-to-head, then runs allowed, then runs scored.</p>
     </div>`).join("");
 }
 
@@ -544,7 +555,7 @@ function matchCard(g, roster = [], plan = null) {
   const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
   const fieldLabel = g.field || "—";
   const timeLabel = g.time || "—";
-  const meta = [g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
+  const meta = [gameNo(g), g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
   const def = plan?.defaults.get(g.id) || {};
   const chosenField = g.field || def.field || "";
   const chosenTime = g.time || def.time || "";
@@ -684,7 +695,10 @@ function bindBracketDesk(slug, root) {
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
       const data = Object.fromEntries(new FormData(form));
-      if (await post("/bracket/" + form.dataset.bkId + "/score", data)) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkId + "/score", data)) {
+        flashSaved("Score saved");
+        eventBracket(slug);
+      }
     });
   });
   root.querySelectorAll("[data-bk-desk]").forEach((form) => {
@@ -711,13 +725,22 @@ function bindBracketDesk(slug, root) {
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
       const data = Object.fromEntries(new FormData(form));
-      if (await post("/bracket/" + form.dataset.bkDesk, data)) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkDesk, data)) {
+        flashSaved("Game saved");
+        eventBracket(slug);
+      }
     });
     form.querySelector("[data-swap]")?.addEventListener("click", async () => {
-      if (await post("/bracket/" + form.dataset.bkDesk, { swap: true })) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkDesk, { swap: true })) {
+        flashSaved("Sides swapped");
+        eventBracket(slug);
+      }
     });
     form.querySelector("[data-reopen]")?.addEventListener("click", async () => {
-      if (await post("/bracket/" + form.dataset.bkDesk, { reopen: true })) eventBracket(slug);
+      if (await post("/bracket/" + form.dataset.bkDesk, { reopen: true })) {
+        flashSaved("Game reopened");
+        eventBracket(slug);
+      }
     });
   });
   const swap = root.querySelector("#bk-swap");
@@ -733,7 +756,10 @@ function bindBracketDesk(slug, root) {
         to_id: toId,
         to_seat: toSeat,
         protest_note: data.protest_note,
-      })) eventBracket(slug);
+      })) {
+        flashSaved("Seats swapped");
+        eventBracket(slug);
+      }
     });
   }
 }
@@ -785,9 +811,19 @@ export async function eventHome(slug) {
   `);
 }
 
-export async function eventPools(slug) {
+export async function eventStandings(slug) {
   const board = await fetchBoard(slug);
-  eventRoot().innerHTML = eventChrome(board.event, "pools", `<section class="grid two">${standingsBlock(board.standings)}</section>`);
+  eventRoot().innerHTML = eventChrome(board.event, "standings", `
+    <section class="page-head">
+      <h1>Standings</h1>
+      <p class="muted">Pool order: wins, then losses, then head-to-head, then runs allowed, then runs scored. Seeds update when a pool game is marked final.</p>
+    </section>
+    <section class="grid two">${standingsBlock(board.standings) || `<section class="card empty">No teams signed up yet.</section>`}</section>
+  `);
+}
+
+export async function eventPools(slug) {
+  return eventStandings(slug);
 }
 
 export async function eventBracket(slug) {
@@ -815,13 +851,14 @@ export async function eventOverall(slug) {
     </section>
     ${rainBanner(board.event)}
     <section class="card">
-      ${rows.length ? table(["When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
+      ${rows.length ? table(["Game", "When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
         const when = [g.date, g.time].filter(Boolean).join(" ");
         const kind = g.kind === "bracket" ? (ROUND_META[g.round]?.label || g.round || "Bracket") : (g.round || "Pool");
         const href = g.kind === "pool" && g.id
           ? `/t/${escapeHtml(slug)}/games/${g.id}`
           : `/t/${escapeHtml(slug)}/bracket`;
         return `<tr>
+          <td>${gameNoCell(g)}</td>
           <td>${escapeHtml(when || "TBD")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
           <td>${escapeHtml(g.field || "—")}</td>
           <td><span class="ov-kind ${escapeHtml(g.kind || "")}">${escapeHtml(kind)}</span></td>
@@ -866,7 +903,7 @@ export async function eventGame(slug, id) {
   const can = !!g.can_score;
   eventRoot().innerHTML = eventChrome(ev, "schedule", `
     <section class="page-head">
-      <h1>${escapeHtml(g.home)} vs ${escapeHtml(g.away)}</h1>
+      <h1>${gameNo(g) ? `${escapeHtml(gameNo(g))} · ` : ""}${escapeHtml(g.home)} vs ${escapeHtml(g.away)}</h1>
       <p class="muted">${escapeHtml([g.date, g.time, g.field, g.pool ? "Pool " + g.pool : ""].filter(Boolean).join(" · "))}</p>
       <p><a data-link href="/t/${escapeHtml(slug)}/schedule">Back to games</a></p>
     </section>
@@ -905,21 +942,21 @@ export async function eventGame(slug, id) {
       <details class="setup-block" open>
         <summary>1. GameChanger mobile PDF</summary>
         <p class="muted">From the GC app: share / export the box as PDF, then drop it here. Team managers use this after the game.</p>
-        <form class="form wide" id="gc-pdf-form">
+        <form class="form wide" id="gc-pdf-form" data-autosave-box>
           <input type="hidden" name="source" value="gc_pdf">
-          <label>GameChanger PDF <input name="file" type="file" accept=".pdf,application/pdf" required></label>
+          <label>GameChanger PDF <input name="file" type="file" accept=".pdf,application/pdf" required data-autosave-box></label>
           <label>Note <input name="note" placeholder="Saturday 9:00, Harbor 1"></label>
-          <button class="btn" type="submit">Queue GC PDF</button>
+          <p class="muted">Choosing a file saves it. You do not need another click.</p>
           <p class="error" id="gc-pdf-err" hidden></p>
         </form>
       </details>
       <details class="setup-block" open>
         <summary>2. Public GameChanger box URL</summary>
         <p class="muted">Paste the public web box, like web.gc.com/teams/…/schedule/…/box-score. We store the link and check that the page is reachable. We do not copy numbers off that page.</p>
-        <form class="form wide" id="gc-url-form">
+        <form class="form wide" id="gc-url-form" data-autosave-box>
           <input type="hidden" name="source" value="gc_url">
           <label>Box-score URL <input name="gc_url" type="url" required placeholder="https://web.gc.com/teams/…/schedule/…/box-score" value="${escapeHtml(box?.gc_url || "")}"></label>
-          <button class="btn" type="submit">Save GC link for a bot</button>
+          <p class="muted">Paste or finish the URL — it saves when you leave the field.</p>
           <p class="error" id="gc-url-err" hidden></p>
         </form>
       </details>
@@ -930,12 +967,12 @@ export async function eventGame(slug, id) {
       ${detail.director ? `<details class="setup-block" open>
         <summary>4. Director PDF</summary>
         <p class="muted">Your upload as the tournament director. Use a GC export or a scorebook scan. Check the box if this file is the book of record and a bot does not need to type it.</p>
-        <form class="form wide" id="td-pdf-form">
+        <form class="form wide" id="td-pdf-form" data-autosave-box>
           <input type="hidden" name="source" value="director_pdf">
-          <label>PDF or photo <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" required></label>
+          <label>PDF or photo <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" required data-autosave-box></label>
           <label class="check"><input type="checkbox" name="approve_file"> Official book — do not wait on a bot</label>
           <label>Note <input name="note" placeholder="TD copy from the plate meeting"></label>
-          <button class="btn" type="submit">Upload director PDF</button>
+          <p class="muted">Choosing a file saves it. You do not need another click.</p>
           <p class="error" id="td-pdf-err" hidden></p>
         </form>
       </details>` : ""}
@@ -960,10 +997,11 @@ export async function eventGame(slug, id) {
         body: JSON.stringify(data),
       });
       if (!out.ok) return show("score-err", new Error(await out.text()));
+      flashSaved("Score saved");
       eventGame(slug, id);
     });
   }
-  const postBox = async (form, errId) => {
+  const postBox = async (form, errId, savedMsg) => {
     const fd = new FormData(form);
     if (form.querySelector("[name=approve_file]")) {
       fd.set("approve_file", form.querySelector("[name=approve_file]").checked ? "true" : "false");
@@ -974,15 +1012,25 @@ export async function eventGame(slug, id) {
       body: fd,
     });
     if (!out.ok) return show(errId, new Error(await out.text()));
+    flashSaved(savedMsg || "Box score saved");
     eventGame(slug, id);
   };
-  [["gc-pdf-form", "gc-pdf-err"], ["gc-url-form", "gc-url-err"], ["td-pdf-form", "td-pdf-err"]].forEach(([fid, eid]) => {
+  [["gc-pdf-form", "gc-pdf-err", "GameChanger PDF queued"], ["gc-url-form", "gc-url-err", "GameChanger link saved"], ["td-pdf-form", "td-pdf-err", "Director box saved"]].forEach(([fid, eid, ok]) => {
     const form = document.getElementById(fid);
     if (!form) return;
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
-      postBox(evnt.target, eid);
+      postBox(form, eid, ok);
     });
+    form.querySelector("input[type=file]")?.addEventListener("change", () => {
+      if (form.querySelector("input[type=file]").files.length) postBox(form, eid, ok);
+    });
+    const url = form.querySelector("input[name=gc_url]");
+    if (url) {
+      url.addEventListener("change", () => {
+        if (url.value && url.checkValidity()) postBox(form, eid, ok);
+      });
+    }
   });
 }
 
@@ -1149,6 +1197,7 @@ export async function directorImportPopup() {
       document.getElementById("popup-err").textContent = await res.text();
       return;
     }
+    flashSaved("Popup imported");
     goEvent("/t/keystone-clash-2026");
   });
 }
@@ -1321,6 +1370,7 @@ export async function directorNative() {
       return;
     }
     const out = await res.json();
+    flashSaved("Tournament saved");
     goEvent("/t/" + out.event.slug + "/admin");
   });
 }
@@ -1363,6 +1413,7 @@ export async function directorLinkTm() {
       return;
     }
     const out = await res.json();
+    flashSaved("Tournament saved");
     goEvent("/t/" + out.event.slug + "/admin");
   });
 }
@@ -1427,6 +1478,7 @@ export async function eventSignup(slug) {
       document.getElementById("signup-err").textContent = await res.text();
       return;
     }
+    flashSaved("Team saved");
     goEvent("/t/" + slug);
   });
 }
@@ -1567,7 +1619,8 @@ export async function eventAdmin(slug) {
             </div>
           </form>
           <h3>Games by field</h3>
-          ${games.length ? table(["When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
+          ${games.length ? table(["Game", "When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
+            <td>${gameNoCell(g)}</td>
             <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
                 <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
             <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
@@ -1669,6 +1722,7 @@ export async function eventAdmin(slug) {
         headers: { ...authHeader() },
         body: new FormData(evnt.target),
       }).then(async (r) => { if (!r.ok) throw new Error(await r.text()); });
+      flashSaved("Venue saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1693,6 +1747,7 @@ export async function eventAdmin(slug) {
       await adminPost(slug, "/settings", body);
       const out = await adminPost(slug, "/schedule/auto", body);
       note("Scheduled " + out.games + " game(s) on " + (out.fields || []).join(", ") + (out.leftover ? " · " + out.leftover + " leftover" : ""));
+      flashSaved("Pool schedule saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1702,6 +1757,7 @@ export async function eventAdmin(slug) {
       await adminPost(slug, "/settings", body);
       const out = await adminPost(slug, "/bracket/build", body);
       note("Bracket drawn · " + out.games + " games from " + out.seeds + " seeds");
+      flashSaved("Bracket saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1721,6 +1777,7 @@ export async function eventAdmin(slug) {
         postpone: fd.get("postpone") === "on",
       });
       note("Rain posted · shifted " + out.shifted + " · moved " + out.moved + " · postponed " + out.postponed + " · reassigned " + out.reassigned);
+      flashSaved("Rain notice saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1729,6 +1786,7 @@ export async function eventAdmin(slug) {
     const data = Object.fromEntries(new FormData(evnt.target));
     try {
       await adminPost(slug, "/schedule/game", data);
+      flashSaved("Game added");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1747,6 +1805,7 @@ export async function eventAdmin(slug) {
       try {
         await adminPost(slug, "/schedule/" + id, body);
         note("Game updated");
+        flashSaved("Game saved");
       } catch (err) { showErr(err); }
     });
   });
@@ -1761,6 +1820,7 @@ export async function eventAdmin(slug) {
       });
       try {
         await adminPost(slug, "/schedule/" + id + "/score", body);
+        flashSaved("Score saved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
@@ -1785,6 +1845,7 @@ export async function eventAdmin(slug) {
           body: packGuidelines(evnt.target),
         });
         if (!res.ok) throw new Error(await res.text());
+        flashSaved("Tournament setup saved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
@@ -1793,6 +1854,7 @@ export async function eventAdmin(slug) {
     btn.addEventListener("click", async () => {
       try {
         await adminPost(slug, "/docs/" + btn.dataset.approve + "/review", { status: "approved" });
+        flashSaved("Packet approved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
     });
@@ -1810,6 +1872,7 @@ export async function eventAdmin(slug) {
   document.getElementById("toggle-signup").addEventListener("click", async () => {
     try {
       await adminPost(slug, "/settings", { signup_open: !ev.signup_open });
+      flashSaved(ev.signup_open ? "Signup closed" : "Signup saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -1869,6 +1932,7 @@ export async function directorImport() {
       document.getElementById("import-err").textContent = await res.text();
       return;
     }
+    flashSaved("Schedule published");
     goEvent("/t/" + data.event_slug);
   });
 }
