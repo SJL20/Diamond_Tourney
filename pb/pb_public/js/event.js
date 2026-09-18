@@ -530,9 +530,50 @@ function gameSide(g) {
   return /^(C|3RD|5TH|CONS)/.test(r) ? "consolation" : "championship";
 }
 
-function teamOptions(roster, selected) {
-  return `<option value="">TBD</option>${(roster || []).map((t) =>
+function teamOptions(roster, selected, blank) {
+  const first = `<option value="">${escapeHtml(blank == null ? "TBD" : blank)}</option>`;
+  return `${first}${(roster || []).map((t) =>
     `<option value="${escapeHtml(t.id)}" ${t.id === selected ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}`;
+}
+
+function teamSelect(roster, name, selected, opts) {
+  const required = !!(opts && opts.required);
+  const disabled = !!(opts && opts.disabled);
+  const blank = required ? "Select a registered team" : "TBD";
+  return `<select name="${escapeHtml(name)}"${required ? " required" : ""}${disabled ? " disabled" : ""}>${teamOptions(roster, selected, blank)}</select>`;
+}
+
+function poolChoices(teams) {
+  return [...new Set((teams || []).map((t) => t.pool).filter(Boolean))].sort();
+}
+
+function poolSelect(teams, selected) {
+  const pools = poolChoices(teams);
+  return `<select name="pool"><option value="">—</option>${pools.map((p) =>
+    `<option value="${escapeHtml(p)}" ${p === selected ? "selected" : ""}>${escapeHtml(p)}</option>`).join("")}</select>`;
+}
+
+function flightChoices(selected) {
+  const known = ["", "gold", "silver", "platinum"];
+  if (selected && !known.includes(selected)) known.push(selected);
+  return known;
+}
+
+function flightSelect(selected, disabled) {
+  const labels = { "": "One tree", gold: "Gold", silver: "Silver", platinum: "Platinum" };
+  return `<select name="flight"${disabled ? " disabled" : ""}>${flightChoices(selected).map((v) =>
+    `<option value="${escapeHtml(v)}" ${v === (selected || "") ? "selected" : ""}>${escapeHtml(labels[v] || v)}</option>`).join("")}</select>`;
+}
+
+function roundChoices(selected) {
+  const known = Object.keys(ROUND_META);
+  if (selected && !known.includes(selected)) known.unshift(selected);
+  return known;
+}
+
+function roundSelect(selected, disabled) {
+  return `<select name="round"${disabled ? " disabled" : ""}>${roundChoices(selected).map((v) =>
+    `<option value="${escapeHtml(v)}" ${v === selected ? "selected" : ""}>${escapeHtml((ROUND_META[v] && ROUND_META[v].label) || v)}</option>`).join("")}</select>`;
 }
 
 function optionList(values, selected) {
@@ -1942,23 +1983,22 @@ function importFieldOptions(fields, selected) {
 }
 
 function customBracketDesk(ev, teams, games) {
-  const teamOpts = (selected) => `<option value="">TBD</option>${(teams || []).map((t) =>
-    `<option value="${escapeHtml(t.id)}" ${t.id === selected ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}`;
+  const locked = (g) => g.status === "final";
   const rows = (games || []).map((g) => `<tr data-bk-custom="${escapeHtml(g.id || "")}">
-    <td><input name="flight" value="${escapeHtml(g.flight || "")}" placeholder="gold" ${g.status === "final" ? "readonly" : ""}></td>
-    <td><input name="round" value="${escapeHtml(g.round || "")}" ${g.status === "final" ? "readonly" : ""}></td>
-    <td><input name="slot" type="number" min="1" value="${escapeHtml(String(g.slot || 1))}" style="width:4rem" ${g.status === "final" ? "readonly" : ""}></td>
-    <td><select name="side" ${g.status === "final" ? "disabled" : ""}>
+    <td>${flightSelect(g.flight || "", locked(g))}</td>
+    <td>${roundSelect(g.round || "QF", locked(g))}</td>
+    <td><input name="slot" type="number" min="1" value="${escapeHtml(String(g.slot || 1))}" style="width:4rem" ${locked(g) ? "readonly" : ""}></td>
+    <td><select name="side" ${locked(g) ? "disabled" : ""}>
       ${[["championship", "Championship"], ["losers", "Losers"], ["consolation", "Consolation"]].map(([v, l]) =>
         `<option value="${v}" ${gameSide(g) === v || g.side === v ? "selected" : ""}>${l}</option>`).join("")}
     </select></td>
-    <td><select name="home_id" ${g.status === "final" ? "disabled" : ""}>${teamOpts(g.home_id)}</select></td>
-    <td><select name="away_id" ${g.status === "final" ? "disabled" : ""}>${teamOpts(g.away_id)}</select></td>
-    <td>${g.status === "final" ? "Final" : `<label class="check"><input type="checkbox" name="delete"> Remove</label>`}</td>
+    <td>${teamSelect(teams, "home_id", g.home_id, { disabled: locked(g) })}</td>
+    <td>${teamSelect(teams, "away_id", g.away_id, { disabled: locked(g) })}</td>
+    <td>${locked(g) ? "Final" : `<label class="check"><input type="checkbox" name="delete"> Remove</label>`}</td>
   </tr>`).join("");
   return `
     <h3>Custom bracket builder</h3>
-    <p class="muted">Add or remove unplayed games. Finals stay. Flight is gold, silver, platinum, or blank for one tree.</p>
+    <p class="muted">Home and away are the registered teams only. Finals stay. Flight is gold, silver, platinum, or one tree.</p>
     <form class="form wide" id="custom-bracket-form">
       <div class="table-wrap"><table>
         <thead><tr><th>Flight</th><th>Round</th><th>Slot</th><th>Side</th><th>Home</th><th>Away</th><th></th></tr></thead>
@@ -1970,16 +2010,16 @@ function customBracketDesk(ev, teams, games) {
       </div>
     </form>
     <template id="custom-bracket-row">${`<tr data-bk-custom="">
-      <td><input name="flight" placeholder="gold"></td>
-      <td><input name="round" value="QF"></td>
+      <td>${flightSelect("", false)}</td>
+      <td>${roundSelect("QF", false)}</td>
       <td><input name="slot" type="number" min="1" value="1" style="width:4rem"></td>
       <td><select name="side">
         <option value="championship">Championship</option>
         <option value="losers">Losers</option>
         <option value="consolation">Consolation</option>
       </select></td>
-      <td><select name="home_id">${teamOpts("")}</select></td>
-      <td><select name="away_id">${teamOpts("")}</select></td>
+      <td>${teamSelect(teams, "home_id", "")}</td>
+      <td>${teamSelect(teams, "away_id", "")}</td>
       <td><label class="check"><input type="checkbox" name="delete"> Remove</label></td>
     </tr>`}</template>
   `;
@@ -2329,7 +2369,8 @@ export async function eventAdmin(slug) {
             <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
                 <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
             <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
-            <td>${escapeHtml(g.home)}</td><td>${escapeHtml(g.away)}</td>
+            <td><select data-edit="${g.id}" name="home_id" required>${teamOptions(teams, g.home_id, "Select a registered team")}</select></td>
+            <td><select data-edit="${g.id}" name="away_id" required>${teamOptions(teams, g.away_id, "Select a registered team")}</select></td>
             <td><input data-edit="${g.id}" name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" style="width:4.2rem">
                 <input data-edit="${g.id}" name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" style="width:4.2rem"></td>
             <td>
@@ -2342,17 +2383,18 @@ export async function eventAdmin(slug) {
           </tr>`)) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
           <form class="form wide" id="add-game-form">
             <h3>Add one game</h3>
+            <p class="muted">Home and away are the registered teams only. Type a new club on Teams or signup first.</p>
             <div class="form-grid two">
-              <label>Home <input name="home" required placeholder="Hawks 10U"></label>
-              <label>Away <input name="away" required placeholder="Passion"></label>
+              <label>Home ${teamSelect(teams, "home_id", "", { required: true })}</label>
+              <label>Away ${teamSelect(teams, "away_id", "", { required: true })}</label>
               <label>Date <input name="date" type="date" value="${dateInput(ev.start)}"></label>
               <label>Time <input name="time" type="time" value="09:00"></label>
               <label>Field
                 <select name="field">${fieldOpts || `<option value="">Add a field first</option>`}</select>
               </label>
-              <label>Pool <input name="pool" placeholder="A"></label>
+              <label>Pool ${poolSelect(teams, "")}</label>
             </div>
-            <button class="btn" type="submit">Add game</button>
+            <button class="btn" type="submit"${teams.length < 2 ? " disabled" : ""}>Add game</button>
           </form>
           ${customBracketDesk(ev, teams, plan.bracket || [])}
         </section>
@@ -2546,6 +2588,8 @@ export async function eventAdmin(slug) {
         if (el.name === "when_date") body.date = el.value;
         if (el.name === "when_time") body.time = el.value;
         if (el.name === "field") body.field = el.value;
+        if (el.name === "home_id") body.home_id = el.value;
+        if (el.name === "away_id") body.away_id = el.value;
         if (el.name === "home_runs") body.home_runs = el.value;
         if (el.name === "away_runs") body.away_runs = el.value;
       });

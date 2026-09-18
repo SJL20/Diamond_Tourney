@@ -724,19 +724,55 @@ function autoSchedule(app, event, body) {
   };
 }
 
+function teamRef(body, idKey, nameKeys) {
+  if (body && body[idKey]) return body[idKey];
+  for (let i = 0; i < nameKeys.length; i++) {
+    const key = nameKeys[i];
+    if (body && body[key]) return body[key];
+  }
+  return "";
+}
+
+function resolveEventTeam(app, event, value) {
+  if (value == null || value === "") return "";
+  try {
+    const rec = app.findRecordById("event_teams", value);
+    if (rec.get("event") === event.id) return rec.id;
+  } catch (err) {}
+  try {
+    return app.findFirstRecordByFilter("event_teams", "event = {:e} && name = {:n}", { e: event.id, n: String(value) }).id;
+  } catch (err) {
+    return "";
+  }
+}
+
+function registeredTeamOrBlank(app, event, value, label) {
+  if (value == null || value === "") return "";
+  const id = resolveEventTeam(app, event, value);
+  if (!id) throw new BadRequestError((label || "Team") + " is not a registered team in this tournament");
+  return id;
+}
+
+function requireRegisteredTeam(app, event, value, label) {
+  const id = registeredTeamOrBlank(app, event, value, label);
+  if (!id) throw new BadRequestError((label || "Team") + " must be a registered team");
+  return id;
+}
+
 function addGame(app, event, body) {
-  const homeName = body.home || body.home_name;
-  const awayName = body.away || body.away_name;
-  if (!homeName || !awayName) throw new BadRequestError("Home and away teams are required");
-  const diamond = require(__hooks + "/diamond.js");
-  const home = diamond.upsertEventTeam(app, event.id, homeName, body.pool || "");
-  const away = diamond.upsertEventTeam(app, event.id, awayName, body.pool || "");
+  const homeRef = teamRef(body, "home_id", ["home", "home_name"]);
+  const awayRef = teamRef(body, "away_id", ["away", "away_name"]);
+  if (!homeRef || !awayRef) throw new BadRequestError("Home and away must be registered teams");
+  const homeId = requireRegisteredTeam(app, event, homeRef, "Home");
+  const awayId = requireRegisteredTeam(app, event, awayRef, "Away");
+  if (homeId === awayId) throw new BadRequestError("Home and away must be different teams");
+  const home = app.findRecordById("event_teams", homeId);
   const rec = new Record(app.findCollectionByNameOrId("event_schedule"));
   rec.set("event", event.id);
   rec.set("date", body.date || "");
   rec.set("time", body.time || "");
-  rec.set("home", home.id);
-  rec.set("away", away.id);
+  rec.set("home", homeId);
+  rec.set("away", awayId);
   rec.set("pool", body.pool || home.get("pool") || "");
   rec.set("status", body.status || "scheduled");
   rec.set("notes", body.notes || "");
@@ -754,6 +790,15 @@ function addGame(app, event, body) {
 function updateGame(app, event, id, body) {
   const rec = app.findRecordById("event_schedule", id);
   if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  if (body.home_id !== undefined || body.home !== undefined || body.home_name !== undefined) {
+    rec.set("home", requireRegisteredTeam(app, event, teamRef(body, "home_id", ["home", "home_name"]), "Home"));
+  }
+  if (body.away_id !== undefined || body.away !== undefined || body.away_name !== undefined) {
+    rec.set("away", requireRegisteredTeam(app, event, teamRef(body, "away_id", ["away", "away_name"]), "Away"));
+  }
+  if (rec.get("home") && rec.get("away") && rec.get("home") === rec.get("away")) {
+    throw new BadRequestError("Home and away must be different teams");
+  }
   if (body.date != null) rec.set("date", body.date);
   if (body.time != null) rec.set("time", body.time);
   if (body.status) rec.set("status", body.status);
@@ -1031,8 +1076,8 @@ function saveCustomBracket(app, event, body) {
       updated += 1;
       continue;
     }
-    const home = resolveEventTeam(app, event, row.home_id != null ? row.home_id : row.home);
-    const away = resolveEventTeam(app, event, row.away_id != null ? row.away_id : row.away);
+    const home = registeredTeamOrBlank(app, event, row.home_id != null ? row.home_id : row.home, "Home");
+    const away = registeredTeamOrBlank(app, event, row.away_id != null ? row.away_id : row.away, "Away");
     const rec = upsertBracket(
       app,
       event,
@@ -1052,19 +1097,6 @@ function saveCustomBracket(app, event, body) {
   return { updated: updated, mode: "custom", bracket: listBracket(app, event) };
 }
 
-function resolveEventTeam(app, event, value) {
-  if (value == null || value === "") return "";
-  try {
-    const rec = app.findRecordById("event_teams", value);
-    if (rec.get("event") === event.id) return rec.id;
-  } catch (err) {}
-  try {
-    return app.findFirstRecordByFilter("event_teams", "event = {:e} && name = {:n}", { e: event.id, n: String(value) }).id;
-  } catch (err) {
-    return "";
-  }
-}
-
 function clearBracketResult(rec) {
   rec.set("status", "scheduled");
   rec.set("winner", "");
@@ -1082,12 +1114,12 @@ function editBracketGame(app, event, id, body) {
     rec.set("away_team", home);
   }
   if (body.home_id !== undefined || body.home !== undefined) {
-    const next = resolveEventTeam(app, event, body.home_id !== undefined ? body.home_id : body.home);
+    const next = registeredTeamOrBlank(app, event, body.home_id !== undefined ? body.home_id : body.home, "Home");
     if (next !== (rec.get("home_team") || "")) teamsChanged = true;
     rec.set("home_team", next);
   }
   if (body.away_id !== undefined || body.away !== undefined) {
-    const next = resolveEventTeam(app, event, body.away_id !== undefined ? body.away_id : body.away);
+    const next = registeredTeamOrBlank(app, event, body.away_id !== undefined ? body.away_id : body.away, "Away");
     if (next !== (rec.get("away_team") || "")) teamsChanged = true;
     rec.set("away_team", next);
   }

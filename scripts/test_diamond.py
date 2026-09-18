@@ -143,6 +143,29 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("platinum-gold-silver", event)
         self.assertIn("fields.length ? fields : [{}]", event)
         self.assertIn("Start with one diamond", event)
+        self.assertIn("function teamSelect", event)
+        self.assertIn("Select a registered team", event)
+        self.assertIn('teamSelect(teams, "home_id"', event)
+        self.assertIn('teamSelect(teams, "away_id"', event)
+        self.assertIn('name="home_id"', event)
+        self.assertIn('name="away_id"', event)
+        self.assertIn("function flightSelect", event)
+        self.assertIn("function roundSelect", event)
+        add_game = event.split('id="add-game-form"', 1)[1].split("customBracketDesk", 1)[0]
+        self.assertNotIn('<input name="home"', add_game)
+        self.assertNotIn('<input name="away"', add_game)
+        self.assertNotIn('<input name="pool"', add_game)
+        self.assertIn("poolSelect", add_game)
+        custom = event.split("function customBracketDesk", 1)[1].split("function bindCustomBracket", 1)[0]
+        self.assertIn("flightSelect", custom)
+        self.assertIn("roundSelect", custom)
+        self.assertNotIn('placeholder="gold"', custom)
+        self.assertNotIn("<input name=\"flight\"", custom)
+        self.assertNotIn("<input name=\"round\"", custom)
+        hooks = (ROOT / "pb/pb_hooks/schedule.js").read_text()
+        add_fn = hooks.split("function addGame", 1)[1].split("function updateGame", 1)[0]
+        self.assertIn("requireRegisteredTeam", add_fn)
+        self.assertNotIn("upsertEventTeam", add_fn)
         self.assertIn(".btn.danger", (ROOT / "pb/pb_public/css/app.css").read_text())
 
     def test_match_card_starts_collapsed(self):
@@ -2198,6 +2221,112 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         self.assertTrue(any("wipeEvent" in h for h in hits))
         self.assertTrue(any("KEEP" in h for h in hits))
         self.assertTrue(any("deletes" in h for h in hits))
+
+
+class SchedulerTeamDropdownTests(unittest.TestCase):
+    """Scheduler and custom bracket only accept registered event teams."""
+
+    def _weekend(self, td, prefix="dd"):
+        slug = prefix + "-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Dropdown Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "format": "pool-only",
+            "fields": [{"name": "Drop 1"}],
+        })
+        hawks = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Drop Hawks",
+            "pool": "A",
+            "as_director": True,
+        })
+        heat = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Drop Heat",
+            "pool": "A",
+            "as_director": True,
+        })
+        return slug, hawks["team"], heat["team"]
+
+    def test_add_game_rejects_unregistered_name(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug, hawks, heat = self._weekend(td, "ghost")
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+                "home": "Ghost Club",
+                "away": heat["name"],
+                "date": "2026-10-24",
+                "time": "09:00",
+                "pool": "A",
+            })
+        self.assertIn("400", str(bad.exception))
+        self.assertIn("registered team", str(bad.exception).lower())
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        names = [t["name"] for t in board["roster"]]
+        self.assertEqual(sorted(names), ["Drop Hawks", "Drop Heat"])
+        self.assertFalse(board["schedule"])
+
+    def test_add_and_update_game_use_registered_ids(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug, hawks, heat = self._weekend(td, "ids")
+        cats = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Drop Cats",
+            "pool": "A",
+            "as_director": True,
+        })
+        added = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home_id": hawks["id"],
+            "away_id": heat["id"],
+            "date": "2026-10-24",
+            "time": "09:00",
+            "field": "Drop 1",
+            "pool": "A",
+        })
+        self.assertEqual(added["game"]["home"], "Drop Hawks")
+        self.assertEqual(added["game"]["away"], "Drop Heat")
+        self.assertEqual(added["game"]["home_id"], hawks["id"])
+        updated = request(BASE, "POST", f"/api/events/{slug}/schedule/{added['game']['id']}", td, {
+            "home_id": cats["team"]["id"],
+            "away_id": hawks["id"],
+        })
+        self.assertEqual(updated["game"]["home"], "Drop Cats")
+        self.assertEqual(updated["game"]["away"], "Drop Hawks")
+        with self.assertRaises(RuntimeError) as same:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{added['game']['id']}", td, {
+                "home_id": hawks["id"],
+                "away_id": hawks["id"],
+            })
+        self.assertIn("400", str(same.exception))
+
+    def test_custom_bracket_rejects_unknown_team(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug, hawks, heat = self._weekend(td, "bk")
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/bracket/custom", td, {
+                "games": [{
+                    "round": "F",
+                    "slot": 1,
+                    "side": "championship",
+                    "home_id": hawks["id"],
+                    "away_id": "not-a-registered-team",
+                }],
+            })
+        self.assertIn("400", str(bad.exception))
+        self.assertIn("registered team", str(bad.exception).lower())
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertFalse(board["bracket"])
+        ok = request(BASE, "POST", f"/api/events/{slug}/bracket/custom", td, {
+            "games": [{
+                "round": "F",
+                "slot": 1,
+                "side": "championship",
+                "home_id": hawks["id"],
+                "away_id": heat["id"],
+            }],
+        })
+        self.assertEqual(ok["bracket"][0]["home"], "Drop Hawks")
+        self.assertEqual(ok["bracket"][0]["away"], "Drop Heat")
 
 
 if __name__ == "__main__":
