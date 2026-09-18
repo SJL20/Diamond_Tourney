@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import sys
 import unittest
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -12,7 +14,7 @@ sys.path.insert(0, str(ROOT))
 from lib.standings import sort_pool
 from scripts.pb_client import auth, request, request_multipart
 
-BASE = "http://127.0.0.1:8097"
+BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT', '8097')}"
 
 
 class TiebreakTests(unittest.TestCase):
@@ -777,6 +779,114 @@ class ScheduleTests(unittest.TestCase):
         names = [f["name"] for f in board["fields"]]
         self.assertIn("East End 1", names)
         self.assertIn("No Offseason", names)
+
+
+def read_or_denied(path, token=None):
+    """GET a raw collection endpoint. Returns rows, or None when PocketBase denies."""
+    try:
+        return request(BASE, "GET", path, token).get("items", [])
+    except RuntimeError as exc:
+        if "403" in str(exc) or "401" in str(exc):
+            return None
+        raise
+
+
+class PacketPrivacyTests(unittest.TestCase):
+    """Outline §1: never publish family emails, addresses, or birthdates.
+
+    A birth certificate carries all three, so a packet file link is the one
+    thing that must never reach an anonymous caller or an unrelated account.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.td = auth(BASE, "td@local.test", "EventTd1!")
+        cls.slug = "privacy-" + uuid.uuid4().hex[:8]
+        cls.family_email = f"parent.{uuid.uuid4().hex[:8]}@family.test"
+        request(BASE, "POST", "/api/events/create", cls.td, {
+            "source": "native",
+            "name": "Privacy Classic",
+            "slug": cls.slug,
+            "venue": "Test Park",
+            "ages": "10U",
+            "require_birth_certs": True,
+        })
+        pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
+        request_multipart(BASE, f"/api/events/{cls.slug}/signup", None, {
+            "team_name": "Privacy 10U",
+            "contact_name": "Coach Parent",
+            "contact_email": cls.family_email,
+        }, {"birth_certs": ("birth_certs.pdf", pdf, "application/pdf")})
+
+    def packet_for(self, path, token=None):
+        out = request(BASE, "GET", path, token)
+        teams = out.get("teams") or []
+        self.assertTrue(teams, f"{path} returned no teams")
+        return teams[0]["packet"]
+
+    def test_anonymous_roster_hides_packet_file_links(self):
+        packet = self.packet_for(f"/api/events/{self.slug}/roster")
+        kinds = {d["kind"] for d in packet["docs"]}
+        self.assertEqual(kinds, {"birth_certs"}, "public caller should still see packet progress")
+        for doc in packet["docs"]:
+            self.assertNotIn("url", doc, "anonymous caller must not get a birth-certificate link")
+            self.assertNotIn("original_name", doc)
+
+    def test_anonymous_plan_and_board_hide_packet_file_links(self):
+        for path in (f"/api/events/{self.slug}/plan", f"/api/event/{self.slug}/board"):
+            out = request(BASE, "GET", path)
+            teams = out.get("teams") or out.get("roster") or []
+            for team in teams:
+                for doc in (team.get("packet") or {}).get("docs", []):
+                    self.assertNotIn("url", doc, f"{path} leaked a packet file link")
+
+    def test_director_still_sees_packet_file_links(self):
+        packet = self.packet_for(f"/api/events/{self.slug}/plan", self.td)
+        self.assertTrue(packet["docs"], "director desk needs the packet rows")
+        for doc in packet["docs"]:
+            self.assertTrue(doc.get("url"), "the owning director must keep the file link")
+
+    def test_packet_documents_are_not_listable(self):
+        """An empty `uploaded_by` must not match an empty `@request.auth.id`.
+
+        A team that signs itself up has no account, so a rule of plain
+        `uploaded_by = @request.auth.id` compares "" = "" and matches. Both the
+        anonymous and the self-registered caller have to come back empty.
+        """
+        path = "/api/collections/team_docs/records?perPage=200&filter=(kind='birth_certs')"
+        self.assertFalse(read_or_denied(path), "anonymous REST listed birth certificates")
+        self.assertFalse(read_or_denied(path, self.stranger()),
+                         "a self-registered account listed other events' birth certificates")
+
+    def test_contact_emails_are_not_readable(self):
+        for token in (None, self.stranger()):
+            for path in ("/api/collections/event_teams/records?perPage=500",
+                         "/api/collections/club_teams/records?perPage=500"):
+                for row in (read_or_denied(path, token) or []):
+                    self.assertFalse(row.get("contact_email"), f"{path} leaked a contact email")
+
+    def test_packet_file_needs_a_token(self):
+        packet = self.packet_for(f"/api/events/{self.slug}/plan", self.td)
+        url = packet["docs"][0]["url"]
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "GET", url)
+        self.assertRegex(str(denied.exception), r"40[0-9]")
+
+        token = request(BASE, "POST", "/api/files/token", self.td, {})["token"]
+        opened = urllib.request.urlopen(f"{BASE}{url}?token={token}", timeout=20)
+        self.assertEqual(opened.status, 200)
+        self.assertTrue(opened.read(), "the director's tokenized link must still download")
+
+    @staticmethod
+    def stranger():
+        email = f"stranger.{uuid.uuid4().hex[:8]}@nowhere.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "Stranger99!",
+            "display_name": "Random Stranger",
+            "intent": "director",
+        })
+        return auth(BASE, email, "Stranger99!")
 
 
 if __name__ == "__main__":
