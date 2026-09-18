@@ -550,9 +550,11 @@ function matchCard(g, roster = [], plan = null) {
   const chosenTime = g.time || def.time || "";
   const chosenDate = g.date || def.date || "";
   const set = slotIsSet(g);
+  // Never start open. Field, time, sides, and the final sit behind one toggle
+  // so a four-game quarterfinal column stays a tree, not a stack of forms.
   const desk = isDirector() && g.id ? `
-    <details class="bk-desk-box" ${set ? "" : "open"}>
-      <summary>${set ? "Edit slot" : "Set field and time"}</summary>
+    <details class="bk-desk-box">
+      <summary>Edit game</summary>
       <form class="bk-desk" data-bk-desk="${escapeHtml(g.id)}">
         <label>Field
           <select name="field">${optionList(plan?.fields || [], chosenField)}</select>
@@ -574,12 +576,12 @@ function matchCard(g, roster = [], plan = null) {
           ${g.status === "final" ? `<button class="btn ghost" type="button" data-reopen>Reopen</button>` : ""}
         </div>
       </form>
-    </details>
-    ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
-      <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
-      <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
-      <button class="btn ghost" type="submit">Final</button>
-    </form>` : ""}` : "";
+      ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
+        <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
+        <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
+        <button class="btn ghost" type="submit">Final</button>
+      </form>` : ""}
+    </details>` : "";
   return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""} ${set ? "slot-set" : "slot-open"}">
     <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
       <span>${escapeHtml(g.home || "TBD")}</span>
@@ -589,10 +591,10 @@ function matchCard(g, roster = [], plan = null) {
       <span>${escapeHtml(g.away || "TBD")}</span>
       <b>${g.status === "final" ? g.away_runs : ""}</b>
     </div>
-    <div class="bk-when">
+    ${set ? `<div class="bk-when">
       <span class="bk-chip"><em>Field</em> ${escapeHtml(fieldLabel)}</span>
       <span class="bk-chip"><em>Time</em> ${escapeHtml(timeLabel)}</span>
-    </div>
+    </div>` : ""}
     <p class="bk-meta">${escapeHtml(meta.join(" · "))}${g.protest_note ? ` · ${escapeHtml(g.protest_note)}` : ""}</p>
     ${desk}
   </article>`;
@@ -794,7 +796,7 @@ export async function eventBracket(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head">
       <h1>Bracket</h1>
-      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game. Field and first pitch sit on every card${isDirector() ? ". A set game stays collapsed — open Edit slot to change it. New games default to the next open field and time" : ""}.</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${isDirector() ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
     </section>
     ${board.bracket.length ? bracketBoards(board.bracket, board.roster, plan) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
     ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
@@ -1551,14 +1553,14 @@ export async function eventAdmin(slug) {
           <p class="muted">Round-robin inside each pool. A diamond is only used while it is open that day.</p>
           <form class="form wide" id="auto-form">
             <div class="form-grid two">
-              <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml([ev.start, ev.end].filter(Boolean).join("\n") || "")}</textarea></label>
-              <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="2"></label>
+              <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml((ev.scheduler && ev.scheduler.days && ev.scheduler.days.length ? ev.scheduler.days : [ev.start, ev.end].filter(Boolean)).join("\n") || "")}</textarea></label>
+              <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="${escapeHtml(String((ev.scheduler && ev.scheduler.games_per_team) || 2))}"></label>
               <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
               <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
             </div>
-            <label class="check"><input type="checkbox" name="consolation" checked> If you draw a bracket, include consolation games</label>
-            <label class="check"><input type="checkbox" name="replace" checked> Replace unplayed pool games</label>
-            <label class="check"><input type="checkbox" name="draw_bracket"> Also draw empty bracket slots now</label>
+            <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> If you draw a bracket, include consolation games</label>
+            <label class="check"><input type="checkbox" name="replace"${!ev.scheduler || ev.scheduler.replace !== false ? " checked" : ""}> Replace unplayed pool games</label>
+            <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also draw empty bracket slots now</label>
             <div class="actions">
               <button class="btn" type="submit">Build pool schedule</button>
               <button class="btn ghost" id="build-bracket" type="button">Draw bracket from standings</button>
@@ -1670,27 +1672,35 @@ export async function eventAdmin(slug) {
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
+  function schedulerBody(fd) {
+    return {
+      days: String(fd.get("days") || ""),
+      games_per_team: Number(fd.get("games_per_team") || 2),
+      start_time: fd.get("start_time") || "08:00",
+      end_time: fd.get("end_time") || "18:00",
+      hours_start: fd.get("start_time") || "08:00",
+      hours_end: fd.get("end_time") || "18:00",
+      consolation: fd.get("consolation") === "on",
+      replace: fd.get("replace") === "on",
+      draw_bracket: fd.get("draw_bracket") === "on",
+      format: ev.format || "pool-to-bracket",
+    };
+  }
   document.getElementById("auto-form").addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
-    const fd = new FormData(evnt.target);
+    const body = schedulerBody(new FormData(evnt.target));
     try {
-      const out = await adminPost(slug, "/schedule/auto", {
-        days: String(fd.get("days") || ""),
-        games_per_team: Number(fd.get("games_per_team") || 2),
-        start_time: fd.get("start_time") || "08:00",
-        end_time: fd.get("end_time") || "18:00",
-        consolation: fd.get("consolation") === "on",
-        replace: fd.get("replace") === "on",
-        draw_bracket: fd.get("draw_bracket") === "on",
-        format: ev.format || "pool-to-bracket",
-      });
+      await adminPost(slug, "/settings", body);
+      const out = await adminPost(slug, "/schedule/auto", body);
       note("Scheduled " + out.games + " game(s) on " + (out.fields || []).join(", ") + (out.leftover ? " · " + out.leftover + " leftover" : ""));
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
   document.getElementById("build-bracket").addEventListener("click", async () => {
+    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
     try {
-      const out = await adminPost(slug, "/bracket/build", { consolation: true, replace: true, format: ev.format || "pool-to-bracket" });
+      await adminPost(slug, "/settings", body);
+      const out = await adminPost(slug, "/bracket/build", body);
       note("Bracket drawn · " + out.games + " games from " + out.seeds + " seeds");
       eventAdmin(slug);
     } catch (err) { showErr(err); }

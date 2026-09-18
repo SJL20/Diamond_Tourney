@@ -26,6 +26,19 @@ class TiebreakTests(unittest.TestCase):
         self.assertEqual(ranked[0]["id"], "b")
 
 
+class BracketCardTests(unittest.TestCase):
+    def test_match_card_starts_collapsed(self):
+        src = (ROOT / "pb/pb_public/js/event.js").read_text()
+        css = (ROOT / "pb/pb_public/css/app.css").read_text()
+        self.assertIn('<details class="bk-desk-box">', src)
+        self.assertNotIn('${set ? "" : "open"}', src)
+        desk = src.split("function matchCard", 1)[1].split("function renderBracketTree", 1)[0]
+        self.assertIn("bk-score", desk)
+        self.assertLess(desk.find("class=\"bk-score\""), desk.find("</details>"))
+        self.assertGreater(desk.find("</details>"), desk.find("data-bk-id"))
+        self.assertIn(".bk-desk-box:not([open]) > *:not(summary)", css)
+
+
 class BoardTests(unittest.TestCase):
     def test_harbor_eight_board(self):
         board = request(BASE, "GET", "/api/event/harbor-eight/board")
@@ -794,6 +807,64 @@ class ScheduleTests(unittest.TestCase):
             hh, mm = game["time"].split(":")
             start = int(hh) * 60 + int(mm)
             self.assertLessEqual(start + 90, 12 * 60)
+
+    def test_auto_schedule_saves_scheduler_settings(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "scheduler-prefs-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Scheduler Prefs",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "start": "2026-10-03",
+            "end": "2026-10-04",
+            "format": "pool-to-bracket",
+            "hours_start": "08:00",
+            "hours_end": "18:00",
+            "fields": [{"name": "Harbor 1"}, {"name": "Harbor 2"}],
+        })
+        for name, pool in (("Prefs Hawks", "A"), ("Prefs Heat", "A"), ("Prefs Cats", "B"), ("Prefs Fox", "B")):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": pool,
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": "2026-10-03\n2026-10-04",
+            "games_per_team": 1,
+            "start_time": "09:15",
+            "end_time": "16:30",
+            "consolation": False,
+            "replace": False,
+            "draw_bracket": True,
+            "format": "pool-to-bracket",
+        })
+        self.assertGreaterEqual(auto["games"], 2)
+        self.assertEqual(auto["scheduler"]["games_per_team"], 1)
+        self.assertFalse(auto["scheduler"]["consolation"])
+        self.assertFalse(auto["scheduler"]["replace"])
+        self.assertTrue(auto["scheduler"]["draw_bracket"])
+        self.assertEqual(auto["scheduler"]["days"], ["2026-10-03", "2026-10-04"])
+
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        ev = plan["event"]
+        self.assertEqual(ev["hours_start"], "09:15")
+        self.assertEqual(ev["hours_end"], "16:30")
+        self.assertEqual(ev["scheduler"]["games_per_team"], 1)
+        self.assertFalse(ev["scheduler"]["consolation"])
+        self.assertFalse(ev["scheduler"]["replace"])
+        self.assertTrue(ev["scheduler"]["draw_bracket"])
+        self.assertEqual(ev["scheduler"]["days"], ["2026-10-03", "2026-10-04"])
+        # Unchecked consolation must stick on a later draw, not snap back to default.
+        request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "consolation": ev["scheduler"]["consolation"],
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        sides = {g["side"] for g in board["bracket"]}
+        self.assertNotIn("consolation", sides)
 
     def test_keystone_fields_and_rain_note(self):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")

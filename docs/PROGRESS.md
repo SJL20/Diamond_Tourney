@@ -25,7 +25,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Repository | **public** — assume anything committed or served is world-readable |
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
-| Tests | 31 unit/integration cases + 13 acceptance checks |
+| Tests | 33 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -197,6 +197,20 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — Bracket cards start collapsed
+
+Director field, time, sides, and score controls on `/t/{slug}/bracket` now
+start closed on every game, including unset slots. The old card opened
+"Set field and time" and left the 0–0 final row on the face of the card,
+which stretched a four-game quarterfinal column to a couple thousand
+pixels. `BracketCardTests.test_match_card_starts_collapsed` locks the
+markup. Closed `<details>` also hide their forms in CSS so
+`display: grid` on the desk cannot keep the settings visible.
+
+Same desk: scheduler checkboxes persist on `events.scheduler` before
+"Build pool schedule" or "Draw bracket", so a redraw shows what the
+director just chose.
 
 ### 2026-09-18 — Harbor Eight practice weekend
 

@@ -450,7 +450,12 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .rain-banner.postponed, .rain-banner.moved { background: #f8d7d0; }
 .rain-banner.clear { background: #eef4ea; }
 .bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; padding: 8px 12px 10px; }
+.bk-desk-box .bk-score { border-top: 1px solid var(--line); }
 .bk-score input { width: 4.2rem; }
+/* Author display:grid / display:flex on the desk would otherwise keep a
+   closed <details> looking expanded. Hide everything but the summary. */
+.bk-desk-box:not([open]) > *:not(summary) { display: none !important; }
+.bk-desk-box:not([open]) > summary { color: var(--muted); padding: 4px 12px; }
 .bk-when {
   display: flex;
   flex-wrap: wrap;
@@ -654,7 +659,7 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   display: flex;
   flex-direction: column;
   justify-content: space-around;
-  gap: 24px;
+  gap: 14px;
   position: relative;
   padding-right: 20px;
 }
@@ -680,7 +685,7 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
