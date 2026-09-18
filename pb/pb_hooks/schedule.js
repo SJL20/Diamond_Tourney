@@ -809,7 +809,7 @@ function plan(app, event, auth) {
     event: host.eventJson(event, app),
     fields: eventFields(app, event.id),
     schedule: listSchedule(app, event.id, auth),
-    teams: host.publicRoster(app, event),
+    teams: host.publicRoster(app, event, auth),
     pending_boxes: require(__hooks + "/score.js").listPendingBoxes(app, event.id),
   };
 }

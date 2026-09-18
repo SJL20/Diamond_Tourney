@@ -28,6 +28,23 @@ function authHeader() {
   return eventPb.authStore.token ? { Authorization: eventPb.authStore.token } : {};
 }
 
+// Packet files (insurance, rosters, birth certificates) are protected, so a
+// plain /api/files link 403s. Mint a short-lived file token for this director.
+async function fileToken() {
+  if (!eventPb.authStore.token) return "";
+  try {
+    return await eventPb.files.getToken();
+  } catch (err) {
+    return "";
+  }
+}
+
+function withFileToken(url, token) {
+  if (!url) return "";
+  if (!token) return url;
+  return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+}
+
 function eventChrome(event, page, body) {
   const site = event ? "" : (page === "create" ? "create" : page);
   return pageShell({ pb: eventPb, site, event, page, body });
@@ -1460,6 +1477,7 @@ export async function eventAdmin(slug) {
   const fields = plan.fields || ev.fields || [];
   const games = plan.schedule || [];
   const teams = plan.teams || [];
+  const docToken = await fileToken();
   const showErr = async (err) => {
     const box = document.getElementById("admin-err");
     box.hidden = false;
@@ -1619,7 +1637,7 @@ export async function eventAdmin(slug) {
               <td>${escapeHtml(t.name)}</td>
               <td><span class="badge ${p.status || "incomplete"}">${escapeHtml(p.status || "incomplete")}</span></td>
               <td>${(p.missing || []).map((k) => escapeHtml(k)).join(", ") || "—"}</td>
-              <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(d.url)}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
+              <td>${(p.docs || []).map((d) => `${escapeHtml(d.label)} · ${escapeHtml(d.status)}${d.url ? ` · <a href="${escapeHtml(withFileToken(d.url, docToken))}">file</a>` : ""} ${d.status !== "approved" ? `<button class="btn ghost" data-approve="${d.id}">Approve</button>` : ""}`).join("<br>") || "—"}</td>
             </tr>`;
           }))}
           ${rosterBlock(teams)}

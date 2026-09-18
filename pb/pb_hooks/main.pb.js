@@ -212,7 +212,7 @@ routerAdd("POST", "/api/events/{slug}/signup", (e) => {
     throw new BadRequestError("Upload the required team documents: " + packet.required_labels.join(", "));
   }
   const out = host.teamJson(rec);
-  out.packet = host.packetSummary(e.app, event, rec);
+  out.packet = host.packetSummary(e.app, event, rec, host.canSeeTeamPacket(event, rec, e.auth));
   return e.json(200, { team: out, event: event.get("slug") });
 });
 
@@ -226,7 +226,10 @@ routerAdd("POST", "/api/events/{slug}/docs", (e) => {
   const team = e.app.findRecordById("event_teams", body.team_id || body.event_team);
   const files = host.uploaded(e, "file") || host.uploaded(e, body.kind);
   const doc = host.saveTeamDoc(e.app, event, team, body, files, e.auth);
-  return e.json(200, { doc: doc, packet: host.packetSummary(e.app, event, team) });
+  return e.json(200, {
+    doc: doc,
+    packet: host.packetSummary(e.app, event, team, host.canSeeTeamPacket(event, team, e.auth)),
+  });
 });
 
 routerAdd("POST", "/api/events/{slug}/docs/{id}/review", (e) => {
@@ -269,7 +272,7 @@ routerAdd("GET", "/api/events/{slug}/roster", (e) => {
   if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
   return e.json(200, {
     event: host.eventJson(event, e.app),
-    teams: host.publicRoster(e.app, event),
+    teams: host.publicRoster(e.app, event, e.auth),
   });
 });
 

@@ -396,7 +396,7 @@ function publicBoard(app, event, auth) {
     packet: packet,
     roster: (function () {
       try {
-        return host.publicRoster(app, event);
+        return host.publicRoster(app, event, auth);
       } catch (err) {
         return [];
       }

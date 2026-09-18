@@ -135,31 +135,53 @@ function fileUrl(app, collectionName, rec, field) {
   }
 }
 
-function docJson(app, rec) {
-  return {
+// Packet files are insurance, rosters, waivers, and birth certificates. A birth
+// certificate carries a child's birthdate and address, so the download link is
+// only ever handed to the director, a region admin, or that team's own signer.
+function docJson(app, rec, withFiles) {
+  const row = {
     id: rec.id,
     kind: rec.get("kind"),
     label: DOC_LABELS[rec.get("kind")] || rec.get("kind"),
     status: rec.get("status") || "submitted",
-    note: rec.get("note") || "",
-    original_name: rec.get("original_name") || "",
-    url: fileUrl(app, "team_docs", rec, "file"),
   };
+  if (withFiles) {
+    row.note = rec.get("note") || "";
+    row.original_name = rec.get("original_name") || "";
+    row.url = fileUrl(app, "team_docs", rec, "file");
+  }
+  return row;
 }
 
-function teamDocs(app, teamId) {
+function teamDocs(app, teamId, withFiles) {
   try {
     return app.findRecordsByFilter("team_docs", "event_team = {:t}", "kind", 40, 0, { t: teamId }).map(function (r) {
-      return docJson(app, r);
+      return docJson(app, r, withFiles);
     });
   } catch (err) {
     return [];
   }
 }
 
-function packetSummary(app, event, team) {
+// True only for a region admin, the director who owns this event, or the
+// account that signed this team up. `event_td` alone is not enough: account
+// registration hands out that role, so it is not a trust boundary.
+function canSeeTeamPacket(event, team, auth) {
+  if (!auth) return false;
+  if (auth.get("role") === "region_admin") return true;
+  const creator = event.get("created_by");
+  if (creator && creator === auth.id) return true;
+  if (team) {
+    if (team.get("account") && team.get("account") === auth.id) return true;
+    const email = team.get("contact_email");
+    if (email && email === auth.email()) return true;
+  }
+  return false;
+}
+
+function packetSummary(app, event, team, withFiles) {
   const required = requiredDocKinds(event);
-  const docs = teamDocs(app, team.id);
+  const docs = teamDocs(app, team.id, withFiles);
   const have = {};
   for (const d of docs) have[d.kind] = d;
   const missing = required.filter(function (k) { return !have[k]; });
@@ -642,11 +664,11 @@ function syncEvent(app, event) {
   return results;
 }
 
-function publicRoster(app, event) {
+function publicRoster(app, event, auth) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
   return teams.map(function (t) {
     const row = teamJson(t);
-    row.packet = packetSummary(app, event, t);
+    row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth));
     return row;
   });
 }
@@ -727,6 +749,7 @@ module.exports = {
   applyGuidelines: applyGuidelines,
   requiredDocKinds: requiredDocKinds,
   packetSummary: packetSummary,
+  canSeeTeamPacket: canSeeTeamPacket,
   refreshPacketStatus: refreshPacketStatus,
   saveTeamDoc: saveTeamDoc,
   reviewDoc: reviewDoc,
