@@ -62,6 +62,10 @@ Use the exact names in outline §5. Slugs are lowercase-hyphen.
 | D hub | Draft news / field notes | `public=true` in Phase 1 |
 | Builder | Schema, pages, deploy, tests | Formula changes |
 
+## Data safety
+
+Fly volume `pb_data` is mounted at `/data` and persists across deploys. Migrations are additive. Do not add a migration that lists events and deletes the ones not in a KEEP set. `1700000017_harbor_eight.js` already ran; PocketBase will not re-run it. `scripts/check_migration_safety.py` fails CI if a newer migration wipes weekends.
+
 ## Local accounts (dev only)
 
 See `scripts/local-accounts.txt`. Never put production passwords in the repo.

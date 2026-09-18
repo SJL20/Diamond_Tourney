@@ -5,6 +5,8 @@ cd "$ROOT"
 export PB_PORT="${PB_PORT:-8097}"
 export PB_URL="http://127.0.0.1:${PB_PORT}"
 
+python3 "$ROOT/scripts/check_migration_safety.py"
+
 # Most of the suite talks to a live server, so bring PocketBase up first.
 # ensure-pocketbase.sh installs the binary, creates pb_data, reuses a healthy
 # listener, waits for /api/health, and returns.

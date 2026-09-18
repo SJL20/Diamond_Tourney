@@ -297,6 +297,26 @@ routerAdd("POST", "/api/events/{slug}/teams/{id}", (e) => {
   return e.json(200, { team: row });
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/teams/{id}/remove", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const team = e.app.findRecordById("event_teams", e.request.pathValue("id"));
+  if (team.get("event") !== event.id) throw new BadRequestError("Team is not on this tournament");
+  return e.json(200, host.removeEventTeam(e.app, event, team, e.auth));
+}, $apis.requireAuth());
+
+routerAdd("DELETE", "/api/events/{slug}/teams/{id}", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const team = e.app.findRecordById("event_teams", e.request.pathValue("id"));
+  if (team.get("event") !== event.id) throw new BadRequestError("Team is not on this tournament");
+  return e.json(200, host.removeEventTeam(e.app, event, team, e.auth));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/import-teams/preview", (e) => {
   const sb = require(__hooks + "/softball.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
@@ -634,7 +654,17 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
   return e.json(200, schedule.buildBracket(e.app, event, {
     consolation: prefs.consolation,
     replace: body.replace !== false,
+    format: body.format || event.get("format"),
+    bracket_flights: body.bracket_flights != null ? body.bracket_flights : event.get("bracket_flights"),
   }));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/bracket/custom", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, schedule.saveCustomBracket(e.app, event, e.requestInfo().body || {}));
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/bracket/{id}", (e) => {

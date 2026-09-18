@@ -210,12 +210,60 @@ function eventFields(app, eventId) {
   try {
     let event = null;
     try { event = app.findRecordById("events", eventId); } catch (miss) {}
-    return app.findRecordsByFilter("fields", "event = {:e}", "name", 40, 0, { e: eventId }).map(function (rec) {
+    return app.findRecordsByFilter("fields", "event = {:e}", "name", 400, 0, { e: eventId }).map(function (rec) {
       return fieldJson(rec, event);
     });
   } catch (err) {
     return [];
   }
+}
+
+function bodyKeys(body) {
+  if (!body) return [];
+  try { return Object.keys(body); } catch (err) { return []; }
+}
+
+function hasFieldPayload(body) {
+  if (!body) return false;
+  if (body.fields != null) return true;
+  if (body.replace_fields === true || body.replace_fields === "true") return true;
+  const keys = bodyKeys(body);
+  for (let i = 0; i < keys.length; i++) {
+    if (/^field_(name|id)_\d+$/.test(String(keys[i]))) return true;
+  }
+  for (let i = 0; i < 256; i++) {
+    if (body["field_name_" + i] || body["field_id_" + i]) return true;
+  }
+  return false;
+}
+
+function fieldRowFromBody(body, i) {
+  const name = String(body["field_name_" + i] || "").trim();
+  const id = body["field_id_" + i] || "";
+  if (!name && !id) return null;
+  const availability = [];
+  for (let d = 0; d < 16; d++) {
+    const date = String(body["field_day_" + i + "_" + d + "_date"] || "").trim();
+    if (!date) continue;
+    const on = body["field_day_" + i + "_" + d + "_on"];
+    availability.push({
+      date: date,
+      available: on === true || on === "true" || on === "on" || on === "1",
+      start: body["field_day_" + i + "_" + d + "_start"] || "",
+      end: body["field_day_" + i + "_" + d + "_end"] || "",
+    });
+  }
+  return {
+    id: id,
+    name: name,
+    address: body["field_address_" + i] || "",
+    lat: body["field_lat_" + i],
+    lng: body["field_lng_" + i],
+    pin_set: body["field_pin_set_" + i],
+    surface: body["field_surface_" + i] || "",
+    lights: body["field_lights_" + i],
+    availability: availability,
+  };
 }
 
 function parseFieldRows(body) {
@@ -225,33 +273,22 @@ function parseFieldRows(body) {
   if (typeof body.fields === "string") {
     try { return JSON.parse(body.fields); } catch (err) {}
   }
+  const seen = {};
   const out = [];
-  for (let i = 0; i < 16; i++) {
-    const name = String(body["field_name_" + i] || "").trim();
-    if (!name) continue;
-    const availability = [];
-    for (let d = 0; d < 8; d++) {
-      const date = String(body["field_day_" + i + "_" + d + "_date"] || "").trim();
-      if (!date) continue;
-      const on = body["field_day_" + i + "_" + d + "_on"];
-      availability.push({
-        date: date,
-        available: on === true || on === "true" || on === "on" || on === "1",
-        start: body["field_day_" + i + "_" + d + "_start"] || "",
-        end: body["field_day_" + i + "_" + d + "_end"] || "",
-      });
-    }
-    out.push({
-      id: body["field_id_" + i] || "",
-      name: name,
-      address: body["field_address_" + i] || "",
-      lat: body["field_lat_" + i],
-      lng: body["field_lng_" + i],
-      pin_set: body["field_pin_set_" + i],
-      surface: body["field_surface_" + i] || "",
-      lights: body["field_lights_" + i],
-      availability: availability,
-    });
+  function take(i) {
+    if (seen[i]) return;
+    const row = fieldRowFromBody(body, i);
+    if (!row) return;
+    seen[i] = true;
+    out.push(row);
+  }
+  const keys = bodyKeys(body);
+  for (let k = 0; k < keys.length; k++) {
+    const m = String(keys[k]).match(/^field_(?:name|id)_(\d+)$/);
+    if (m) take(Number(m[1]));
+  }
+  if (!out.length) {
+    for (let i = 0; i < 256; i++) take(i);
   }
   return out;
 }
@@ -311,12 +348,66 @@ function applyLocation(rec, body) {
   if (body.hours_end != null) rec.set("hours_end", body.hours_end);
 }
 
+function listFieldRecords(app, eventId) {
+  try {
+    return app.findRecordsByFilter("fields", "event = {:e}", "name", 400, 0, { e: eventId });
+  } catch (err) {
+    return [];
+  }
+}
+
+function unlinkField(app, event, rec) {
+  const fieldId = rec.id;
+  const fieldName = rec.get("name") || "";
+  try {
+    const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    for (let i = 0; i < games.length; i++) {
+      const row = games[i];
+      if (row.get("field") !== fieldId && row.get("field_name") !== fieldName) continue;
+      row.set("field", "");
+      if (row.get("field_name") === fieldName) row.set("field_name", "");
+      app.save(row);
+    }
+  } catch (err) {}
+  try {
+    const tree = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+    for (let i = 0; i < tree.length; i++) {
+      if (tree[i].get("field_name") === fieldName) {
+        tree[i].set("field_name", "");
+        app.save(tree[i]);
+      }
+    }
+  } catch (err) {}
+}
+
 function saveEventFields(app, event, body) {
+  const existing = listFieldRecords(app, event.id);
+  if (!hasFieldPayload(body)) {
+    if (!existing.length) {
+      return [saveField(app, event, { name: "Field 1" })];
+    }
+    return existing.map(function (rec) { return fieldJson(rec, event); });
+  }
   const rows = parseFieldRows(body);
   const saved = [];
-  for (const row of rows) {
-    if (!row || !row.name) continue;
-    saved.push(saveField(app, event, row));
+  const keep = {};
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !String(row.name || "").trim()) continue;
+    const rec = saveField(app, event, row);
+    keep[rec.id] = true;
+    saved.push(rec);
+  }
+  if (!saved.length) {
+    if (existing.length) return existing.map(function (rec) { return fieldJson(rec, event); });
+    return [saveField(app, event, { name: "Field 1" })];
+  }
+  for (let i = 0; i < existing.length; i++) {
+    const rec = existing[i];
+    if (keep[rec.id]) continue;
+    if (saved.length < 1) break;
+    unlinkField(app, event, rec);
+    app.delete(rec);
   }
   return saved;
 }
@@ -462,6 +553,26 @@ function poolGames(teams, gamesPerTeam) {
   return games;
 }
 
+function formatWantsPool(format) {
+  return format !== "single-elim" && format !== "double-elim" && format !== "imported";
+}
+
+function formatWantsBracket(format) {
+  return format === "pool-to-bracket" || format === "single-elim" || format === "double-elim" || format === "pool-double-elim";
+}
+
+function formatIsDoubleElim(format) {
+  return format === "double-elim" || format === "pool-double-elim";
+}
+
+function poolCap(format, prefs, body) {
+  if (format === "round-robin") {
+    if (hasOwn(body, "games_per_team") && Number(body.games_per_team) > 0) return Number(body.games_per_team);
+    return 0;
+  }
+  return prefs.games_per_team;
+}
+
 function timeSlots(days, start, end, gameMinutes, buffer) {
   const slots = [];
   const span = Number(gameMinutes || 90) + Number(buffer || 15);
@@ -522,7 +633,7 @@ function autoSchedule(app, event, body) {
   const prefs = saveScheduler(app, event, body || {});
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id });
   if (teams.length < 2) throw new BadRequestError("Sign up at least two teams before you auto-schedule.");
-  const fields = app.findRecordsByFilter("fields", "event = {:e} && status != 'closed'", "name", 20, 0, { e: event.id }).filter(function (f) {
+  const fields = app.findRecordsByFilter("fields", "event = {:e} && status != 'closed'", "name", 200, 0, { e: event.id }).filter(function (f) {
     return f.get("status") !== "wet";
   });
   if (!fields.length) throw new BadRequestError("Add at least one open field in tournament setup.");
@@ -531,8 +642,9 @@ function autoSchedule(app, event, body) {
     days = datesBetween(event.get("start"), event.get("end"));
     if (!days.length) days = ["2026-09-19"];
   }
-  const games = poolGames(teams, prefs.games_per_team);
-  if (!games.length) throw new BadRequestError("Need at least two teams in the same pool.");
+  const format = body.format || event.get("format") || "pool-to-bracket";
+  const games = formatWantsPool(format) ? poolGames(teams, poolCap(format, prefs, body || {})) : [];
+  if (formatWantsPool(format) && !games.length) throw new BadRequestError("Need at least two teams in the same pool.");
   if (prefs.replace) {
     const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
     for (const row of old) {
@@ -586,13 +698,19 @@ function autoSchedule(app, event, body) {
     busyAt[key][game.away.id] = true;
     placed.push(savePoolGame(app, event, game, { date: cand.date, time: cand.time }, cand.field));
   }
-  const format = body.format || event.get("format") || "pool-to-bracket";
   if (format) {
     event.set("format", format);
+    if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
     app.save(event);
   }
-  if (prefs.draw_bracket && format && format !== "pool-only" && format !== "imported") {
-    buildBracket(app, event, { consolation: prefs.consolation, replace: true });
+  let bracket = null;
+  if (prefs.draw_bracket && formatWantsBracket(format)) {
+    bracket = buildBracket(app, event, {
+      consolation: prefs.consolation,
+      replace: true,
+      format: format,
+      bracket_flights: body.bracket_flights || event.get("bracket_flights") || "none",
+    });
   }
   return {
     games: placed.length,
@@ -602,6 +720,7 @@ function autoSchedule(app, event, body) {
     format: event.get("format"),
     scheduler: prefs,
     schedule: listSchedule(app, event.id),
+    bracket: bracket,
   };
 }
 
@@ -670,7 +789,9 @@ function seedList(app, event) {
   ranked.sort(function (a, b) {
     if (a.w !== b.w) return b.w - a.w;
     if (a.l !== b.l) return a.l - b.l;
-    return (b.diff || 0) - (a.diff || 0);
+    if ((a.ra || 0) !== (b.ra || 0)) return (a.ra || 0) - (b.ra || 0);
+    if ((a.diff || 0) !== (b.diff || 0)) return (b.diff || 0) - (a.diff || 0);
+    return (b.rs || 0) - (a.rs || 0);
   });
   if (ranked.length) return ranked;
   return app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id }).map(function (t) {
@@ -678,21 +799,81 @@ function seedList(app, event) {
   });
 }
 
-function upsertBracket(app, event, round, slot, side, homeId, awayId) {
-  let rec;
+function normalizeFlights(raw) {
+  const key = String(raw || "none").toLowerCase();
+  if (key === "gold-silver") return ["gold", "silver"];
+  if (key === "platinum-gold-silver") return ["platinum", "gold", "silver"];
+  return [""];
+}
+
+function splitFlights(seeds, flightsKey) {
+  const names = normalizeFlights(flightsKey);
+  if (names.length <= 1) return [{ flight: names[0] || "", seeds: seeds.slice() }];
+  const n = seeds.length;
+  if (n < 2) return [{ flight: names[0] || "", seeds: seeds.slice() }];
+  const out = [];
+  let start = 0;
+  for (let i = 0; i < names.length; i++) {
+    const leftFlights = names.length - i;
+    const leftTeams = n - start;
+    if (leftTeams <= 0) break;
+    const take = i === names.length - 1 ? leftTeams : Math.max(2, Math.ceil(leftTeams / leftFlights));
+    const chunk = seeds.slice(start, start + take);
+    start += take;
+    if (chunk.length >= 2) out.push({ flight: names[i], seeds: chunk });
+    else if (chunk.length === 1 && out.length) out[out.length - 1].seeds.push(chunk[0]);
+  }
+  return out.length ? out : [{ flight: "", seeds: seeds.slice() }];
+}
+
+function flightOf(value) {
+  return String(value || "");
+}
+
+function findBracketSlot(app, event, round, slot, flight) {
+  const fl = flightOf(flight);
   try {
-    rec = app.findFirstRecordByFilter(
+    if (fl) {
+      return app.findFirstRecordByFilter(
+        "bracket_games",
+        "event = {:e} && round = {:r} && slot = {:s} && flight = {:f}",
+        { e: event.id, r: round, s: slot, f: fl },
+      );
+    }
+    return app.findFirstRecordByFilter(
       "bracket_games",
-      "event = {:e} && round = {:r} && slot = {:s}",
-      { e: event.id, r: round, s: slot },
+      "event = {:e} && round = {:r} && slot = {:s} && (flight = '' || flight = {:f})",
+      { e: event.id, r: round, s: slot, f: fl },
     );
   } catch (err) {
+    try {
+      return app.findFirstRecordByFilter(
+        "bracket_games",
+        "event = {:e} && round = {:r} && slot = {:s}",
+        { e: event.id, r: round, s: slot },
+      );
+    } catch (miss) {
+      return null;
+    }
+  }
+}
+
+function upsertBracket(app, event, round, slot, side, homeId, awayId, extras) {
+  extras = extras || {};
+  const flight = flightOf(extras.flight);
+  const kind = extras.bracket_kind || (side === "losers" ? "losers" : side === "consolation" ? "consolation" : "winners");
+  let rec = findBracketSlot(app, event, round, slot, flight);
+  if (!rec) {
     rec = new Record(app.findCollectionByNameOrId("bracket_games"));
     rec.set("event", event.id);
     rec.set("round", round);
     rec.set("slot", slot);
   }
+  rec.set("round", round);
+  rec.set("slot", slot);
   rec.set("side", side);
+  rec.set("flight", flight);
+  rec.set("bracket_kind", kind);
   rec.set("status", rec.get("status") || "scheduled");
   if (homeId) rec.set("home_team", homeId);
   if (awayId) rec.set("away_team", awayId);
@@ -701,42 +882,173 @@ function upsertBracket(app, event, round, slot, side, homeId, awayId) {
   return rec;
 }
 
+function drawSingleElim(app, event, seeds, flight, consolation) {
+  const extra = { flight: flight, bracket_kind: "winners" };
+  const n = seeds.length;
+  let count = 0;
+  function up(round, slot, side, homeId, awayId, kind) {
+    upsertBracket(app, event, round, slot, side, homeId, awayId, { flight: flight, bracket_kind: kind || extra.bracket_kind });
+    count += 1;
+  }
+  if (n <= 2) {
+    up("F", 1, "championship", seeds[0].id, seeds[1].id, "winners");
+    return count;
+  }
+  if (n <= 4) {
+    up("SF", 1, "championship", seeds[0].id, seeds[3] ? seeds[3].id : "", "winners");
+    up("SF", 2, "championship", seeds[1].id, seeds[2] ? seeds[2].id : "", "winners");
+    up("F", 1, "championship", "", "", "winners");
+    if (consolation) up("3RD", 1, "consolation", "", "", "consolation");
+    return count;
+  }
+  up("QF", 1, "championship", seeds[0].id, seeds[7] ? seeds[7].id : "", "winners");
+  up("QF", 2, "championship", seeds[3] ? seeds[3].id : "", seeds[4] ? seeds[4].id : "", "winners");
+  up("QF", 3, "championship", seeds[1] ? seeds[1].id : "", seeds[6] ? seeds[6].id : "", "winners");
+  up("QF", 4, "championship", seeds[2] ? seeds[2].id : "", seeds[5] ? seeds[5].id : "", "winners");
+  up("SF", 1, "championship", "", "", "winners");
+  up("SF", 2, "championship", "", "", "winners");
+  up("F", 1, "championship", "", "", "winners");
+  if (consolation) {
+    up("5TH", 1, "consolation", "", "", "consolation");
+    up("3RD", 1, "consolation", "", "", "consolation");
+    up("7TH", 1, "consolation", "", "", "consolation");
+  }
+  return count;
+}
+
+function drawDoubleElim(app, event, seeds, flight) {
+  const n = seeds.length;
+  let count = 0;
+  function up(round, slot, side, homeId, awayId, kind) {
+    upsertBracket(app, event, round, slot, side, homeId || "", awayId || "", { flight: flight, bracket_kind: kind });
+    count += 1;
+  }
+  if (n <= 2) {
+    up("F", 1, "championship", seeds[0].id, seeds[1].id, "winners");
+    up("LF", 1, "losers", "", "", "losers");
+    return count;
+  }
+  if (n <= 4) {
+    up("SF", 1, "championship", seeds[0].id, seeds[3] ? seeds[3].id : "", "winners");
+    up("SF", 2, "championship", seeds[1].id, seeds[2] ? seeds[2].id : "", "winners");
+    up("F", 1, "championship", "", "", "winners");
+    up("L1", 1, "losers", "", "", "losers");
+    up("LF", 1, "losers", "", "", "losers");
+    return count;
+  }
+  up("QF", 1, "championship", seeds[0].id, seeds[7] ? seeds[7].id : "", "winners");
+  up("QF", 2, "championship", seeds[3] ? seeds[3].id : "", seeds[4] ? seeds[4].id : "", "winners");
+  up("QF", 3, "championship", seeds[1] ? seeds[1].id : "", seeds[6] ? seeds[6].id : "", "winners");
+  up("QF", 4, "championship", seeds[2] ? seeds[2].id : "", seeds[5] ? seeds[5].id : "", "winners");
+  up("SF", 1, "championship", "", "", "winners");
+  up("SF", 2, "championship", "", "", "winners");
+  up("F", 1, "championship", "", "", "winners");
+  up("L1", 1, "losers", "", "", "losers");
+  up("L1", 2, "losers", "", "", "losers");
+  up("L2", 1, "losers", "", "", "losers");
+  up("L2", 2, "losers", "", "", "losers");
+  up("L3", 1, "losers", "", "", "losers");
+  up("LF", 1, "losers", "", "", "losers");
+  return count;
+}
+
 function buildBracket(app, event, opts) {
+  opts = opts || {};
   const seeds = seedList(app, event);
-  const consolation = !opts || opts.consolation !== false;
-  if (opts && opts.replace) {
-    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 80, 0, { e: event.id });
+  const format = opts.format || event.get("format") || "pool-to-bracket";
+  const flightsKey = opts.bracket_flights != null ? opts.bracket_flights : (event.get("bracket_flights") || "none");
+  const consolation = opts.consolation !== false && !formatIsDoubleElim(format);
+  if (opts.bracket_flights != null) event.set("bracket_flights", flightsKey || "none");
+  event.set("bracket_mode", opts.bracket_mode || "standings");
+  if (opts.format) event.set("format", opts.format);
+  app.save(event);
+  if (opts.replace) {
+    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
     for (const row of old) {
       if (row.get("status") === "final") continue;
       app.delete(row);
     }
   }
   const n = seeds.length;
-  if (n < 2) return { games: 0, note: "Need two teams to draw a bracket." };
-  if (n <= 2) {
-    upsertBracket(app, event, "F", 1, "championship", seeds[0].id, seeds[1].id);
-    return { games: 1, seeds: n };
+  if (n < 2) return { games: 0, seeds: n, note: "Need two teams to draw a bracket." };
+  const flights = splitFlights(seeds, flightsKey);
+  let games = 0;
+  const drawn = [];
+  for (let i = 0; i < flights.length; i++) {
+    const fl = flights[i];
+    const added = formatIsDoubleElim(format)
+      ? drawDoubleElim(app, event, fl.seeds, fl.flight)
+      : drawSingleElim(app, event, fl.seeds, fl.flight, consolation);
+    games += added;
+    drawn.push({ flight: fl.flight || "", seeds: fl.seeds.length, games: added });
   }
-  if (n <= 4) {
-    upsertBracket(app, event, "SF", 1, "championship", seeds[0].id, seeds[3] ? seeds[3].id : "");
-    upsertBracket(app, event, "SF", 2, "championship", seeds[1].id, seeds[2] ? seeds[2].id : "");
-    upsertBracket(app, event, "F", 1, "championship", "", "");
-    if (consolation) upsertBracket(app, event, "3RD", 1, "consolation", "", "");
-    return { games: consolation ? 4 : 3, seeds: n };
+  return { games: games, seeds: n, flights: drawn, format: format, bracket_flights: flightsKey || "none" };
+}
+
+function listBracket(app, event) {
+  try {
+    return require(__hooks + "/diamond.js").publicBoard(app, event).bracket;
+  } catch (err) {
+    return [];
   }
-  upsertBracket(app, event, "QF", 1, "championship", seeds[0].id, seeds[7] ? seeds[7].id : "");
-  upsertBracket(app, event, "QF", 2, "championship", seeds[3] ? seeds[3].id : "", seeds[4] ? seeds[4].id : "");
-  upsertBracket(app, event, "QF", 3, "championship", seeds[1] ? seeds[1].id : "", seeds[6] ? seeds[6].id : "");
-  upsertBracket(app, event, "QF", 4, "championship", seeds[2] ? seeds[2].id : "", seeds[5] ? seeds[5].id : "");
-  upsertBracket(app, event, "SF", 1, "championship", "", "");
-  upsertBracket(app, event, "SF", 2, "championship", "", "");
-  upsertBracket(app, event, "F", 1, "championship", "", "");
-  if (consolation) {
-    upsertBracket(app, event, "5TH", 1, "consolation", "", "");
-    upsertBracket(app, event, "3RD", 1, "consolation", "", "");
-    upsertBracket(app, event, "7TH", 1, "consolation", "", "");
+}
+
+function saveCustomBracket(app, event, body) {
+  body = body || {};
+  event.set("bracket_mode", "custom");
+  if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
+  if (body.format) event.set("format", body.format);
+  app.save(event);
+  const incoming = body.games || [];
+  const deleteIds = body.delete_ids || body.deleteIds || [];
+  const keep = {};
+  for (let i = 0; i < incoming.length; i++) {
+    if (incoming[i] && incoming[i].id) keep[incoming[i].id] = true;
   }
-  return { games: consolation ? 10 : 7, seeds: n };
+  for (let i = 0; i < deleteIds.length; i++) {
+    try {
+      const rec = app.findRecordById("bracket_games", deleteIds[i]);
+      if (rec.get("event") !== event.id) continue;
+      if (rec.get("status") === "final") continue;
+      app.delete(rec);
+    } catch (err) {}
+  }
+  if (body.replace === true || body.replace === "true") {
+    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+    for (let i = 0; i < old.length; i++) {
+      if (old[i].get("status") === "final") continue;
+      if (keep[old[i].id]) continue;
+      app.delete(old[i]);
+    }
+  }
+  let updated = 0;
+  for (let i = 0; i < incoming.length; i++) {
+    const row = incoming[i];
+    if (!row) continue;
+    if (row.id) {
+      editBracketGame(app, event, row.id, row);
+      updated += 1;
+      continue;
+    }
+    const home = resolveEventTeam(app, event, row.home_id != null ? row.home_id : row.home);
+    const away = resolveEventTeam(app, event, row.away_id != null ? row.away_id : row.away);
+    const rec = upsertBracket(
+      app,
+      event,
+      row.round || "QF",
+      Number(row.slot || (i + 1)),
+      row.side || "championship",
+      home,
+      away,
+      { flight: row.flight || "", bracket_kind: row.bracket_kind || (row.side === "losers" ? "losers" : "winners") },
+    );
+    if (row.date != null) rec.set("date", row.date);
+    if (row.time != null) rec.set("time", row.time);
+    if (row.field != null || row.field_name != null) rec.set("field_name", row.field || row.field_name || "");
+    app.save(rec);
+    updated += 1;
+  }
+  return { updated: updated, mode: "custom", bracket: listBracket(app, event) };
 }
 
 function resolveEventTeam(app, event, value) {
@@ -782,8 +1094,10 @@ function editBracketGame(app, event, id, body) {
   if (body.time != null) rec.set("time", body.time);
   if (body.date != null) rec.set("date", body.date);
   if (body.slot != null && body.slot !== "") rec.set("slot", Number(body.slot));
-  if (body.side === "championship" || body.side === "consolation") rec.set("side", body.side);
+  if (body.side === "championship" || body.side === "consolation" || body.side === "winners" || body.side === "losers") rec.set("side", body.side);
   if (body.round) rec.set("round", body.round);
+  if (body.flight != null) rec.set("flight", String(body.flight || ""));
+  if (body.bracket_kind) rec.set("bracket_kind", body.bracket_kind);
   if (body.protest_note != null) rec.set("protest_note", body.protest_note);
   const keep = body.keep_score === true || body.keep_score === "true";
   if (body.clear_result === true || body.clear_result === "true" || body.reopen === true || body.reopen === "true" || (teamsChanged && rec.get("status") === "final" && !keep)) {
@@ -948,6 +1262,7 @@ function plan(app, event, auth) {
     fields: eventFields(app, event.id),
     schedule: listSchedule(app, event.id, auth),
     teams: teams,
+    bracket: listBracket(app, event),
     pending_boxes: require(__hooks + "/score.js").listPendingBoxes(app, event.id),
     photos: (function () {
       try { return require(__hooks + "/photos.js").listPhotos(app, event.id, false); }
@@ -972,6 +1287,12 @@ module.exports = {
   updateGame: updateGame,
   deleteGame: deleteGame,
   buildBracket: buildBracket,
+  saveCustomBracket: saveCustomBracket,
+  listBracket: listBracket,
+  splitFlights: splitFlights,
+  parseFieldRows: parseFieldRows,
+  roundRobinPairs: roundRobinPairs,
+  poolGames: poolGames,
   editBracketGame: editBracketGame,
   swapBracketSeats: swapBracketSeats,
   saveBracketDesk: saveBracketDesk,
