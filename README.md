@@ -1,5 +1,7 @@
 # Diamond Tourney + Region books
 
+Public GitHub home: [github.com/SJL20/Diamond_Tourney](https://github.com/SJL20/Diamond_Tourney).
+
 Wholly hosted tournament site: start an event natively or by linking a Tourney Machine page, teams sign up with a GameChanger URL, and this host pulls those public pages. Season team books stay behind a coach login. Bots are optional leftovers for screenshot ingest — they are not required to run a weekend.
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md`.

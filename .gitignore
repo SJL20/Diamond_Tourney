@@ -1,6 +1,7 @@
 pb/pb_data/
 tools/
 *.zip
+*.bundle
 .DS_Store
 .env
 .env.local
