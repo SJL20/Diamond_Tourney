@@ -264,6 +264,10 @@ function eventJson(rec, app) {
     end: dateStr(rec.get("end")),
     hours_start: rec.get("hours_start") || "08:00",
     hours_end: rec.get("hours_end") || "18:00",
+    scheduler: (function () {
+      try { return require(__hooks + "/schedule.js").parseScheduler(rec.get("scheduler")); }
+      catch (err) { return { games_per_team: 2, consolation: true, replace: true, draw_bracket: false, days: [] }; }
+    })(),
     fields: fields,
     ages: rec.get("ages") || "",
     status: rec.get("status") || "",
@@ -721,6 +725,7 @@ function applySettings(app, event, body) {
   if (body.end) event.set("end", body.end);
   applyGuidelines(event, body);
   const schedule = require(__hooks + "/schedule.js");
+  schedule.saveScheduler(app, event, body);
   schedule.applyLocation(event, body);
   app.save(event);
   schedule.saveEventFields(app, event, body);

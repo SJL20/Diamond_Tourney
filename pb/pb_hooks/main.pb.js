@@ -423,11 +423,15 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
   sb.requireRole(e, ["region_admin", "event_td"]);
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   const body = e.requestInfo().body || {};
+  const prefs = schedule.saveScheduler(e.app, event, body);
   if (body.format) {
     event.set("format", body.format);
     e.app.save(event);
   }
-  return e.json(200, schedule.buildBracket(e.app, event, body));
+  return e.json(200, schedule.buildBracket(e.app, event, {
+    consolation: prefs.consolation,
+    replace: body.replace !== false,
+  }));
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/bracket/{id}", (e) => {
