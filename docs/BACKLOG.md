@@ -386,3 +386,64 @@ deploys. Confirm backups cover the files directory and not only the database.
 - [ ] Guidance text shown on the upload control
 - [ ] Images render on the public tournament page
 - [ ] Uploads survive a redeploy
+
+
+## [ ] 11. Import: admin link creates a new tournament instead of importing into the current one
+
+**High. Owner-reproduced on the live site.**
+
+### 11a. Wrong destination from the admin page
+
+`pb/pb_public/js/event.js` line 2297, on a tournament's admin overview:
+
+    <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+
+`/directors/import` is the standalone create-an-event-from-CSV flow — it asks for
+Event slug and Event name. Clicking it from inside an existing tournament creates
+a second, unrelated tournament rather than importing into the current one. A
+director following it during setup silently ends up with a duplicate.
+
+**Keep `/directors/import` exactly as it is.** Starting a new tournament from a
+grid is a real and wanted flow, reached from the directors landing page.
+
+**Add the scoped version** for use from inside a tournament: same CSV parsing, no
+slug or name fields, games land in the tournament the director is already in.
+There is already a scoped importer to build on — `teamImportDesk()` and
+`bindTeamImport(slug, ...)` — with column mapping and preview.
+
+### 11b. Rename the label
+
+"Import a grid" → **"Import schedule"**. Directors do not call it a grid.
+
+### 11c. Importing must not disable brackets
+
+The CSV import sets `format = "imported"` (`pb/pb_hooks/main.pb.js` line 714,
+`pb/pb_hooks/host.js` line 588). In `pb/pb_hooks/schedule.js`, `"imported"` is
+excluded from both `formatWantsBracket()` and `formatWantsPool()`, so a director
+who imports a pool schedule can never draw a bracket from the standings, and pool
+handling is off too.
+
+**This breaks the core positioning.** "Bring the schedule you already have" is the
+main way a director is expected to start. If importing means no bracket, they go
+back to Tourney Machine for the part that matters most on Sunday.
+
+`"imported"` describes where the games came from, not what the tournament is. It
+should not be a format and should not restrict anything afterward.
+
+**Fix:** record provenance separately — an `imported` boolean, or the existing
+`source` field (`ev.source === "popup"` is already used at line 2299) — and let
+the director pick a real format for an imported event, defaulting to
+`pool-to-bracket`. Imported games populate pool play, standings compute normally,
+the bracket draws from them.
+
+### Acceptance criteria
+
+- [ ] `/directors/import` unchanged: still creates a new tournament from a grid
+- [ ] A scoped import inside a tournament loads games into that tournament only,
+      with no slug or name fields and no new event created
+- [ ] Admin label reads "Import schedule"
+- [ ] An imported pool schedule produces standings
+- [ ] A bracket can be drawn from those standings
+- [ ] Provenance recorded without restricting format
+- [ ] **End-to-end: import the Keystone Clash pool grid as CSV, confirm standings
+      compute with correct seeds, then draw the 8-team double-elim bracket from them**
