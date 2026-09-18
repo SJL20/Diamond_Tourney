@@ -133,6 +133,16 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Add co-owner", event)
         self.assertIn("/co-owners", event)
         self.assertIn("Public pages never show these addresses", event)
+        self.assertIn("data-remove-field", event)
+        self.assertIn("data-remove-team", event)
+        self.assertIn("data-team-form", event)
+        self.assertIn("Custom bracket builder", event)
+        self.assertIn("pool-double-elim", event)
+        self.assertIn("round-robin", event)
+        self.assertIn("gold-silver", event)
+        self.assertIn("platinum-gold-silver", event)
+        self.assertIn("fields.length ? fields : [{}]", event)
+        self.assertIn("Start with one diamond", event)
         self.assertIn(".btn.danger", (ROOT / "pb/pb_public/css/app.css").read_text())
 
     def test_match_card_starts_collapsed(self):
@@ -1918,6 +1928,276 @@ class IssuesBacklogTests(unittest.TestCase):
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertNotIn("obrien@local.test", json.dumps(board))
         self.assertNotIn("0412-555-0101", json.dumps(board))
+
+
+class AdminTeamsBracketsTests(unittest.TestCase):
+    """Director team edit/remove, fields min 1, flights, custom bracket, RR, DE."""
+
+    def test_create_defaults_one_field_and_can_add_remove(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "one-field-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "One Field Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        names = [f["name"] for f in created["event"]["fields"]]
+        self.assertEqual(names, ["Field 1"])
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "fields": [
+                {"id": created["event"]["fields"][0]["id"], "name": "East 1"},
+                {"name": "East 2"},
+                {"name": "East 3"},
+            ],
+        })
+        self.assertEqual(sorted(f["name"] for f in saved["event"]["fields"]), ["East 1", "East 2", "East 3"])
+        down = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "fields": [{"name": "East 1"}],
+        })
+        self.assertEqual([f["name"] for f in down["event"]["fields"]], ["East 1"])
+        kept = request(BASE, "POST", f"/api/events/{slug}/settings", td, {"fields": []})
+        self.assertEqual([f["name"] for f in kept["event"]["fields"]], ["East 1"])
+        guide = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "format": "round-robin",
+            "bracket_flights": "gold-silver",
+        })
+        self.assertEqual(guide["event"]["format"], "round-robin")
+        self.assertEqual(guide["event"]["bracket_flights"], "gold-silver")
+        self.assertEqual([f["name"] for f in guide["event"]["fields"]], ["East 1"])
+
+    def test_director_edits_and_removes_team_contacts_stay_private(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "edit-teams-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Edit Teams Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        email = f"dugout.{uuid.uuid4().hex[:6]}@local.test"
+        phone = "412-555-0144"
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Dugout Heat",
+            "pool": "A",
+            "contact_email": email,
+            "coach_phone": phone,
+            "as_director": True,
+        })
+        team_id = joined["team"]["id"]
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Stay Put",
+            "pool": "B",
+            "as_director": True,
+        })
+        saved = request(BASE, "POST", f"/api/events/{slug}/teams/{team_id}", td, {
+            "name": "Dugout Heat Renamed",
+            "pool": "C",
+            "gamechanger_url": "https://web.gc.com/team/dugout-heat",
+            "coach_email": email,
+            "coach_phone": phone,
+            "alt_name": "Manager Pat",
+            "alt_email": f"mgr.{uuid.uuid4().hex[:6]}@local.test",
+        })
+        self.assertEqual(saved["team"]["name"], "Dugout Heat Renamed")
+        self.assertEqual(saved["team"]["slug"], "dugout-heat-renamed")
+        self.assertEqual(saved["team"]["pool"], "C")
+        self.assertEqual(saved["team"]["gamechanger_url"], "https://web.gc.com/team/dugout-heat")
+        self.assertEqual(saved["team"]["contact"]["coach_phone"], phone)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        blob = json.dumps(board)
+        self.assertNotIn(email, blob)
+        self.assertNotIn(phone, blob)
+        self.assertTrue(any(t.get("name") == "Dugout Heat Renamed" for t in board.get("roster") or []))
+        gone = request(BASE, "POST", f"/api/events/{slug}/teams/{team_id}/remove", td, {})
+        self.assertEqual(gone["deleted"], team_id)
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertFalse(any(t["name"] == "Dugout Heat Renamed" for t in plan["teams"]))
+        self.assertTrue(any(t["name"] == "Stay Put" for t in plan["teams"]))
+
+    def test_stranger_cannot_remove_team(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "keep-team-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Keep Team Classic",
+            "slug": slug,
+        })
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Keepers",
+            "as_director": True,
+        })
+        email = f"stranger.{uuid.uuid4().hex[:6]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "StrangerTeam1!",
+            "display_name": "Stranger",
+            "intent": "td",
+        })
+        other = auth(BASE, email, "StrangerTeam1!")
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/teams/{joined['team']['id']}/remove", other, {})
+        self.assertIn("403", str(bad.exception))
+
+    def test_round_robin_schedules_complete_pool(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "rr-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Round Robin Classic",
+            "slug": slug,
+            "format": "round-robin",
+            "start": "2026-10-03",
+            "end": "2026-10-04",
+            "fields": [{"name": "RR 1"}, {"name": "RR 2"}],
+        })
+        for name in ("RR Hawks", "RR Heat", "RR Cats", "RR Fox"):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A",
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-10-03", "2026-10-04"],
+            "replace": True,
+            "format": "round-robin",
+        })
+        self.assertEqual(auto["games"], 6)
+        self.assertEqual(auto["leftover"], 0)
+
+    def test_gold_silver_splits_by_overall_rank(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "flights-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Flight Classic",
+            "slug": slug,
+            "format": "pool-to-bracket",
+            "start": "2026-10-03",
+            "end": "2026-10-04",
+            "fields": [{"name": "Flight 1"}],
+        })
+        names = [f"Flight {n}" for n in ("Ace", "Bay", "Cove", "Dale", "Echo", "Fern", "Gale", "Hill")]
+        for i, name in enumerate(names):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A" if i < 4 else "B",
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-10-03"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        for game in auto["schedule"]:
+            if "Ace" in (game["home"], game["away"]) or "Bay" in (game["home"], game["away"]):
+                home_win = game["home"] in ("Flight Ace", "Flight Bay")
+                request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                    "home_runs": 8 if home_win else 1,
+                    "away_runs": 1 if home_win else 8,
+                    "status": "final",
+                })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "format": "pool-to-bracket",
+            "bracket_flights": "gold-silver",
+            "consolation": False,
+        })
+        self.assertGreaterEqual(drawn["games"], 2)
+        flights = {row["flight"]: row["seeds"] for row in drawn.get("flights") or []}
+        self.assertIn("gold", flights)
+        self.assertIn("silver", flights)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        labels = {g.get("flight") for g in board["bracket"]}
+        self.assertEqual(labels, {"gold", "silver"})
+
+    def test_custom_bracket_builder(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "custom-bk-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Custom Bracket Classic",
+            "slug": slug,
+            "format": "single-elim",
+        })
+        a = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Custom Hawks", "as_director": True,
+        })
+        b = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Custom Heat", "as_director": True,
+        })
+        out = request(BASE, "POST", f"/api/events/{slug}/bracket/custom", td, {
+            "games": [{
+                "round": "F",
+                "slot": 1,
+                "side": "championship",
+                "home_id": a["team"]["id"],
+                "away_id": b["team"]["id"],
+            }],
+        })
+        self.assertEqual(out["mode"], "custom")
+        self.assertEqual(len(out["bracket"]), 1)
+        self.assertEqual(out["bracket"][0]["home"], "Custom Hawks")
+        extra = request(BASE, "POST", f"/api/events/{slug}/bracket/custom", td, {
+            "games": [{
+                "round": "3RD",
+                "slot": 1,
+                "side": "consolation",
+            }],
+            "delete_ids": [out["bracket"][0]["id"]],
+        })
+        rounds = {g["round"] for g in extra["bracket"]}
+        self.assertIn("3RD", rounds)
+        self.assertNotIn("F", rounds)
+
+    def test_pool_double_elim_draws_losers(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "de-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Double Elim Classic",
+            "slug": slug,
+            "format": "pool-double-elim",
+        })
+        for name in ("DE Hawks", "DE Heat", "DE Cats", "DE Fox"):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A",
+                "as_director": True,
+            })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "format": "pool-double-elim",
+        })
+        self.assertGreaterEqual(drawn["games"], 5)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        rounds = {g["round"] for g in board["bracket"]}
+        self.assertIn("SF", rounds)
+        self.assertIn("F", rounds)
+        self.assertIn("L1", rounds)
+        self.assertIn("LF", rounds)
+        self.assertTrue(any(g.get("side") == "losers" or g.get("bracket_kind") == "losers" for g in board["bracket"]))
+
+    def test_migration_safety_script_blocks_wipe(self):
+        from scripts.check_migration_safety import scan
+        harbor = ROOT / "pb" / "pb_migrations" / "1700000017_harbor_eight.js"
+        self.assertEqual(scan(harbor), [])
+        newest = ROOT / "pb" / "pb_migrations" / "1700000026_admin_teams_brackets.js"
+        self.assertEqual(scan(newest), [])
+        fake = Path("/tmp/1700000099_wipe_all.js")
+        fake.write_text(
+            'const KEEP = { "keystone-clash-2026": true };\n'
+            'function wipeEvent(event) { app.delete(event); }\n'
+            'const events = app.findRecordsByFilter("events", "", "", 200, 0);\n',
+            encoding="utf-8",
+        )
+        hits = scan(fake)
+        self.assertTrue(any("wipeEvent" in h for h in hits))
+        self.assertTrue(any("KEEP" in h for h in hits))
+        self.assertTrue(any("deletes" in h for h in hits))
 
 
 if __name__ == "__main__":

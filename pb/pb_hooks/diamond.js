@@ -458,8 +458,10 @@ function importSchedule(app, event, csv) {
 }
 
 function inferSide(round, side) {
+  if (side === "losers" || side === "winners" || side === "championship" || side === "consolation") return side;
   if (side) return side;
   const r = String(round || "").toUpperCase();
+  if (r === "LF" || /^L(\d|QF|SF)/.test(r)) return "losers";
   if (/^(C|3RD|5TH|7TH|CONS)/.test(r)) return "consolation";
   return "championship";
 }
@@ -474,10 +476,12 @@ function loserId(g) {
   return "";
 }
 
-function advanceBracket(app, eventId) {
-  const games = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 40, 0, { e: eventId });
+function advanceFlight(app, games) {
   const champ = games.filter(function (g) {
-    return inferSide(g.get("round"), g.get("side")) === "championship";
+    const kind = g.get("bracket_kind") || "";
+    if (kind === "losers") return false;
+    const side = inferSide(g.get("round"), g.get("side"));
+    return side === "championship" || side === "winners" || kind === "winners" || !kind;
   });
   const s1 = champ.find(function (g) { return g.get("round") === "SF" && Number(g.get("slot")) === 1; });
   const s2 = champ.find(function (g) { return g.get("round") === "SF" && Number(g.get("slot")) === 2; });
@@ -495,6 +499,18 @@ function advanceBracket(app, eventId) {
     if (l2) third.set("away_team", l2);
     app.save(third);
   }
+}
+
+function advanceBracket(app, eventId) {
+  const games = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 400, 0, { e: eventId });
+  const byFlight = {};
+  for (let i = 0; i < games.length; i++) {
+    const fl = games[i].get("flight") || "";
+    if (!byFlight[fl]) byFlight[fl] = [];
+    byFlight[fl].push(games[i]);
+  }
+  const names = Object.keys(byFlight);
+  for (let i = 0; i < names.length; i++) advanceFlight(app, byFlight[names[i]]);
 }
 
 function ba(h, ab) {
@@ -631,7 +647,7 @@ function listOverall(schedule, bracket) {
 
 function publicBoard(app, event, auth) {
   const eventId = event.id;
-  const bracketRecs = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 40, 0, { e: eventId });
+  const bracketRecs = app.findRecordsByFilter("bracket_games", "event = {:e}", "flight,round,slot", 400, 0, { e: eventId });
   function teamName(id) {
     if (!id) return "";
     try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
@@ -650,6 +666,8 @@ function publicBoard(app, event, auth) {
         game_number: Number(g.get("game_number") || 0) || 0,
         round: round,
         slot: g.get("slot"),
+        flight: g.get("flight") || "",
+        bracket_kind: g.get("bracket_kind") || "",
         side: inferSide(round, g.get("side")),
         home: teamName(g.get("home_team")),
         away: teamName(g.get("away_team")),

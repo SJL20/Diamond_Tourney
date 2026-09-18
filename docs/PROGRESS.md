@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 60 unit/integration cases + 13 acceptance checks |
+| Tests | 68 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -185,6 +185,18 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — admin team edit, flights, custom bracket, field min 1
+
+Directors can edit and remove teams on Admin → Teams (name, pool, GameChanger
+URL, contacts). Public board / anonymous JSON still omit coach email and phone.
+Formats now include round robin and pool-then-double-elim. Bracket levels
+gold/silver or platinum/gold/silver split the overall seed list. Custom
+bracket builder adds or deletes unplayed games. Venue setup defaults to one
+field, add/remove as needed, minimum one, no 16-field cap. New migration
+`1700000026` is additive only. `scripts/check_migration_safety.py` fails CI
+if a later migration copies the Harbor KEEP/wipe. Fly `/data` is unchanged.
+Covered by `AdminTeamsBracketsTests`.
 
 ### 2026-09-18 — issues + Derek backlog in one PR
 

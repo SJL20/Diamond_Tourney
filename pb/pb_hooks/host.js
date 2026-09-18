@@ -332,6 +332,8 @@ function eventMapUrl(rec) {
 
 const FORMAT_LABELS = {
   "pool-to-bracket": "Pool play, then single-elim bracket",
+  "pool-double-elim": "Pool play, then double-elim bracket",
+  "round-robin": "Round robin",
   "pool-only": "Pool play only",
   "single-elim": "Single elimination",
   "double-elim": "Double elimination",
@@ -361,6 +363,8 @@ function eventJson(rec, app, auth, opts) {
     rain_note: rec.get("rain_note") || "",
     format: format,
     format_label: FORMAT_LABELS[format] || format,
+    bracket_flights: rec.get("bracket_flights") || "none",
+    bracket_mode: rec.get("bracket_mode") || "standings",
     start: dateStr(rec.get("start")),
     end: dateStr(rec.get("end")),
     hours_start: rec.get("hours_start") || "08:00",
@@ -462,6 +466,10 @@ function teamJson(rec) {
     published_ra: rec.get("published_ra"),
     packet_status: rec.get("packet_status") || "",
     packet_note: rec.get("packet_note") || "",
+    age_group: rec.get("age_group") || "",
+    klass: rec.get("klass") || "",
+    notes: rec.get("notes") || "",
+    paid: !!rec.get("paid"),
   };
 }
 
@@ -578,6 +586,8 @@ function createEvent(app, body, auth) {
   rec.set("public", true);
   rec.set("status", "live");
   rec.set("format", body.format || "imported");
+  rec.set("bracket_flights", body.bracket_flights || "none");
+  rec.set("bracket_mode", body.bracket_mode || "standings");
   rec.set("source", source);
   rec.set("signup_open", body.signup_open !== false);
   rec.set("auto_sync", true);
@@ -665,7 +675,22 @@ function updateEventTeam(app, event, team, body, auth) {
     throw new ForbiddenError("Only this team's coach or the director can edit the contact.");
   }
   if (admin) {
-    if (body.name) team.set("name", String(body.name).trim());
+    if (body.name) {
+      const name = String(body.name).trim();
+      team.set("name", name);
+      const next = slugify(name);
+      if (next && next !== team.get("slug")) {
+        try {
+          app.findFirstRecordByFilter(
+            "event_teams",
+            "event = {:e} && slug = {:s}",
+            { e: event.id, s: next },
+          );
+        } catch (err) {
+          team.set("slug", next);
+        }
+      }
+    }
     if (body.pool != null) team.set("pool", body.pool);
     if (body.gamechanger_url != null) {
       const gcUrl = String(body.gamechanger_url || "").trim();
@@ -698,6 +723,87 @@ function updateEventTeam(app, event, team, body, auth) {
   const row = teamJson(team);
   row.contact = contacts.contactJson(contactRec);
   return row;
+}
+
+function removeEventTeam(app, event, team, auth) {
+  const sb = require(__hooks + "/softball.js");
+  if (!sb.isEventAdmin(event, auth, app)) {
+    throw new ForbiddenError("Only the director can remove a team from this weekend.");
+  }
+  const teamId = team.id;
+  const name = team.get("name") || teamId;
+
+  function involving(rec, keys) {
+    for (let i = 0; i < keys.length; i++) {
+      if (rec.get(keys[i]) === teamId) return true;
+    }
+    return false;
+  }
+
+  const schedule = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+  for (let i = 0; i < schedule.length; i++) {
+    const row = schedule[i];
+    if (!involving(row, ["home", "away"])) continue;
+    if (row.get("status") === "final") {
+      throw new BadRequestError("This team has a final pool game. Keep the score on the board; you cannot remove them.");
+    }
+  }
+  const tree = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+  for (let i = 0; i < tree.length; i++) {
+    const row = tree[i];
+    if (!involving(row, ["home_team", "away_team", "winner"])) continue;
+    if (row.get("status") === "final") {
+      throw new BadRequestError("This team has a final bracket game. Keep the score on the board; you cannot remove them.");
+    }
+  }
+
+  for (let i = 0; i < schedule.length; i++) {
+    const row = schedule[i];
+    if (!involving(row, ["home", "away"])) continue;
+    try {
+      const boxes = app.findRecordsByFilter("event_boxes", "schedule_row = {:g}", "", 20, 0, { g: row.id });
+      for (let b = 0; b < boxes.length; b++) app.delete(boxes[b]);
+    } catch (err) {}
+    app.delete(row);
+  }
+  for (let i = 0; i < tree.length; i++) {
+    const row = tree[i];
+    let changed = false;
+    if (row.get("home_team") === teamId) {
+      row.set("home_team", "");
+      changed = true;
+    }
+    if (row.get("away_team") === teamId) {
+      row.set("away_team", "");
+      changed = true;
+    }
+    if (row.get("winner") === teamId) {
+      row.set("winner", "");
+      changed = true;
+    }
+    if (changed) app.save(row);
+  }
+
+  function deleteWhere(collection, filter, params) {
+    try {
+      const rows = app.findRecordsByFilter(collection, filter, "", 200, 0, params);
+      for (let i = 0; i < rows.length; i++) app.delete(rows[i]);
+    } catch (err) {}
+  }
+  deleteWhere("team_contacts", "event_team = {:t}", { t: teamId });
+  deleteWhere("team_docs", "event_team = {:t}", { t: teamId });
+  let players = [];
+  try {
+    players = app.findRecordsByFilter("event_players", "event_team = {:t}", "", 200, 0, { t: teamId });
+  } catch (err) {}
+  for (let i = 0; i < players.length; i++) {
+    deleteWhere("event_hitting", "event_player = {:p}", { p: players[i].id });
+    deleteWhere("event_pitching", "event_player = {:p}", { p: players[i].id });
+    app.delete(players[i]);
+  }
+  app.delete(team);
+  writeLog(app, event.id, "event", true, "Removed team " + name);
+  return { deleted: teamId, name: name };
 }
 
 function refreshPacketStatus(app, event, team) {
@@ -1117,6 +1223,8 @@ function duplicateEvent(app, source, body, auth) {
   rec.set("public", true);
   rec.set("status", "live");
   rec.set("format", source.get("format") || "pool-to-bracket");
+  rec.set("bracket_flights", source.get("bracket_flights") || "none");
+  rec.set("bracket_mode", source.get("bracket_mode") || "standings");
   rec.set("source", "native");
   rec.set("signup_open", true);
   rec.set("auto_sync", true);
@@ -1146,7 +1254,7 @@ function duplicateEvent(app, source, body, auth) {
   app.save(rec);
 
   const fieldMap = {};
-  const fields = app.findRecordsByFilter("fields", "event = {:e}", "name", 40, 0, { e: source.id });
+  const fields = app.findRecordsByFilter("fields", "event = {:e}", "name", 400, 0, { e: source.id });
   for (let i = 0; i < fields.length; i++) {
     const f = fields[i];
     const nf = new Record(app.findCollectionByNameOrId("fields"));
@@ -1259,6 +1367,8 @@ function applySettings(app, event, body, auth) {
   applyAgeGroups(event, body);
   if (body.start) event.set("start", body.start);
   if (body.end) event.set("end", body.end);
+  if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
+  if (body.bracket_mode != null) event.set("bracket_mode", body.bracket_mode || "standings");
   applyGuidelines(event, body);
   try {
     const diamond = require(__hooks + "/diamond.js");
@@ -1287,6 +1397,7 @@ module.exports = {
   duplicateEvent: duplicateEvent,
   signupTeam: signupTeam,
   updateEventTeam: updateEventTeam,
+  removeEventTeam: removeEventTeam,
   syncEvent: syncEvent,
   publicRoster: publicRoster,
   applySettings: applySettings,

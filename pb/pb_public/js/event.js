@@ -96,6 +96,7 @@ function fieldAvailDays(f = {}, i = 0, dates = [], globalStart = "08:00", global
 function fieldRow(f = {}, i = 0, dates = [], globalStart = "08:00", globalEnd = "18:00") {
   return `<fieldset class="field-row">
     <legend>Field ${i + 1}</legend>
+    <button class="btn ghost field-remove" type="button" data-remove-field>Remove field</button>
     <input type="hidden" name="field_id_${i}" value="${escapeHtml(f.id || "")}">
     <div class="form-grid two">
       <label>Name <input name="field_name_${i}" value="${escapeHtml(f.name || "")}" placeholder="East End 1"></label>
@@ -130,6 +131,13 @@ function weekendFromForm(root, ev = {}) {
 function bindFieldRows(root, startCount, ev = {}) {
   let n = startCount;
   const add = root.querySelector("#add-field");
+  const syncRemoves = () => {
+    const rows = root.querySelectorAll(".field-row");
+    rows.forEach((fs) => {
+      const btn = fs.querySelector("[data-remove-field]");
+      if (btn) btn.hidden = rows.length <= 1;
+    });
+  };
   const paintDays = () => {
     const { dates, hoursStart, hoursEnd } = weekendFromForm(root, ev);
     root.querySelectorAll(".field-row").forEach((fs) => {
@@ -153,33 +161,55 @@ function bindFieldRows(root, startCount, ev = {}) {
     add.addEventListener("click", () => {
       const box = root.querySelector("#field-rows");
       const { dates, hoursStart, hoursEnd } = weekendFromForm(root, ev);
+      const used = [...root.querySelectorAll("[name^='field_name_']")].map((el) => Number(String(el.name).replace("field_name_", ""))).filter((v) => !Number.isNaN(v));
+      n = Math.max(n, ...(used.length ? used : [-1])) + 1;
       box.insertAdjacentHTML("beforeend", fieldRow({}, n, dates, hoursStart, hoursEnd));
       n += 1;
+      syncRemoves();
     });
   }
+  root.addEventListener("click", (evnt) => {
+    const btn = evnt.target.closest("[data-remove-field]");
+    if (!btn || !root.contains(btn)) return;
+    const rows = root.querySelectorAll(".field-row");
+    if (rows.length <= 1) return;
+    btn.closest(".field-row")?.remove();
+    syncRemoves();
+  });
   ["start", "end", "hours_start", "hours_end"].forEach((name) => {
     root.querySelector(`[name=${name}]`)?.addEventListener("change", paintDays);
   });
+  syncRemoves();
 }
 
 function setupFormatFields(ev = {}) {
   const fmt = ev.format || "pool-to-bracket";
+  const flights = ev.bracket_flights || "none";
   return `
     <label>Format
       <select name="format">
         <option value="pool-to-bracket" ${fmt === "pool-to-bracket" ? "selected" : ""}>Pool play, then single-elim bracket</option>
+        <option value="pool-double-elim" ${fmt === "pool-double-elim" ? "selected" : ""}>Pool play, then double-elim bracket</option>
+        <option value="round-robin" ${fmt === "round-robin" ? "selected" : ""}>Round robin</option>
         <option value="pool-only" ${fmt === "pool-only" ? "selected" : ""}>Pool play only</option>
         <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
         <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
         <option value="imported" ${fmt === "imported" ? "selected" : ""}>Imported / already drawn</option>
       </select>
     </label>
-    <p class="muted">Pool games are scheduled per field. Auto-schedule builds a round-robin inside each pool, then draws the bracket if you chose one.</p>
+    <label>Bracket levels
+      <select name="bracket_flights">
+        <option value="none" ${flights === "none" || !flights ? "selected" : ""}>One bracket (overall seeds)</option>
+        <option value="gold-silver" ${flights === "gold-silver" ? "selected" : ""}>Gold / Silver (split by overall ranking)</option>
+        <option value="platinum-gold-silver" ${flights === "platinum-gold-silver" ? "selected" : ""}>Platinum / Gold / Silver (split by overall ranking)</option>
+      </select>
+    </label>
+    <p class="muted">Pool games are scheduled per field. Round robin plays every team in a pool. Gold/Silver and Platinum/Gold/Silver cut the overall seed list from the top. Double-elim adds a losers bracket. Use the custom bracket builder on Scheduler to place teams by hand.</p>
   `;
 }
 
 function setupVenueFields(ev = {}, fields = []) {
-  const rows = fields.length ? fields : [{}, {}];
+  const rows = fields.length ? fields : [{}];
   const hoursStart = ev.hours_start || "08:00";
   const hoursEnd = ev.hours_end || "18:00";
   const dates = datesBetween(ev.start, ev.end);
@@ -207,7 +237,7 @@ function setupVenueFields(ev = {}, fields = []) {
         <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
       </div>
     </div>
-    <p class="muted">Each diamond can have its own street address. Blank fields inherit the park pin.</p>
+    <p class="muted">Start with one diamond. Add as many as you need. You must keep at least one.</p>
     <div id="field-rows">${rows.map((f, i) => fieldRow(f, i, dates, hoursStart, hoursEnd)).join("")}</div>
     <button class="btn ghost" type="button" id="add-field">Add another field</button>
   `;
@@ -472,7 +502,16 @@ const ROUND_META = {
   "5TH": { label: "5th place", order: 1 },
   "3RD": { label: "3rd place", order: 2 },
   "7TH": { label: "7th place", order: 2 },
+  L1: { label: "Losers round 1", order: 1 },
+  L2: { label: "Losers round 2", order: 2 },
+  L3: { label: "Losers round 3", order: 3 },
+  LF: { label: "Losers final", order: 4 },
 };
+
+function flightTitle(name) {
+  const labels = { gold: "Gold", silver: "Silver", platinum: "Platinum" };
+  return labels[name] || name || "";
+}
 
 function sourceLabel(ev) {
   if (!ev) return "Hosted";
@@ -482,8 +521,12 @@ function sourceLabel(ev) {
 }
 
 function gameSide(g) {
+  if (g.bracket_kind === "losers" || g.side === "losers") return "losers";
+  if (g.side === "consolation" || g.bracket_kind === "consolation") return "consolation";
+  if (g.side === "winners") return "championship";
   if (g.side) return g.side;
   const r = String(g.round || "").toUpperCase();
+  if (r === "LF" || /^L(\d|QF|SF)/.test(r)) return "losers";
   return /^(C|3RD|5TH|CONS)/.test(r) ? "consolation" : "championship";
 }
 
@@ -561,7 +604,7 @@ function buildDeskPlan(board) {
     ...(board.fields || []).map((f) => f.name),
     ...games.map((g) => g.field),
   ]);
-  if (!fields.length) fields.push("Field 1", "Field 2");
+  if (!fields.length) fields.push("Field 1");
   const times = uniqueStrings(games.map((g) => g.time));
   const span = (Number(ev.game_length_minutes) || 90) + 15;
   let t = ev.hours_start || "08:00";
@@ -726,12 +769,20 @@ function protestSwapForm(games) {
 }
 
 function bracketBoards(games, roster, plan) {
-  const champ = games.filter((g) => gameSide(g) === "championship");
-  const cons = games.filter((g) => gameSide(g) === "consolation");
-  return `
-    ${renderBracketTree(champ, "Championship", "Winners move right when a score is final. Field and first pitch sit on every card.", true, roster, plan)}
-    ${renderBracketTree(cons, "Consolation", "Outside the championship. These games do not feed the final.", false, roster, plan)}
-  `;
+  const flights = uniqueStrings((games || []).map((g) => g.flight || ""));
+  const groups = flights.length ? flights : [""];
+  return groups.map((flight) => {
+    const slice = flights.length ? games.filter((g) => (g.flight || "") === flight) : games;
+    const prefix = flight ? flightTitle(flight) + " · " : "";
+    const champ = slice.filter((g) => gameSide(g) === "championship" || gameSide(g) === "winners");
+    const losers = slice.filter((g) => gameSide(g) === "losers");
+    const cons = slice.filter((g) => gameSide(g) === "consolation");
+    return `
+      ${renderBracketTree(champ, prefix + "Championship", "Winners move right when a score is final. Field and first pitch sit on every card.", true, roster, plan)}
+      ${renderBracketTree(losers, prefix + "Losers", "Second-life games after a loss. These do not use consolation placement slots.", false, roster, plan)}
+      ${renderBracketTree(cons, prefix + "Consolation", "Outside the championship. These games do not feed the final.", false, roster, plan)}
+    `;
+  }).join("");
 }
 
 function bindBracketDesk(slug, root) {
@@ -1582,7 +1633,7 @@ export async function directorNative() {
         <p class="error" id="native-err" hidden></p>
       </form>
     </section>`);
-  bindFieldRows(eventRoot(), 2, {});
+  bindFieldRows(eventRoot(), 1, {});
   bindTiebreakOrder(eventRoot());
   document.getElementById("native-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1624,7 +1675,7 @@ export async function directorLinkTm() {
         <p class="error" id="tm-err" hidden></p>
       </form>
     </section>`);
-  bindFieldRows(eventRoot(), 2, {});
+  bindFieldRows(eventRoot(), 1, {});
   bindTiebreakOrder(eventRoot());
   document.getElementById("tm-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -1890,6 +1941,89 @@ function importFieldOptions(fields, selected) {
   ).join("");
 }
 
+function customBracketDesk(ev, teams, games) {
+  const teamOpts = (selected) => `<option value="">TBD</option>${(teams || []).map((t) =>
+    `<option value="${escapeHtml(t.id)}" ${t.id === selected ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}`;
+  const rows = (games || []).map((g) => `<tr data-bk-custom="${escapeHtml(g.id || "")}">
+    <td><input name="flight" value="${escapeHtml(g.flight || "")}" placeholder="gold" ${g.status === "final" ? "readonly" : ""}></td>
+    <td><input name="round" value="${escapeHtml(g.round || "")}" ${g.status === "final" ? "readonly" : ""}></td>
+    <td><input name="slot" type="number" min="1" value="${escapeHtml(String(g.slot || 1))}" style="width:4rem" ${g.status === "final" ? "readonly" : ""}></td>
+    <td><select name="side" ${g.status === "final" ? "disabled" : ""}>
+      ${[["championship", "Championship"], ["losers", "Losers"], ["consolation", "Consolation"]].map(([v, l]) =>
+        `<option value="${v}" ${gameSide(g) === v || g.side === v ? "selected" : ""}>${l}</option>`).join("")}
+    </select></td>
+    <td><select name="home_id" ${g.status === "final" ? "disabled" : ""}>${teamOpts(g.home_id)}</select></td>
+    <td><select name="away_id" ${g.status === "final" ? "disabled" : ""}>${teamOpts(g.away_id)}</select></td>
+    <td>${g.status === "final" ? "Final" : `<label class="check"><input type="checkbox" name="delete"> Remove</label>`}</td>
+  </tr>`).join("");
+  return `
+    <h3>Custom bracket builder</h3>
+    <p class="muted">Add or remove unplayed games. Finals stay. Flight is gold, silver, platinum, or blank for one tree.</p>
+    <form class="form wide" id="custom-bracket-form">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Flight</th><th>Round</th><th>Slot</th><th>Side</th><th>Home</th><th>Away</th><th></th></tr></thead>
+        <tbody id="custom-bracket-rows">${rows || ""}</tbody>
+      </table></div>
+      <div class="actions">
+        <button class="btn ghost" type="button" id="add-bracket-slot">Add game</button>
+        <button class="btn" type="submit">Save custom bracket</button>
+      </div>
+    </form>
+    <template id="custom-bracket-row">${`<tr data-bk-custom="">
+      <td><input name="flight" placeholder="gold"></td>
+      <td><input name="round" value="QF"></td>
+      <td><input name="slot" type="number" min="1" value="1" style="width:4rem"></td>
+      <td><select name="side">
+        <option value="championship">Championship</option>
+        <option value="losers">Losers</option>
+        <option value="consolation">Consolation</option>
+      </select></td>
+      <td><select name="home_id">${teamOpts("")}</select></td>
+      <td><select name="away_id">${teamOpts("")}</select></td>
+      <td><label class="check"><input type="checkbox" name="delete"> Remove</label></td>
+    </tr>`}</template>
+  `;
+}
+
+function bindCustomBracket(slug, showErr) {
+  const form = document.getElementById("custom-bracket-form");
+  if (!form) return;
+  document.getElementById("add-bracket-slot")?.addEventListener("click", () => {
+    const tpl = document.getElementById("custom-bracket-row");
+    const box = document.getElementById("custom-bracket-rows");
+    if (!tpl || !box) return;
+    box.insertAdjacentHTML("beforeend", tpl.innerHTML);
+  });
+  form.addEventListener("submit", async (evnt) => {
+    evnt.preventDefault();
+    const games = [];
+    const delete_ids = [];
+    form.querySelectorAll("[data-bk-custom]").forEach((tr) => {
+      const id = tr.dataset.bkCustom || "";
+      if (tr.querySelector("[name=delete]")?.checked) {
+        if (id) delete_ids.push(id);
+        return;
+      }
+      games.push({
+        id,
+        flight: tr.querySelector("[name=flight]")?.value || "",
+        round: tr.querySelector("[name=round]")?.value || "QF",
+        slot: Number(tr.querySelector("[name=slot]")?.value || 1),
+        side: tr.querySelector("[name=side]")?.value || "championship",
+        home_id: tr.querySelector("[name=home_id]")?.value || "",
+        away_id: tr.querySelector("[name=away_id]")?.value || "",
+      });
+    });
+    try {
+      const out = await adminPost(slug, "/bracket/custom", { games, delete_ids });
+      flashSaved("Custom bracket saved · " + (out.updated || 0) + " games");
+      location.reload();
+    } catch (err) {
+      showErr(err);
+    }
+  });
+}
+
 function bindContactEdits(slug, showErr) {
   document.querySelectorAll("[data-edit-contact]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1897,14 +2031,27 @@ function bindContactEdits(slug, showErr) {
       if (row) row.hidden = !row.hidden;
     });
   });
-  document.querySelectorAll("[data-contact-form]").forEach((form) => {
+  document.querySelectorAll("[data-team-form]").forEach((form) => {
     form.addEventListener("submit", async (evnt) => {
       evnt.preventDefault();
       const fd = new FormData(form);
       const body = Object.fromEntries(fd.entries());
+      body.paid = fd.get("paid") === "on";
       try {
-        await adminPost(slug, "/teams/" + form.dataset.contactForm, body);
-        flashSaved("Contact saved");
+        await adminPost(slug, "/teams/" + form.dataset.teamForm, body);
+        flashSaved("Team saved");
+        location.reload();
+      } catch (err) {
+        showErr(err);
+      }
+    });
+  });
+  document.querySelectorAll("[data-remove-team]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this team from the weekend? Unplayed games are deleted. A team with a final score stays on the board.")) return;
+      try {
+        await adminPost(slug, "/teams/" + btn.dataset.removeTeam + "/remove", {});
+        flashSaved("Team removed");
         location.reload();
       } catch (err) {
         showErr(err);
@@ -2146,7 +2293,7 @@ export async function eventAdmin(slug) {
           <h2>Venue setups</h2>
           <p class="muted">Park, street address, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
           <form class="form wide" id="fields-form">
-            ${setupVenueFields(ev, fields.length ? fields : [{}, {}])}
+            ${setupVenueFields(ev, fields.length ? fields : [{}])}
             <button class="btn" type="submit">Save venue</button>
           </form>
           ${venuePhotoDesk(slug, plan.photos || [])}
@@ -2161,6 +2308,13 @@ export async function eventAdmin(slug) {
               <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
               <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
             </div>
+            <label>Bracket levels
+              <select name="bracket_flights">
+                <option value="none" ${!ev.bracket_flights || ev.bracket_flights === "none" ? "selected" : ""}>One bracket</option>
+                <option value="gold-silver" ${ev.bracket_flights === "gold-silver" ? "selected" : ""}>Gold / Silver</option>
+                <option value="platinum-gold-silver" ${ev.bracket_flights === "platinum-gold-silver" ? "selected" : ""}>Platinum / Gold / Silver</option>
+              </select>
+            </label>
             <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> If you draw a bracket, include consolation games</label>
             <label class="check"><input type="checkbox" name="replace"${!ev.scheduler || ev.scheduler.replace !== false ? " checked" : ""}> Replace unplayed pool games</label>
             <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also draw empty bracket slots now</label>
@@ -2200,6 +2354,7 @@ export async function eventAdmin(slug) {
             </div>
             <button class="btn" type="submit">Add game</button>
           </form>
+          ${customBracketDesk(ev, teams, plan.bracket || [])}
         </section>
         <section class="card" data-admin-pane="rain" hidden>
           <h2>Rain notice</h2>
@@ -2237,26 +2392,37 @@ export async function eventAdmin(slug) {
             <a class="btn" data-link href="/t/${ev.slug}/signup">Add a team</a>
           </div>
           ${teamImportDesk()}
-          <h3>Roster contacts</h3>
-          ${table(["Team", "Coach", "Phone", "Second contact", ""], teams.map((t) => {
+          <h3>Roster</h3>
+          <p class="muted">Edit names, pools, GameChanger links, and private contacts. Public pages never show coach email or phone.</p>
+          ${table(["Team", "Pool", "GameChanger", "Coach", ""], teams.map((t) => {
             const c = t.contact || {};
             return `<tr data-team-row="${escapeHtml(t.id)}">
               <td>${escapeHtml(t.name)}${t.age_group ? `<div class="muted">${escapeHtml(t.age_group)}${t.klass ? " " + escapeHtml(t.klass) : ""}</div>` : ""}</td>
+              <td>${escapeHtml(t.pool || "—")}</td>
+              <td>${t.gamechanger_url ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">Open book</a>` : "—"}</td>
               <td>${escapeHtml(c.coach_email || t.contact_name || "—")}</td>
-              <td>${escapeHtml(c.coach_phone || "—")}</td>
-              <td>${escapeHtml([c.alt_name, c.alt_email, c.alt_phone].filter(Boolean).join(" · ") || "—")}</td>
-              <td><button type="button" class="btn ghost" data-edit-contact="${escapeHtml(t.id)}">Edit</button></td>
+              <td><button type="button" class="btn ghost" data-edit-contact="${escapeHtml(t.id)}">Edit team</button></td>
             </tr>
             <tr hidden data-contact-edit="${escapeHtml(t.id)}"><td colspan="5">
-              <form class="form wide contact-edit" data-contact-form="${escapeHtml(t.id)}">
+              <form class="form wide contact-edit" data-team-form="${escapeHtml(t.id)}">
                 <div class="form-grid two">
+                  <label>Team name <input name="name" required value="${escapeHtml(t.name || "")}"></label>
+                  <label>Pool <input name="pool" value="${escapeHtml(t.pool || "")}" placeholder="A"></label>
+                  <label>GameChanger URL <input name="gamechanger_url" type="url" value="${escapeHtml(t.gamechanger_url || "")}" placeholder="https://web.gc.com/team/…"></label>
+                  <label>Age group <input name="age_group" value="${escapeHtml(t.age_group || "")}" placeholder="10U"></label>
+                  <label>Class <input name="klass" value="${escapeHtml(t.klass || "")}" placeholder="A"></label>
+                  <label>Notes <input name="notes" value="${escapeHtml(t.notes || "")}"></label>
                   <label>Coach email <input name="coach_email" type="email" value="${escapeHtml(c.coach_email || "")}"></label>
                   <label>Coach phone <input name="coach_phone" type="text" inputmode="tel" value="${escapeHtml(c.coach_phone || "")}"></label>
                   <label>Second name <input name="alt_name" value="${escapeHtml(c.alt_name || "")}"></label>
                   <label>Second email <input name="alt_email" type="email" value="${escapeHtml(c.alt_email || "")}"></label>
                   <label>Second phone <input name="alt_phone" type="text" inputmode="tel" value="${escapeHtml(c.alt_phone || "")}"></label>
                 </div>
-                <button class="btn" type="submit">Save contact</button>
+                <label class="check"><input type="checkbox" name="paid"${t.paid ? " checked" : ""}> Paid</label>
+                <div class="actions">
+                  <button class="btn" type="submit">Save team</button>
+                  <button class="btn danger" type="button" data-remove-team="${escapeHtml(t.id)}">Remove team</button>
+                </div>
               </form>
             </td></tr>`;
           }))}
@@ -2286,11 +2452,12 @@ export async function eventAdmin(slug) {
     </div>
   `);
   bindAdminRail(eventRoot());
-  bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
+  bindFieldRows(eventRoot(), Math.max(fields.length, 1), ev);
   bindTiebreakOrder(eventRoot());
   bindVenuePhotos(slug, plan.photos || [], showErr);
   bindTeamImport(slug, showErr);
   bindContactEdits(slug, showErr);
+  bindCustomBracket(slug, showErr);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 
   document.getElementById("fields-form").addEventListener("submit", async (evnt) => {
@@ -2317,6 +2484,7 @@ export async function eventAdmin(slug) {
       replace: fd.get("replace") === "on",
       draw_bracket: fd.get("draw_bracket") === "on",
       format: ev.format || "pool-to-bracket",
+      bracket_flights: fd.get("bracket_flights") || ev.bracket_flights || "none",
     };
   }
   document.getElementById("auto-form").addEventListener("submit", async (evnt) => {
