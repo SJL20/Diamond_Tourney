@@ -2,7 +2,13 @@
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md` before changing anything.
 
-Public tournament product name: **Diamond Tourney**. Season books stay behind login. Door-three wedge: import a schedule the director already has. Do not scrape GameChanger. The Keystone Clash weekend is imported from the public popup JSON at https://thedr21.github.io/KeystoneClash/ — store published GC URLs and posted scores; do not invent Friday/Saturday pool boxes that page does not list.
+Public tournament product name: **Diamond Tourney**. Season books stay behind login. Door-three wedge: import a schedule the director already has.
+
+**GameChanger monitoring is allowed.** Grok bots poll coach-supplied public GameChanger pages (gc.com / web.gc.com / gamechanger.io) about every **5 minutes while an event is live**, then write through existing bot APIs. List targets with `GET /api/bot/gc-monitor` or `python3 scripts/bot_gc_monitor.py --list`. Public URLs only — no GC account login, no unofficial API. Unreadable cell → `null` + QC note. Never invent Friday/Saturday pool boxes or player lines a public page does not show.
+
+The Keystone Clash weekend is imported from the public popup JSON at https://thedr21.github.io/KeystoneClash/ — store published GC URLs and posted scores; bots may then monitor those stored public GC pages. Individual pool boxes that page does not list are not invented.
+
+PDF / screenshot / pasted-box ingest stays supported alongside GC monitoring.
 
 You are a Cursor Cloud Agent (Grok). The owner does not write HTML or SQL. You do.
 
@@ -48,9 +54,9 @@ Use the exact names in outline §5. Slugs are lowercase-hyphen.
 
 | Bot | Allowed | Forbidden |
 |---|---|---|
-| A ingest | Parse box, write `staging_games`, notify coach | Approve, delete approved rows, invent numbers |
+| A ingest | Parse box (screenshot, PDF, pasted text, or public GC page), write `staging_games`, notify coach, poll `GET /api/bot/gc-monitor` | Approve staging, delete approved rows, invent numbers, GC login |
 | B publisher | Rebuild W-L from approved games, draft unpublished `posts` | Publish, approve staging |
-| C tournament | Scores, standings, bracket, leaders | Rules text, locked rosters |
+| C tournament | Poll public GC box/team URLs during a live event, post scores/lines, standings, bracket, leaders | Rules text, locked rosters, invent boxes, GC login |
 | D hub | Draft news / field notes | `public=true` in Phase 1 |
 | Builder | Schema, pages, deploy, tests | Formula changes |
 

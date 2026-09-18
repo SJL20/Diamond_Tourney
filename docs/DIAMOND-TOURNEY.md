@@ -16,7 +16,7 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 
 1. **Wedge (door 3):** “You already have a schedule.” Paste the Excel / Tourney Machine / legal-pad grid. Get a public link, live standings with real tiebreakers, and a bracket that fills itself. That is `/directors/import` and `/t/{slug}`.
 2. **Stats justify the price.** Season team books stay behind login. **Tournament** batting, pitching, awards, and weekend lines are public — after a coach confirms the box.
-3. **Coach-supplied data only.** Screenshot, scorebook photo, CSV, or a public GameChanger URL the coach pastes. **No GameChanger scrape, no login into GC, no unofficial API.** Same rule as outline §7.
+3. **Coach-supplied data only.** Screenshot, scorebook photo, CSV, GC mobile PDF, or a public GameChanger URL the coach pastes. Bots **may monitor those public GC pages** on a recurring poll (about every 5 minutes during a live event) and POST readable scores/lines through `/api/bot/ingest` (season staging) or `/api/bot/event-box` / `/api/bot/event-update` (tournament). **No GC account login, no unofficial API, no invented numbers.** Same extract rules as outline §7.
 
 ## Identity (team, not email)
 
@@ -30,9 +30,9 @@ Site admin manages **team profiles** (`/admin/teams`). Email is only a login tha
 |---|---|
 | You already have a schedule | **Live** — CSV import + public board (`/directors/import`) |
 | Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
-| Team signup | **Live** — director or team, GameChanger URL required (`/t/{slug}/signup`). Hosted sync reads those public pages. No bot required. |
+| Team signup | **Live** — director or team, GameChanger URL optional (`/t/{slug}/signup`). Hosted job pings those public pages for reachability. Grok bots poll the same stored URLs for live scores/boxes. |
 | Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
-| Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Does not scrape GameChanger. Individual pool boxes that are not on the popup are not invented. |
+| Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Bots may monitor those public GC pages. Individual pool boxes that are not on the popup are not invented. |
 
 ## Tiebreak (outline §6, confirmed by the deck)
 
@@ -41,6 +41,27 @@ Pool order: wins, then losses, then head-to-head, then runs allowed, then runs s
 ## Awards
 
 All-tournament team is the leaderboard with gates (min 8 AB / 3.0 IP), printed Sunday on the field — `/t/{slug}/awards`. Not “who the director happened to watch.”
+
+## GameChanger monitor loop
+
+Allowed:
+
+- Coach, manager, or director stores a **public** GameChanger team or box-score URL (`gc.com`, `web.gc.com`, `gamechanger.io`).
+- Grok bots list those URLs with `GET /api/bot/gc-monitor` (`python3 scripts/bot_gc_monitor.py --list`).
+- Poll about every **5 minutes** while an event is `live` (30 minutes when none is live).
+- Open the public page only. Read posted scores and box lines. Write:
+  - Season book → `POST /api/bot/ingest` → `staging_games`. **Coach must Approve.** Bots never approve staging and never delete approved rows.
+  - Tournament → `POST /api/bot/event-box` (lines + score) or `POST /api/bot/event-update` (score only). Use `needs_review` when the page is messy.
+- GC mobile PDF / screenshot / pasted box remains a supported door (`GET /api/bot/event-boxes`).
+
+Forbidden:
+
+- GameChanger account login or unofficial API
+- Invented stats, or pool boxes a public page / the Keystone popup does not list
+- Unlock locked rosters, edit rules text, change metric formulas
+- Publish family emails, addresses, or birthdates
+
+The PocketBase job `hosted-gc-tm-sync` still pings linked pages for reachability every two hours. It does not type box lines.
 
 ## Parallel work
 

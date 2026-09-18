@@ -360,6 +360,13 @@ routerAdd("GET", "/api/bot/event-boxes", (e) => {
   return e.json(200, { boxes: score.listPendingBoxes(e.app, eventId) });
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/bot/gc-monitor", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const monitor = require(__hooks + "/gc_monitor.js");
+  sb.requireRole(e, ["bot", "region_admin", "event_td"]);
+  return e.json(200, monitor.listGcMonitor(e.app));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/bot/event-box", (e) => {
   const sb = require(__hooks + "/softball.js");
   const score = require(__hooks + "/score.js");
@@ -515,6 +522,8 @@ routerAdd("POST", "/api/bot/event-update", (e) => {
   return e.json(200, { ok: true, event: event.get("slug"), standings: diamond.poolStandings(e.app, event.id) });
 }, $apis.requireAuth());
 
+// Reachability ping for linked GC / Tourney Machine pages. Live score and box
+// numbers come from Grok bots polling GET /api/bot/gc-monitor (~5 min when live).
 cronAdd("hosted-gc-tm-sync", "15 */2 * * *", () => {
   const host = require(__hooks + "/host.js");
   const events = $app.findRecordsByFilter("events", "auto_sync = true && status = 'live'", "", 80, 0);

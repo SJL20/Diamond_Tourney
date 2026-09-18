@@ -208,6 +208,8 @@ Input (any one):
 - Screenshot(s) of GC hitting + pitching
 - Desktop GC box
 - Pasted text table
+- Coach-supplied public GameChanger team or box-score URL (bot may poll; no GC login)
+- GC mobile PDF / scorebook photo
 - Later: exported CSV if available
 
 Extract:
@@ -237,8 +239,8 @@ Name matching:
 ## 8. Tournament ingest spec (event bot)
 
 Input:
-- Public box / GameChanger link
-- Photo of book
+- Public box / GameChanger link (bot may poll the stored public URL)
+- Photo of book / GC mobile PDF
 - TD typed final score (standings only, no box)
 
 On each final:
@@ -256,18 +258,18 @@ If only a final score exists, update standings/bracket but leave leaders unchang
 ## 9. What each bot is allowed to do
 
 ### Bot A — Team Stat Ingest
-Trigger: new image or text dropped for a team.
+Trigger: new image, PDF, or text dropped for a team; or a public GC URL from `GET /api/bot/gc-monitor`.
 Actions: parse, stage, notify coach “review game vs X.”
-Forbidden: approve its own work; delete approved rows.
+Forbidden: approve its own work; delete approved rows; invent numbers; GC login.
 
 ### Bot B — Team Publisher
 Trigger: after Approve, or weekly Sunday 8pm ET.
 Actions: refresh hitting/pitching tables, update public W-L on hub card, draft a 4-sentence recap into `posts` as unpublished.
 
 ### Bot C — Tournament Board
-Trigger: during event window, every time a box or score arrives.
-Actions: scores, standings, bracket, leaders.
-Forbidden: change rules text or locked rosters.
+Trigger: during event window, every time a box or score arrives, and about every 5 minutes while the event is `live` (public GC monitor).
+Actions: poll coach-supplied public GC URLs, scores, standings, bracket, leaders.
+Forbidden: change rules text or locked rosters; invent boxes; GC login.
 
 ### Bot D — Hub Editor
 Trigger: owner prompt or after Bot B recap.
@@ -374,7 +376,7 @@ Do not start Phase 1 until I paste a real roster.
 You are Bot A (Team Stat Ingest) for the Region Softball Platform.
 Follow SOFTBALL-PLATFORM-BOT-OUTLINE.md sections 1, 6, 7, 9.
 
-I will give GameChanger screenshots or a pasted box for team slug: TEAM_SLUG.
+I will give GameChanger screenshots, a pasted box, or a public GC URL for team slug: TEAM_SLUG.
 
 Return:
 1. Standardized player lines (name_key, #, hitting and/or pitching)
