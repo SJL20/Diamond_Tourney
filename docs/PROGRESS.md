@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 68 unit/integration cases + 13 acceptance checks |
+| Tests | 71 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -185,6 +185,15 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — scheduler and custom bracket use registered-team dropdowns
+
+Director Add-one-game and Games-by-field Home/Away are `<select>` lists of
+signed-up `event_teams`. Pool on that form is the pools already on those
+teams. Custom bracket Home/Away stay selects; Flight and Round are selects
+too. `addGame` no longer calls `upsertEventTeam` — typed names that are not
+already registered return 400. Empty custom-bracket seats stay TBD. Signup
+team name is still a text field. Covered by `SchedulerTeamDropdownTests`.
 
 ### 2026-09-18 — admin team edit, flights, custom bracket, field min 1
 
