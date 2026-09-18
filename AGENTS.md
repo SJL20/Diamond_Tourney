@@ -1,6 +1,6 @@
 # Region Softball Platform — Agent instructions
 
-Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md` before changing anything.
+Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, `docs/BACKLOG.md`, and `docs/DIAMOND-TOURNEY.md` before changing anything.
 
 `docs/PROGRESS.md` is the state of the project — current phase, open findings, and the session log. Read it before you plan, and update it in the same pull request as the work it describes. Human collaborators start at `CONTRIBUTING.md`.
 
