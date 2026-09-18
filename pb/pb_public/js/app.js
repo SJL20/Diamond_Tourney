@@ -4,7 +4,7 @@ import {
   eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
   eventSchedule, eventSignup, eventStandings, eventStats, startTournament,
 } from "./event.js";
-import { accountHome, adminTeams, findPage, startGate, yearPage } from "./flow.js";
+import { accountHome, adminTeams, findPage, startGate, verifyPage, yearPage } from "./flow.js";
 import { flashSaved, pageShell } from "./chrome.js";
 
 const pb = new PocketBase(location.origin);
@@ -13,6 +13,7 @@ const app = document.getElementById("app");
 const ROUTES = [
   [/^\/login\/?$/, "login"],
   [/^\/register\/?$/, "register"],
+  [/^\/verify\/?$/, "verify"],
   [/^\/find\/?$/, "find"],
   [/^\/account\/?$/, "account"],
   [/^\/admin\/teams\/?$/, "adminTeams"],
@@ -365,6 +366,7 @@ async function render() {
   try {
     if (name === "login") return login();
     if (name === "register") return startGate("register");
+    if (name === "verify") return verifyPage();
     if (name === "find") return findPage();
     if (name === "account") return accountHome();
     if (name === "adminTeams") return adminTeams();

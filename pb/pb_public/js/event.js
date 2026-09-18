@@ -100,10 +100,15 @@ function fieldRow(f = {}, i = 0, dates = [], globalStart = "08:00", globalEnd = 
       <label>Surface <input name="field_surface_${i}" value="${escapeHtml(f.surface || "")}" placeholder="grass"></label>
     </div>
     <label>Field address <input name="field_address_${i}" value="${escapeHtml(f.address || "")}" placeholder="Same as the park if blank"></label>
-    <div class="form-grid two">
-      <label>Latitude <input name="field_lat_${i}" value="${f.lat || ""}" placeholder="40.3668"></label>
-      <label>Longitude <input name="field_lng_${i}" value="${f.lng || ""}" placeholder="-80.2345"></label>
-    </div>
+    <p class="muted">${f.lat && f.lng ? `Pin ${f.lat}, ${f.lng}` : "Pin is set from this address, or from the park, when you save."}</p>
+    <details class="pin-nudge">
+      <summary>Nudge this diamond’s pin</summary>
+      <label class="check"><input type="checkbox" name="field_pin_set_${i}"> Use these coordinates instead of geocoding</label>
+      <div class="form-grid two">
+        <label>Latitude <input name="field_lat_${i}" value="${f.lat || ""}" inputmode="decimal"></label>
+        <label>Longitude <input name="field_lng_${i}" value="${f.lng || ""}" inputmode="decimal"></label>
+      </div>
+    </details>
     <label class="check"><input type="checkbox" name="field_lights_${i}" ${f.lights ? "checked" : ""}> Lights</label>
     <p class="muted">This diamond’s hours. Uncheck a day if it is dark or rented out. Times narrower than the global window are allowed; times outside it are not used.</p>
     <div class="field-avail">${fieldAvailDays(f, i, dates, globalStart, globalEnd)}</div>
@@ -179,10 +184,16 @@ function setupVenueFields(ev = {}, fields = []) {
   return `
     <label>Complex / park name <input name="venue" value="${escapeHtml(ev.venue || "")}" placeholder="East End Park"></label>
     <label>Street address <input name="address" value="${escapeHtml(ev.address || "")}" placeholder="51 Meadow St, McDonald, PA 15057"></label>
-    <div class="form-grid two">
-      <label>Latitude <input name="lat" value="${ev.lat || ""}" placeholder="40.3668"></label>
-      <label>Longitude <input name="lng" value="${ev.lng || ""}" placeholder="-80.2345"></label>
-    </div>
+    <p class="muted">${ev.lat && ev.lng ? `Map pin ${ev.lat}, ${ev.lng}.` : "The pin is geocoded from the street address. You do not type latitude and longitude."}</p>
+    <details class="pin-nudge">
+      <summary>Nudge the map pin</summary>
+      <p class="muted">Only if the geocoder dropped the pin on the wrong diamond.</p>
+      <label class="check"><input type="checkbox" name="pin_set"> Use these coordinates instead of geocoding</label>
+      <div class="form-grid two">
+        <label>Latitude <input name="lat" value="${ev.lat || ""}" inputmode="decimal"></label>
+        <label>Longitude <input name="lng" value="${ev.lng || ""}" inputmode="decimal"></label>
+      </div>
+    </details>
     <div class="form-grid two">
       <label>First day <input name="start" type="date" value="${dateInput(ev.start)}"></label>
       <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
@@ -194,7 +205,7 @@ function setupVenueFields(ev = {}, fields = []) {
         <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
       </div>
     </div>
-    <p class="muted">Use GPS or a street address. Each diamond can have its own pin; blank fields inherit the park.</p>
+    <p class="muted">Each diamond can have its own street address. Blank fields inherit the park pin.</p>
     <div id="field-rows">${rows.map((f, i) => fieldRow(f, i, dates, hoursStart, hoursEnd)).join("")}</div>
     <button class="btn ghost" type="button" id="add-field">Add another field</button>
   `;
@@ -227,6 +238,18 @@ function rainBanner(ev) {
   return `<section class="rain-banner ${escapeHtml(st)}">
     <div class="k">${labels[st] || "Weather"}</div>
     <p>${escapeHtml(ev.rain_note || ev.status_note || "")}</p>
+  </section>`;
+}
+
+function photoGallery(photos) {
+  const list = (photos || []).filter((p) => p.public && p.url);
+  if (!list.length) return "";
+  return `<section class="card venue-photos">
+    <h2>Fields and parking</h2>
+    <div class="photo-grid">${list.map((p) => `<figure>
+      <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || p.kind || "Field")}">
+      ${p.caption ? `<figcaption>${escapeHtml(p.caption)}</figcaption>` : ""}
+    </figure>`).join("")}</div>
   </section>`;
 }
 
@@ -319,7 +342,7 @@ function setupGuidelinesFields(ev = {}) {
     <details class="setup-block">
       <summary>Pitching limits</summary>
       <label>How you cap pitching
-        ${sel("pitch_limit_mode", ev.pitch_limit_mode || "ip", [
+        ${sel("pitch_limit_mode", ev.pitch_limit_mode || "none", [
           ["ip", "Innings pitched"],
           ["pitch_count", "Pitch count"],
           ["both", "IP and pitch count"],
@@ -327,7 +350,7 @@ function setupGuidelinesFields(ev = {}) {
         ])}
       </label>
       <div class="form-grid two">
-        <label>Weekend IP cap <input name="pitch_limit_ip" type="number" min="0" step="0.1" value="${ev.pitch_limit_ip ?? 6}"></label>
+        <label>Weekend IP cap <input name="pitch_limit_ip" type="number" min="0" step="0.1" value="${ev.pitch_limit_mode && ev.pitch_limit_mode !== "none" ? (ev.pitch_limit_ip ?? 6) : (ev.pitch_limit_ip || "")}"></label>
         <label>Weekend pitch cap <input name="pitch_limit_pitches" type="number" min="0" value="${ev.pitch_limit_pitches || ""}" placeholder="Leave blank if IP only"></label>
       </div>
       <label>How it is enforced <textarea name="pitch_limit_notes" rows="2" placeholder="6.0 IP for the weekend. A pitcher may finish the batter.">${escapeHtml(ev.pitch_limit_notes || "")}</textarea></label>
@@ -371,6 +394,7 @@ function guidelinesBlock(ev) {
   return `<section class="card facts">
     <h2>Weekend guidelines</h2>
     ${[
+      ["Ages", ev.ages],
       ["Governing body", [ev.governing_label, ev.governing_notes].filter(Boolean).join(" — ")],
       ["Format", ev.format_label],
       ["Pitching cap", [pitch, ev.pitch_limit_notes].filter(Boolean).join(" — ")],
@@ -790,7 +814,9 @@ export async function eventHome(slug) {
   const ev = board.event;
   const packet = board.packet || ev.packet;
   const champ = packet?.champion;
+  const hero = board.header_photo;
   eventRoot().innerHTML = eventChrome(ev, "home", `
+    ${hero && hero.url ? `<figure class="event-hero"><img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.caption || ev.venue || "Field")}">${hero.caption ? `<figcaption>${escapeHtml(hero.caption)}</figcaption>` : ""}</figure>` : ""}
     <section class="page-head">
       <p class="lede">${escapeHtml(ev.status_note || packet?.status || "Live standings. The bracket fills when scores are final.")}</p>
       <p class="muted">${escapeHtml([ev.dates || packet?.dates, ev.format_label, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
@@ -820,7 +846,7 @@ export async function eventStandings(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "standings", `
     <section class="page-head">
       <h1>Standings</h1>
-      <p class="muted">Pool order: wins, then losses, then head-to-head, then runs allowed, then runs scored. Seeds update when a pool game is marked final.</p>
+      <p class="muted">Each pool prints the order the director saved. Default is record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Head-to-head stays group-aware.</p>
     </section>
     <section class="grid two">${standingsBlock(board.standings) || `<section class="card empty">No teams signed up yet.</section>`}</section>
   `);
@@ -1304,6 +1330,7 @@ export async function eventInfo(slug) {
     </section>
     ${rainBanner(board.event)}
     ${fieldsBlock(board.event, board.fields)}
+    ${photoGallery(board.photos || [])}
     ${guidelinesBlock(board.event)}
     ${local ? `<section class="card infomap">
       <h2>Parking</h2>
@@ -1340,9 +1367,52 @@ function packGuidelines(form) {
   for (const k of ["require_insurance", "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert"]) {
     fd.set(k, form.querySelector(`[name="${k}"]`)?.checked ? "true" : "false");
   }
-  const keys = [...form.querySelectorAll("#tiebreak-order [data-tiebreak]")].map((el) => el.value);
-  if (keys.length) fd.set("tiebreak_order", keys.join(","));
+  const ages = [...form.querySelectorAll("[name=age_group]:checked")].map((el) => el.value);
+  if (ages.length) {
+    fd.set("age_groups", JSON.stringify(ages));
+    fd.set("ages", ages.join("/"));
+  }
+  if (form.querySelector("[name=age_class]")) fd.set("age_class", form.querySelector("[name=age_class]").value || "");
+  if (form.querySelector("[name=age_split]")) fd.set("age_split", form.querySelector("[name=age_split]").value || "false");
+  fd.set("tiebreak_explicit", "true");
+  form.querySelectorAll(".tiebreak-order").forEach((list) => {
+    const keys = [...list.querySelectorAll("[data-tiebreak]")].map((el) => el.value);
+    if (!keys.length) return;
+    if (list.dataset.pool) fd.set("pool_tiebreak_" + list.dataset.pool, keys.join(","));
+    else fd.set("tiebreak_order", keys.join(","));
+  });
   return fd;
+}
+
+function setupAgeFields(ev = {}) {
+  const picked = (ev.age_groups && ev.age_groups.ages)
+    || String(ev.ages || "").toUpperCase().match(/6U|8U|10U|11U|12U|14U|16U|18U/g)
+    || ["10U"];
+  const klass = ev.age_class || (ev.age_groups && ev.age_groups.class) || "";
+  const split = ev.age_split || (ev.age_groups && ev.age_groups.split);
+  const ages = ["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"];
+  return `
+    <fieldset class="age-picks">
+      <legend>Age groups</legend>
+      <p class="muted">Check every age this weekend hosts. Combining 11U and 12U-C stays one division. The host does not invent a pool per age — you name pools when teams sign up.</p>
+      <div class="age-checks">
+        ${ages.map((a) => `<label class="check"><input type="checkbox" name="age_group" value="${a}" ${picked.includes(a) ? "checked" : ""}> ${a}</label>`).join("")}
+      </div>
+      <div class="form-grid two">
+        <label>Class
+          <select name="age_class">
+            <option value="" ${!klass ? "selected" : ""}>No class</option>
+            ${["A", "B", "C"].map((c) => `<option value="${c}" ${String(klass).toUpperCase() === c ? "selected" : ""}>${c}</option>`).join("")}
+          </select>
+        </label>
+        <label>Divisions
+          <select name="age_split">
+            <option value="false" ${!split ? "selected" : ""}>Combine into one division</option>
+            <option value="true" ${split ? "selected" : ""}>Split each age (you still name the pools)</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>`;
 }
 
 const TIEBREAK_OPTS = [
@@ -1353,30 +1423,57 @@ const TIEBREAK_OPTS = [
   ["rs", "Most runs scored"],
 ];
 
+function tiebreakItem(key, i, total) {
+  const label = TIEBREAK_OPTS.find((row) => row[0] === key)?.[1] || key;
+  return `<li>
+    <input type="hidden" data-tiebreak value="${escapeHtml(key)}">
+    <span class="tb-n">${i + 1}.</span>
+    <span>${escapeHtml(label)}</span>
+    <button type="button" class="btn ghost tb-up"${i === 0 ? " disabled" : ""}>Up</button>
+    <button type="button" class="btn ghost tb-down"${i === total - 1 ? " disabled" : ""}>Down</button>
+    <button type="button" class="btn ghost tb-remove">Remove</button>
+  </li>`;
+}
+
+function tiebreakListMarkup(order, pool) {
+  const keys = order && order.length ? order : ["record", "h2h", "ra", "diff", "rs"];
+  const unused = TIEBREAK_OPTS.filter((row) => !keys.includes(row[0]));
+  return `
+    <ol class="tiebreak-order" ${pool ? `data-pool="${escapeHtml(pool)}" id="tiebreak-order-${escapeHtml(pool)}"` : `id="tiebreak-order"`}>
+      ${keys.map((key, i) => tiebreakItem(key, i, keys.length)).join("")}
+    </ol>
+    <div class="tb-add">
+      <select data-tb-add>
+        <option value="">Add a step</option>
+        ${unused.map(([k, l]) => `<option value="${k}">${escapeHtml(l)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="tb-presets">
+      <button type="button" class="btn ghost" data-tb-preset="record,h2h,ra,diff,rs">Standard</button>
+      <button type="button" class="btn ghost" data-tb-preset="h2h,record,ra,diff,rs">Head to head first</button>
+      <button type="button" class="btn ghost" data-tb-preset="record,ra,diff,rs,h2h">Runs first</button>
+    </div>`;
+}
+
 function setupTiebreakFields(ev = {}) {
   const order = (ev.tiebreak && ev.tiebreak.order) || ["record", "h2h", "ra", "diff", "rs"];
-  const label = (key) => TIEBREAK_OPTS.find((row) => row[0] === key)?.[1] || key;
+  const pools = ev.pools || [];
   return `
     <details class="setup-block" open>
       <summary>Pool tiebreak order</summary>
-      <p class="muted">A tie is half a win. Head-to-head is skipped on a 3-team cycle or when the tied teams have not all played each other.</p>
-      <ol class="tiebreak-order" id="tiebreak-order">
-        ${order.map((key, i) => `
-          <li>
-            <input type="hidden" data-tiebreak value="${escapeHtml(key)}">
-            <span class="tb-n">${i + 1}.</span>
-            <span>${escapeHtml(label(key))}</span>
-            <button type="button" class="btn ghost tb-up"${i === 0 ? " disabled" : ""}>Up</button>
-            <button type="button" class="btn ghost tb-down"${i === order.length - 1 ? " disabled" : ""}>Down</button>
-          </li>`).join("")}
-      </ol>
+      <p class="muted">Default for every pool: record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Remove a step if this weekend does not use it. Head-to-head is still skipped on a 3-team cycle or when the tied teams have not all played each other.</p>
+      ${tiebreakListMarkup(order)}
+      ${pools.length ? `<div class="pool-tiebreaks">${pools.map((p) => `
+        <details class="setup-block">
+          <summary>Pool ${escapeHtml(p.name)} — own order</summary>
+          ${tiebreakListMarkup((p.tiebreak && p.tiebreak.order) || order, p.name)}
+        </details>`).join("")}</div>` : ""}
     </details>`;
 }
 
 function bindTiebreakOrder(root) {
-  const list = root.querySelector("#tiebreak-order");
-  if (!list) return;
-  const refresh = () => {
+  const paint = (list) => {
+    const used = [...list.querySelectorAll("[data-tiebreak]")].map((el) => el.value);
     [...list.children].forEach((el, i) => {
       const n = el.querySelector(".tb-n");
       if (n) n.textContent = (i + 1) + ".";
@@ -1385,17 +1482,42 @@ function bindTiebreakOrder(root) {
       if (up) up.disabled = i === 0;
       if (down) down.disabled = i === list.children.length - 1;
     });
+    const add = list.parentElement?.querySelector("[data-tb-add]");
+    if (add) {
+      const unused = TIEBREAK_OPTS.filter((row) => !used.includes(row[0]));
+      add.innerHTML = `<option value="">Add a step</option>` + unused.map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
+    }
   };
-  list.addEventListener("click", (evnt) => {
-    const li = evnt.target.closest("li");
-    if (!li) return;
-    if (evnt.target.classList.contains("tb-up") && li.previousElementSibling) {
-      li.parentNode.insertBefore(li, li.previousElementSibling);
-    }
-    if (evnt.target.classList.contains("tb-down") && li.nextElementSibling) {
-      li.parentNode.insertBefore(li.nextElementSibling, li);
-    }
-    refresh();
+  root.querySelectorAll(".tiebreak-order").forEach((list) => {
+    paint(list);
+    list.addEventListener("click", (evnt) => {
+      const li = evnt.target.closest("li");
+      if (!li) return;
+      if (evnt.target.classList.contains("tb-up") && li.previousElementSibling) {
+        li.parentNode.insertBefore(li, li.previousElementSibling);
+      }
+      if (evnt.target.classList.contains("tb-down") && li.nextElementSibling) {
+        li.parentNode.insertBefore(li.nextElementSibling, li);
+      }
+      if (evnt.target.classList.contains("tb-remove") && list.children.length > 1) {
+        li.remove();
+      }
+      paint(list);
+    });
+    list.parentElement?.querySelector("[data-tb-add]")?.addEventListener("change", (evnt) => {
+      const key = evnt.target.value;
+      if (!key) return;
+      list.insertAdjacentHTML("beforeend", tiebreakItem(key, list.children.length, list.children.length + 1));
+      evnt.target.value = "";
+      paint(list);
+    });
+    list.parentElement?.querySelectorAll("[data-tb-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const keys = String(btn.dataset.tbPreset || "").split(",").filter(Boolean);
+        list.innerHTML = keys.map((key, i) => tiebreakItem(key, i, keys.length)).join("");
+        paint(list);
+      });
+    });
   });
 }
 
@@ -1408,10 +1530,8 @@ export async function directorNative() {
     </section>
     <section class="card">
       <form class="form wide" id="native-form">
-        <div class="form-grid two">
-          <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
-          <label>Age group <input name="ages" value="10U"></label>
-        </div>
+        <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
+        ${setupAgeFields({ age_groups: { ages: ["10U"] } })}
         <label>Slug (optional) <input name="slug" placeholder="labor-day-classic"></label>
         ${setupLocationFields({ format: "pool-to-bracket" })}
         ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
@@ -1453,10 +1573,8 @@ export async function directorLinkTm() {
         <label>Tourney Machine URL
           <input name="tm_url" type="url" required placeholder="https://www.tourneymachine.com/Public/Results/Tournament.aspx?IDTournament=">
         </label>
-        <div class="form-grid two">
-          <label>Name override (optional) <input name="name" placeholder="Public page title if blank"></label>
-          <label>Age group <input name="ages" value="10U"></label>
-        </div>
+        <label>Name override (optional) <input name="name" placeholder="Public page title if blank"></label>
+        ${setupAgeFields({ age_groups: { ages: ["10U"] } })}
         ${setupLocationFields({ format: "imported" })}
         ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
         <button class="btn" type="submit">Link and open signup</button>
@@ -1638,6 +1756,89 @@ function bindAdminRail(root) {
   setPane(adminPaneFromHash());
 }
 
+function bindVenuePhotos(slug, photos, showErr) {
+  const form = document.getElementById("photo-form");
+  if (form) {
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      try {
+        const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/photos", {
+          method: "POST",
+          headers: { ...authHeader() },
+          body: new FormData(evnt.target),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved("Photo queued for review");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  }
+  eventRoot().querySelectorAll("[data-photo-pub]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/photos/" + encodeURIComponent(btn.dataset.photoPub) + "/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ public: btn.dataset.public !== "false" }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved(btn.dataset.public === "false" ? "Photo unpublished" : "Photo published");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
+  eventRoot().querySelectorAll("[data-photo-up]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const ids = [...eventRoot().querySelectorAll("#photo-review [data-photo-id]")].map((el) => el.dataset.photoId);
+      const i = ids.indexOf(btn.dataset.photoUp);
+      if (i < 1) return;
+      [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
+      try {
+        const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/photos/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved("Photo order saved");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
+}
+
+function venuePhotoDesk(slug, photos) {
+  const rows = photos || [];
+  return `
+    <div class="venue-photo-desk">
+      <h3>Field and parking photos</h3>
+      <p class="muted">Fields and facilities only — no players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload.</p>
+      <form class="form wide" id="photo-form">
+        <label>Photo <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+        <label>Caption <input name="caption" maxlength="200" placeholder="East lot off Meadow St"></label>
+        <label>Kind
+          <select name="kind">
+            <option value="entrance">Entrance</option>
+            <option value="parking">Parking</option>
+            <option value="layout">Layout</option>
+            <option value="field" selected>Field</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <button class="btn" type="submit">Upload for review</button>
+      </form>
+      ${rows.length ? `<ol class="photo-review" id="photo-review">${rows.map((p, i) => `<li data-photo-id="${escapeHtml(p.id)}">
+        ${p.url ? `<img src="${escapeHtml(p.url)}" alt="">` : ""}
+        <div>
+          <b>${escapeHtml(p.caption || p.kind || "Photo")}</b>
+          <span class="badge ${p.public ? "approved" : "incomplete"}">${p.public ? "published" : "unpublished"}</span>
+        </div>
+        <button type="button" class="btn ghost" data-photo-pub="${escapeHtml(p.id)}" data-public="${p.public ? "false" : "true"}">${p.public ? "Unpublish" : "Publish"}</button>
+        ${i ? `<button type="button" class="btn ghost" data-photo-up="${escapeHtml(p.id)}">Earlier</button>` : ""}
+      </li>`).join("")}</ol>` : `<p class="empty">No field photos yet.</p>`}
+    </div>`;
+}
+
 export async function eventAdmin(slug) {
   if (!directorGate()) return;
   const plan = await fetch("/api/events/" + encodeURIComponent(slug) + "/plan", {
@@ -1707,6 +1908,7 @@ export async function eventAdmin(slug) {
           <h2>Tournament setup</h2>
           <p class="muted">Bracket type, governing body, pitch cap, and what teams must upload.</p>
           <form class="form wide" id="guide-form">
+            <div class="setup-block">${setupAgeFields(ev)}</div>
             <div class="setup-block">${setupFormatFields(ev)}</div>
             ${setupGuidelinesFields(ev)}
             <button class="btn" type="submit">Save tournament setup</button>
@@ -1714,11 +1916,12 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="venue" hidden>
           <h2>Venue setups</h2>
-          <p class="muted">Park, GPS, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
+          <p class="muted">Park, street address, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
           <form class="form wide" id="fields-form">
             ${setupVenueFields(ev, fields.length ? fields : [{}, {}])}
             <button class="btn" type="submit">Save venue</button>
           </form>
+          ${venuePhotoDesk(slug, plan.photos || [])}
         </section>
         <section class="card" data-admin-pane="scheduler" hidden>
           <h2>Scheduler</h2>
@@ -1772,7 +1975,7 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="rain" hidden>
           <h2>Rain notice</h2>
-          <p class="muted">Posts a public banner and can delay times, move a day, postpone games, or close a wet field.</p>
+          <p class="muted">Posts a public banner and emails each unique coach address when PocketBase Admin mail is configured. Failures are logged; the notice still saves.</p>
           ${rainBanner(ev)}
           <form class="form wide" id="rain-form">
             <label>Status
@@ -1833,6 +2036,7 @@ export async function eventAdmin(slug) {
   bindAdminRail(eventRoot());
   bindFieldRows(eventRoot(), Math.max(fields.length, 2), ev);
   bindTiebreakOrder(eventRoot());
+  bindVenuePhotos(slug, plan.photos || [], showErr);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
 
   document.getElementById("fields-form").addEventListener("submit", async (evnt) => {

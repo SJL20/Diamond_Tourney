@@ -409,6 +409,21 @@ tr.total { font-weight: 700; background: #f3eee4; }
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.tb-add, .tb-presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.age-picks { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+.age-checks { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
+.pin-nudge { margin: 8px 0 12px; }
+.event-hero { margin: 0 0 16px; }
+.event-hero img, .photo-grid img, .photo-review img {
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.photo-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.photo-review { list-style: none; padding: 0; }
+.photo-review li { display: grid; gap: 8px; grid-template-columns: 88px 1fr auto; align-items: center; margin: 10px 0; }
+.photo-review img { width: 88px; height: 64px; max-height: none; }
 .seed-why {
   margin: 12px 0 0;
   padding-left: 1.15rem;
