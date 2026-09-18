@@ -21,11 +21,12 @@ Accounts: `scripts/local-accounts.txt`.
 
 ## Hands-free loops
 
-1. Coach drops a box in Slack `#stat-drop` → Automation / Grok Bot A → `POST /api/bot/ingest` → review queue.
+1. Coach drops a box in Slack `#stat-drop` (screenshot, PDF, or pasted text) → Automation / Grok Bot A → `POST /api/bot/ingest` → review queue.
 2. Coach hits Approve in `/teams/{slug}/admin/review` → hook copies live rows, rebuilds W-L, optional `BOT_B_WEBHOOK_URL`.
 3. Sunday 20:00 ET Automation Bot B drafts unpublished recaps and lists leftover staging.
-4. Event weekend Slack `#event-scores` → Bot C → `/api/bot/event-update`.
-5. Cloud Agent PR + CI Automation keeps Phase 0–1 green. Deploy from the default branch via Fly (`fly.toml`).
+4. Event weekend Slack `#event-scores` → Bot C → `/api/bot/event-update` or `/api/bot/event-box`.
+5. **GameChanger monitor (allowed):** about every 5 minutes while an event is `live`, Bot A / Bot C call `GET /api/bot/gc-monitor` (helper: `python3 scripts/bot_gc_monitor.py --list`), open each coach-supplied public GC URL, and POST only numbers that page shows. Season lines stay in `staging_games` until a human Approves. Tournament scores/lines use the event-box flow. Public URLs only — no GC login.
+6. Cloud Agent PR + CI Automation keeps Phase 0–1 green. Deploy from the default branch via Fly (`fly.toml`).
 
 ## Secrets (Cursor Cloud Agents dashboard)
 
@@ -39,7 +40,7 @@ Login works and the demo hitting table renders (`/teams/demo/hitting` after `coa
 
 ## Diamond Tourney (partner deck)
 
-Derek’s concept lives in `docs/partner/Diamond_Tourney.pptx` and `docs/DIAMOND-TOURNEY.md`. Public event boards: `/t/keystone-clash-2026` and the FAKE practice weekend `/t/harbor-eight`. Start: `/start`. Team signup with GameChanger: `/t/{slug}/signup`. Hosted sync is a PocketBase job, not a Cursor bot. Schedule paste: `/directors/import`. Pricing stays unbuilt.
+Derek’s concept lives in `docs/partner/Diamond_Tourney.pptx` and `docs/DIAMOND-TOURNEY.md`. Public event boards: `/t/keystone-clash-2026` and the FAKE practice weekend `/t/harbor-eight`. Start: `/start`. Team signup with GameChanger: `/t/{slug}/signup`. Hosted sync (`hosted-gc-tm-sync`) is a PocketBase reachability ping every two hours. Live score and box updates are Grok bots polling public GC URLs from `GET /api/bot/gc-monitor`. Schedule paste: `/directors/import`. Pricing stays unbuilt.
 
 ## Phase 1 done when
 

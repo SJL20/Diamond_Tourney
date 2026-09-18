@@ -6,7 +6,7 @@ New here? `docs/PROGRESS.md` is where the project actually stands and what is
 still broken. `CONTRIBUTING.md` is how to run it, test it, and open a pull
 request. Found private data where it should not be? `SECURITY.md`.
 
-Wholly hosted tournament site: start an event natively or by linking a Tourney Machine page, teams sign up with a GameChanger URL, and this host pulls those public pages. Season team books stay behind a coach login. Bots are optional leftovers for screenshot ingest — they are not required to run a weekend.
+Wholly hosted tournament site: start an event natively or by linking a Tourney Machine page, teams sign up with a GameChanger URL, and this host stores those public pages. Grok bots may poll the stored public GameChanger URLs (about every 5 minutes during a live event) and push readable scores onto the board. Season team books stay behind a coach login. PDF / screenshot ingest still works.
 
 Read `SOFTBALL-PLATFORM-BOT-OUTLINE.md`, `CURSOR-GROK-INTEGRATION.md`, and `docs/DIAMOND-TOURNEY.md`.
 
@@ -48,8 +48,8 @@ On **Bracket**, every card shows **Field** and **Time**. A director can edit tho
 Open the game (`Games` → the match, or Admin → Box). Four doors:
 
 1. **GameChanger mobile PDF** — from the GC app, export/share the box as PDF. A team manager drops it on their game. Status is `queued` for a bot unless they also type lines.
-2. **Public GameChanger box URL** — paste a public page such as `https://web.gc.com/teams/…/schedule/…/box-score`. This host stores the link. It does not scrape GameChanger.
-3. **Grok bot** — queued PDFs and links appear on Admin → Stats inbox and `GET /api/bot/event-boxes`. The bot (or you) posts extracted hitting, pitching, and the score to `POST /api/bot/event-box`. Local helper: `python3 scripts/bot_c_event_box.py --list`.
+2. **Public GameChanger box URL** — paste a public page such as `https://web.gc.com/teams/…/schedule/…/box-score`. This host stores the link. Bots poll that public page on a recurring monitor (`GET /api/bot/gc-monitor`, about every 5 minutes while the event is live) and post only numbers the page shows. No GC account login.
+3. **Grok bot** — queued PDFs and links appear on Admin → Stats inbox, `GET /api/bot/event-boxes`, and `GET /api/bot/gc-monitor`. The bot (or you) posts extracted hitting, pitching, and the score to `POST /api/bot/event-box`. Local helpers: `python3 scripts/bot_gc_monitor.py --list` and `python3 scripts/bot_c_event_box.py --list`.
 4. **Director PDF** — the tournament director uploads a GC export or a scorebook scan. Check “official book” if a bot should not wait on it.
 
 Lines land in the weekend leaders only when someone (bot or person) types them. A PDF is not turned into invented numbers.
@@ -93,7 +93,7 @@ Season books stay behind a coach login. They are not part of the public product:
 | `/teams/{slug}/games`, `/teams/{slug}/games/{id}` | Game log and a single game's box |
 | `/teams/{slug}/admin/review` | Approve or reject what a bot staged |
 
-Keystone Clash 2026 is imported from the public popup. Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; this host does not scrape GameChanger. Individual Friday/Saturday pool boxes are not on the popup, so they are not invented here.
+Keystone Clash 2026 is imported from the public popup. Directors can refresh it from `/directors/import-popup`. GameChanger URLs are stored as published; bots may monitor those public pages. Individual Friday/Saturday pool boxes are not on the popup, so they are not invented here.
 
 | Role | Email | Password |
 |---|---|---|
@@ -112,6 +112,7 @@ Admin UI: http://127.0.0.1:8097/_/
 python3 scripts/bot_a_ingest.py --team hawks-10u testdata/hawks_game1.txt
 # approve in /teams/hawks-10u/admin/review
 python3 scripts/bot_b_publish.py --team hawks-10u
+python3 scripts/bot_gc_monitor.py --list
 python3 scripts/bot_c_event_box.py --list
 python3 scripts/bot_c_event_box.py --event SLUG --game GAME_ID --home-runs 6 --away-runs 4
 ```
@@ -137,4 +138,4 @@ fly deploy
 
 ## Automations
 
-Ready-to-paste Cursor Automations live in `automations/`. Grok Bot setup is `grok-bot/SOFTBALL-INGEST.md`. You still create them once at [cursor.com/automations](https://cursor.com/automations) (not on the Start plan).
+Ready-to-paste Cursor Automations live in `automations/` (including `bot-gc-monitor.md` for the 5-minute public GameChanger poll). Grok Bot setup is `grok-bot/SOFTBALL-INGEST.md`. You still create them once at [cursor.com/automations](https://cursor.com/automations) (not on the Start plan).

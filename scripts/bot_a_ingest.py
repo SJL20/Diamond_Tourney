@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Bot A — parse a GameChanger-style text box and POST staging_games."""
+"""Bot A — parse a GameChanger-style text box and POST staging_games.
+
+Public GameChanger pages are listed by GET /api/bot/gc-monitor
+(scripts/bot_gc_monitor.py). Parsed numbers still land in staging; a coach
+must Approve. This script never approves and never invents stats.
+"""
 
 from __future__ import annotations
 

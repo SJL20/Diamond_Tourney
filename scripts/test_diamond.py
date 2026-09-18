@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from lib.exif import strip_exif
 from lib.standings import sort_pool, parse_order, win_pct
+from scripts.bot_gc_monitor import is_public_gc_url, load_watch
 from scripts.pb_client import auth, request, request_multipart
 
 BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT', '8097')}"
@@ -1414,6 +1415,99 @@ class LiveReviewTests(unittest.TestCase):
         })
         self.assertTrue(out.get("verified"))
         self.assertFalse(out.get("verify_sent"))
+
+
+class GcMonitorTests(unittest.TestCase):
+    def test_public_gc_url_hosts_only(self):
+        self.assertTrue(is_public_gc_url("https://web.gc.com/teams/abc/schedule/xyz/box-score"))
+        self.assertTrue(is_public_gc_url("https://gc.com/team/hawks-10u"))
+        self.assertTrue(is_public_gc_url("https://www.gamechanger.io/team/x"))
+        self.assertFalse(is_public_gc_url("https://example.com/not-gc"))
+        self.assertFalse(is_public_gc_url(""))
+
+    def test_bot_lists_stored_public_urls_and_coach_cannot(self):
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        watch = load_watch(BASE, bot)
+        policy = watch["policy"]
+        self.assertTrue(policy["allowed"])
+        self.assertTrue(policy["public_urls_only"])
+        self.assertFalse(policy["gc_login"])
+        self.assertFalse(policy["unofficial_api"])
+        self.assertTrue(policy["pdf_ocr_still_supported"])
+        self.assertIn("/api/bot/ingest", policy["season_write"])
+        self.assertIn("Approve", policy["season_write"])
+        self.assertIn("/api/bot/event-box", policy["event_write"])
+        self.assertTrue(any("Invent" in item or "invent" in item for item in policy["forbidden"]))
+        slugs = [e.get("slug") for e in watch["live_events"]]
+        self.assertIn("keystone-clash-2026", slugs)
+        self.assertIn("harbor-eight", slugs)
+        self.assertNotIn("central-saturday", slugs)
+        self.assertEqual(policy["interval_seconds"], 300)
+        hawks = next(
+            item for item in watch["watch"]
+            if item.get("gc_url") == "https://web.gc.com/team/hawks-10u"
+        )
+        # Central Saturday is wiped; the leftover year-club URL stays for season ingest.
+        self.assertEqual(hawks["kind"], "club")
+        self.assertEqual(hawks["write"], "POST /api/bot/ingest")
+
+        coach = auth(BASE, "coach.demo@local.test", "CoachDemo1!")
+        with self.assertRaises(RuntimeError) as forbidden:
+            request(BASE, "GET", "/api/bot/gc-monitor", coach)
+        self.assertIn("403", str(forbidden.exception))
+
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "gc-monitor-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "GC Monitor Weekend",
+            "slug": slug,
+            "format": "pool-only",
+            "fields": [{"name": "Main"}],
+        })
+        slug = created["event"]["slug"]
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Monitor Hawks",
+            "pool": "A",
+            "gamechanger_url": "https://web.gc.com/team/monitor-hawks",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Monitor Heat",
+            "pool": "A",
+            "as_director": True,
+        })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-only",
+        })
+        game_id = auto["schedule"][0]["id"]
+        gc_box = "https://web.gc.com/teams/MonitorHawks/schedule/game-1/box-score"
+        linked = request(BASE, "POST", f"/api/events/{slug}/schedule/{game_id}/box", td, {
+            "source": "gc_url",
+            "gc_url": gc_box,
+        })
+        self.assertEqual(linked["box"]["gc_url"], gc_box)
+        self.assertEqual(linked["box"]["status"], "queued")
+
+        again = request(BASE, "GET", "/api/bot/gc-monitor", bot)
+        team_row = next(
+            item for item in again["watch"]
+            if item.get("gc_url") == "https://web.gc.com/team/monitor-hawks"
+            and item.get("event_slug") == slug
+        )
+        self.assertEqual(team_row["kind"], "event_team")
+        box_row = next(
+            item for item in again["watch"]
+            if item.get("gc_url") == gc_box and item.get("event_slug") == slug
+        )
+        self.assertEqual(box_row["kind"], "event_box")
+        self.assertEqual(box_row["schedule_id"], game_id)
+        self.assertEqual(box_row["write"], "POST /api/bot/event-box")
+        inbox = request(BASE, "GET", f"/api/bot/event-boxes?event={slug}", bot)
+        self.assertTrue(any(b.get("gc_url") == gc_box for b in inbox["boxes"]))
 
 
 if __name__ == "__main__":

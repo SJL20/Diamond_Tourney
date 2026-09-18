@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Bot C — list queued tournament boxes and POST extracted lines.
 
-This host does not scrape GameChanger. A coach or director stores a public
-box URL or PDF. A Grok bot (or a person) reads that source and uploads JSON.
+Bots may poll coach-supplied public GameChanger box URLs (see
+scripts/bot_gc_monitor.py and GET /api/bot/gc-monitor). A coach or director
+also stores a PDF. Read the source; never invent numbers. POST JSON here.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ def main():
     p.add_argument("--home-runs", type=int, dest="home_runs")
     p.add_argument("--away-runs", type=int, dest="away_runs")
     p.add_argument("--json", dest="json_path", help="file with hitting/pitching arrays")
-    p.add_argument("--note", default="Bot C extracted lines. Not scraped by the host.")
+    p.add_argument("--note", default="Bot C extracted lines from the coach-supplied public box or PDF.")
     p.add_argument("--review", action="store_true", help="leave status needs_review instead of approved")
     args = p.parse_args()
     token = auth(args.base, args.email, args.password)

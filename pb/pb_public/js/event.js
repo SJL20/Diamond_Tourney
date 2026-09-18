@@ -961,7 +961,7 @@ export async function eventGame(slug, id) {
     </section>
     <section class="card">
       <h2>How this game’s stats get here</h2>
-      <p class="muted">Four doors. This host does not scrape GameChanger. A PDF or public box URL is stored as you sent it. A Grok bot (or a person) types the lines. Nothing is invented from a picture.</p>
+      <p class="muted">Four doors. A Grok bot may poll the public GameChanger URL a coach stored (about every 5 minutes during a live weekend) and post readable lines. A PDF upload still works. Nothing is invented from a picture or a blank page.</p>
       ${box ? `<p class="stats-now">
         ${box.gc_url ? `<a href="${escapeHtml(box.gc_url)}" target="_blank" rel="noopener">GameChanger box</a> · ` : ""}
         ${box.url ? `<a href="${escapeHtml(box.url)}" target="_blank" rel="noopener">${escapeHtml(box.original_name || "Uploaded PDF")}</a> · ` : ""}
@@ -982,7 +982,7 @@ export async function eventGame(slug, id) {
       </details>
       <details class="setup-block" open>
         <summary>2. Public GameChanger box URL</summary>
-        <p class="muted">Paste the public web box, like web.gc.com/teams/…/schedule/…/box-score. We store the link and check that the page is reachable. We do not copy numbers off that page.</p>
+        <p class="muted">Paste the public web box, like web.gc.com/teams/…/schedule/…/box-score. We store the link. Bots read posted numbers from that public page. Unreadable cells stay blank.</p>
         <form class="form wide" id="gc-url-form" data-autosave-box>
           <input type="hidden" name="source" value="gc_url">
           <label>Box-score URL <input name="gc_url" type="url" required placeholder="https://web.gc.com/teams/…/schedule/…/box-score" value="${escapeHtml(box?.gc_url || "")}"></label>
@@ -992,7 +992,7 @@ export async function eventGame(slug, id) {
       </details>
       <details class="setup-block">
         <summary>3. Grok bot upload</summary>
-        <p class="muted">Queued PDFs and links show in Admin → Stats inbox. A bot (or you) posts the extracted hitting, pitching, and score to <code>/api/bot/event-box</code>. Local: <code>python3 scripts/bot_c_event_box.py --list</code> then <code>--event ${escapeHtml(slug)} --game ${escapeHtml(id)}</code>.</p>
+        <p class="muted">Queued PDFs and public GC links show in Admin → Stats inbox and <code>GET /api/bot/gc-monitor</code>. A bot (or you) posts extracted hitting, pitching, and score to <code>/api/bot/event-box</code>. Local: <code>python3 scripts/bot_gc_monitor.py --list</code> then <code>python3 scripts/bot_c_event_box.py --event ${escapeHtml(slug)} --game ${escapeHtml(id)}</code>.</p>
       </details>
       ${detail.director ? `<details class="setup-block" open>
         <summary>4. Director PDF</summary>
@@ -2037,7 +2037,7 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="stats" hidden>
           <h2>Stats inbox</h2>
-          <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
+          <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Bots also poll stored public GC URLs during a live event. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
           ${pending.length ? table(["Game", "Door", "Status", ""], pending.map((b) => `<tr>
             <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
             <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>

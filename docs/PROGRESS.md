@@ -25,8 +25,8 @@ The running answer to "where is this thing?" Read this before you read code.
 | Repository | **public** — assume anything committed or served is world-readable |
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
-| Live URL | https://www.diamondtourney.com (this branch is not on Fly until it merges into `main`) |
-| Tests | 42 unit/integration cases + 13 acceptance checks, plus live-review coverage |
+| Live URL | https://www.diamondtourney.com (Fly default-branch deploy after this merge) |
+| Tests | live-review + GameChanger monitor coverage + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -156,11 +156,10 @@ direct unit tests for the hook modules.
 
 ### 8. Docs disagree with the code — **open**
 
-- `docs/DIAMOND-TOURNEY.md` says team signup requires a GameChanger URL. The
-  code and `test_diamond.py` both make it optional, on purpose.
 - `README.md`'s page table omits the whole season book (`/teams/{slug}/...`),
   `/login`, `/register`, `/account`, `/admin/teams`, `/t/{slug}/leaders`, and
-  `/t/{slug}/pools`.
+  `/t/{slug}/pools`. Signup-requires-GC is closed: `docs/DIAMOND-TOURNEY.md`
+  now matches the optional-URL code.
 
 ### Closed
 
@@ -199,6 +198,16 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — land PRs #1–#6 and #4 on `main`
+
+Merged the stacked product PRs onto `main` (packet privacy, Harbor Eight,
+collapsed bracket, standings/game numbers, Derek tiebreak + CSV persist,
+mail/ages/photos/per-pool tiebreak) plus the GameChanger public-page monitor
+from #4. Bots may poll stored public GC URLs (~5 min when live) through
+`GET /api/bot/gc-monitor`. No GC login, no unofficial API. Finding 1 is still
+open. Admin login / forgot-password / site-admin delete is **not** in this
+merge.
 
 ### 2026-09-18 — Derek 1:16 / 1:19 live-review package
 
