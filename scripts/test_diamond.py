@@ -852,9 +852,16 @@ class GcMonitorTests(unittest.TestCase):
         self.assertEqual(linked["box"]["status"], "queued")
 
         again = request(BASE, "GET", "/api/bot/gc-monitor", bot)
-        urls = {item.get("gc_url") for item in again["watch"]}
-        self.assertIn("https://web.gc.com/team/monitor-hawks", urls)
-        box_row = next(item for item in again["watch"] if item.get("gc_url") == gc_box)
+        team_row = next(
+            item for item in again["watch"]
+            if item.get("gc_url") == "https://web.gc.com/team/monitor-hawks"
+            and item.get("event_slug") == slug
+        )
+        self.assertEqual(team_row["kind"], "event_team")
+        box_row = next(
+            item for item in again["watch"]
+            if item.get("gc_url") == gc_box and item.get("event_slug") == slug
+        )
         self.assertEqual(box_row["kind"], "event_box")
         self.assertEqual(box_row["schedule_id"], game_id)
         self.assertEqual(box_row["write"], "POST /api/bot/event-box")

@@ -4,7 +4,7 @@ const LIVE_POLL_SECONDS = 300;
 const IDLE_POLL_SECONDS = 1800;
 
 function pushUnique(seen, out, item) {
-  const key = [item.kind, item.gc_url || "", item.schedule_id || "", item.team_slug || item.team_name || ""].join("|");
+  const key = [item.kind, item.gc_url || "", item.schedule_id || "", item.event_slug || "", item.team_slug || item.team_name || ""].join("|");
   if (seen[key]) return;
   seen[key] = true;
   out.push(item);
