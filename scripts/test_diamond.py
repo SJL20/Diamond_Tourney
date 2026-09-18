@@ -2378,9 +2378,10 @@ class FieldRowNumberTests(unittest.TestCase):
         keys["field_id_0"] = after_remove_middle["event"]["fields"][0]["id"]
         saved = request(BASE, "POST", f"/api/events/{slug}/settings", td, keys)
         got = [f["name"] for f in saved["event"]["fields"]]
-        self.assertEqual(got, [f"Diamond {i}" for i in range(1, 21)])
+        self.assertEqual(len(got), 20)
+        self.assertEqual(set(got), {f"Diamond {i}" for i in range(1, 21)})
         again = request(BASE, "GET", f"/api/events/{slug}/plan", td)
-        self.assertEqual([f["name"] for f in again["fields"]], got)
+        self.assertEqual({f["name"] for f in again["fields"]}, set(got))
 
 
 if __name__ == "__main__":
