@@ -309,3 +309,29 @@ storage stay. Baseball can still turn a limit on later without a rebuild.
 - [x] Hidden when sport is softball — **not done; owner asked to keep it visible**
 - [x] Field and storage retained
 - [x] Appears when sport is baseball — section always visible; mode defaults to none
+
+---
+
+## [x] 9. Field rows skip numbers on Add another field
+
+**Medium. Derek, live review 2026-09-18 6:07 ET.**
+
+`/directors/new` and Admin → Venue started at Field 1, then Add produced Field 3,
+then Field 5. Removing a row left the leftover legends frozen, so it looked like
+the click did nothing.
+
+`bindFieldRows` advanced its index twice per click (`Math.max(...) + 1` and then
+`n += 1`). The visible legend and the `field_name_<i>` input used that index.
+`parseFieldRows` already reads every `field_name_N` key, so a gap did not drop
+a diamond — but add/remove loops could still walk the index off the form.
+
+Fix: drop the carried `n`. After every add or remove, renumber `.field-row`
+legends and every `field_*` / `field_day_*` name from DOM order so the next
+index is `rows.length` and submitted names stay `field_name_0`, `field_name_1`,
+… with no hole.
+
+- [x] Add three fields: legends 1, 2, 3
+- [x] Remove the middle: remaining 1, 2
+- [x] Submitted names are dense (`field_name_0`, `field_name_1`)
+- [x] Twenty fields save and reload
+- [x] Existing tournament fields re-save unchanged

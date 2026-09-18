@@ -128,8 +128,26 @@ function weekendFromForm(root, ev = {}) {
   };
 }
 
+function rewriteFieldInputName(name, next) {
+  const raw = String(name || "");
+  const day = raw.match(/^field_day_(\d+)_(\d+)_(.+)$/);
+  if (day) return "field_day_" + next + "_" + day[2] + "_" + day[3];
+  const row = raw.match(/^field_([a-z_]+)_(\d+)$/);
+  if (row) return "field_" + row[1] + "_" + next;
+  return raw;
+}
+
+function renumberFieldRows(root) {
+  [...root.querySelectorAll(".field-row")].forEach((fs, i) => {
+    const legend = fs.querySelector("legend");
+    if (legend) legend.textContent = "Field " + (i + 1);
+    fs.querySelectorAll("[name]").forEach((el) => {
+      el.setAttribute("name", rewriteFieldInputName(el.getAttribute("name"), i));
+    });
+  });
+}
+
 function bindFieldRows(root, startCount, ev = {}) {
-  let n = startCount;
   const add = root.querySelector("#add-field");
   const syncRemoves = () => {
     const rows = root.querySelectorAll(".field-row");
@@ -161,10 +179,9 @@ function bindFieldRows(root, startCount, ev = {}) {
     add.addEventListener("click", () => {
       const box = root.querySelector("#field-rows");
       const { dates, hoursStart, hoursEnd } = weekendFromForm(root, ev);
-      const used = [...root.querySelectorAll("[name^='field_name_']")].map((el) => Number(String(el.name).replace("field_name_", ""))).filter((v) => !Number.isNaN(v));
-      n = Math.max(n, ...(used.length ? used : [-1])) + 1;
-      box.insertAdjacentHTML("beforeend", fieldRow({}, n, dates, hoursStart, hoursEnd));
-      n += 1;
+      const next = root.querySelectorAll(".field-row").length;
+      box.insertAdjacentHTML("beforeend", fieldRow({}, next, dates, hoursStart, hoursEnd));
+      renumberFieldRows(root);
       syncRemoves();
     });
   }
@@ -174,6 +191,7 @@ function bindFieldRows(root, startCount, ev = {}) {
     const rows = root.querySelectorAll(".field-row");
     if (rows.length <= 1) return;
     btn.closest(".field-row")?.remove();
+    renumberFieldRows(root);
     syncRemoves();
   });
   ["start", "end", "hours_start", "hours_end"].forEach((name) => {
