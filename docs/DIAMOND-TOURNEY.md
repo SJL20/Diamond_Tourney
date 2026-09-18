@@ -20,7 +20,7 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 
 ## Identity (team, not email)
 
-Site admin manages **team profiles** (`/admin/teams`). Email is only a login that can attach to a team. A team can exist with no GameChanger — year totals still follow that club. GameChanger, when present, is an optional public-page link, not the team’s identity.
+Site admin manages **team profiles** (`/admin/teams`) and can hide or delete weekends (`/admin/events`). The PocketBase Admin account signs in on `/login` as site admin. The event owner can add extra directors by email on **Admin → Tournament setup**. Those addresses never appear on public pages. Email is only a login that can attach to a team. A team can exist with no GameChanger — year totals still follow that club. GameChanger, when present, is an optional public-page link, not the team’s identity.
 4. **Pricing (not billed yet):** The Sheet free ≤8 teams; Tournament $79/event; Organization $399/year. Per event, not a February-cancelled monthly plan.
 5. **Narrow to softball and baseball.** Youth ERA base 7, RA/RS tiebreaks, finish-the-inning later. Do not generalize.
 

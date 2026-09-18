@@ -306,6 +306,150 @@ function seasonTables(app, teamId) {
   return { hitting: hitting, pitching: pitching, record: rebuildTeamRecord(app, teamId) };
 }
 
+function isSiteAdmin(auth) {
+  if (!auth) return false;
+  try { if (auth.isSuperuser()) return true; } catch (err) {}
+  return auth.get("role") === "region_admin";
+}
+
+function appDao(app) {
+  if (app) return app;
+  try { return $app; } catch (err) { return null; }
+}
+
+function normalizeEmail(raw) {
+  return String(raw || "").trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// Registration hands out event_td. That role lets someone create a weekend.
+// It is not permission to run someone else's.
+function isEventOwner(event, auth) {
+  if (!auth || !event) return false;
+  const creator = event.get("created_by");
+  return !!(creator && creator === auth.id);
+}
+
+function isCoOwner(event, auth, app) {
+  if (!auth || !event) return false;
+  const dao = appDao(app);
+  if (!dao) return false;
+  const email = normalizeEmail(auth.email ? auth.email() : "");
+  try {
+    const rows = dao.findRecordsByFilter(
+      "event_co_owners",
+      "event = {:e} && (account = {:u} || email = {:m})",
+      "",
+      1,
+      0,
+      { e: event.id, u: auth.id, m: email },
+    );
+    return !!(rows && rows.length);
+  } catch (err) {
+    return false;
+  }
+}
+
+function isEventAdmin(event, auth, app) {
+  return isSiteAdmin(auth) || isEventOwner(event, auth) || isCoOwner(event, auth, app);
+}
+
+function canManageCoOwners(event, auth) {
+  return isSiteAdmin(auth) || isEventOwner(event, auth);
+}
+
+function listCoOwners(app, event) {
+  const dao = appDao(app);
+  if (!dao || !event) return [];
+  try {
+    return dao.findRecordsByFilter("event_co_owners", "event = {:e}", "email", 80, 0, { e: event.id }).map(function (r) {
+      return {
+        id: r.id,
+        email: r.get("email") || "",
+        account: r.get("account") || "",
+        has_account: !!r.get("account"),
+      };
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
+function findCoOwner(app, eventId, email) {
+  try {
+    return app.findFirstRecordByFilter(
+      "event_co_owners",
+      "event = {:e} && email = {:m}",
+      { e: eventId, m: email },
+    );
+  } catch (err) {
+    return null;
+  }
+}
+
+function addCoOwner(app, event, rawEmail, actor) {
+  if (!canManageCoOwners(event, actor)) {
+    throw new ForbiddenError("Only the owner or a site admin can add or remove co-owners.");
+  }
+  const email = normalizeEmail(rawEmail);
+  if (!isValidEmail(email)) throw new BadRequestError("Enter a co-owner email address.");
+  let ownerEmail = "";
+  try {
+    const ownerId = event.get("created_by");
+    if (ownerId) ownerEmail = normalizeEmail(app.findRecordById("users", ownerId).email());
+  } catch (err) {}
+  if (ownerEmail && ownerEmail === email) {
+    throw new BadRequestError("That address already owns this tournament.");
+  }
+  if (findCoOwner(app, event.id, email)) {
+    throw new BadRequestError("That email is already a co-owner.");
+  }
+  let account = "";
+  let role = "";
+  try {
+    const user = app.findAuthRecordByEmail("users", email);
+    if (user) {
+      account = user.id;
+      role = user.get("role") || "";
+    }
+  } catch (err) {}
+  if (role === "bot") throw new BadRequestError("That account cannot be a co-owner.");
+  const rec = new Record(app.findCollectionByNameOrId("event_co_owners"));
+  rec.set("event", event.id);
+  rec.set("email", email);
+  if (account) rec.set("account", account);
+  app.save(rec);
+  return { id: rec.id, email: email, account: account, has_account: !!account };
+}
+
+function removeCoOwner(app, event, rawEmail, actor) {
+  if (!canManageCoOwners(event, actor)) {
+    throw new ForbiddenError("Only the owner or a site admin can add or remove co-owners.");
+  }
+  const email = normalizeEmail(rawEmail);
+  const rec = findCoOwner(app, event.id, email);
+  if (!rec) throw new BadRequestError("That email is not a co-owner.");
+  app.delete(rec);
+  return { removed: email };
+}
+
+function linkCoOwnerAccount(app, user) {
+  if (!app || !user) return;
+  const email = normalizeEmail(user.email ? user.email() : "");
+  if (!email) return;
+  try {
+    const rows = app.findRecordsByFilter("event_co_owners", "email = {:m}", "", 40, 0, { m: email });
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].get("account")) continue;
+      rows[i].set("account", user.id);
+      app.save(rows[i]);
+    }
+  } catch (err) {}
+}
+
 function requireRole(e, roles) {
   const auth = e.auth;
   if (!auth) throw new UnauthorizedError("login required");
@@ -314,6 +458,20 @@ function requireRole(e, roles) {
     throw new ForbiddenError("role not allowed");
   }
   return auth;
+}
+
+function requireEventAdmin(e, event) {
+  const auth = e.auth;
+  if (!auth) throw new UnauthorizedError("login required");
+  if (isEventAdmin(event, auth, e.app)) return auth;
+  throw new ForbiddenError("Only the director who created this tournament, a listed co-owner, or a site admin can do that.");
+}
+
+function requireEventAdminOrBot(e, event) {
+  const auth = e.auth;
+  if (!auth) throw new UnauthorizedError("login required");
+  if (auth.get("role") === "bot" || isEventAdmin(event, auth, e.app)) return auth;
+  throw new ForbiddenError("Only a bot, the director who created this tournament, a listed co-owner, or a site admin can do that.");
 }
 
 module.exports = {
@@ -327,7 +485,19 @@ module.exports = {
   findPlayer: findPlayer,
   applyStaging: applyStaging,
   seasonTables: seasonTables,
+  isSiteAdmin: isSiteAdmin,
+  isEventOwner: isEventOwner,
+  isCoOwner: isCoOwner,
+  isEventAdmin: isEventAdmin,
+  canManageCoOwners: canManageCoOwners,
+  listCoOwners: listCoOwners,
+  addCoOwner: addCoOwner,
+  removeCoOwner: removeCoOwner,
+  linkCoOwnerAccount: linkCoOwnerAccount,
+  normalizeEmail: normalizeEmail,
   requireRole: requireRole,
+  requireEventAdmin: requireEventAdmin,
+  requireEventAdminOrBot: requireEventAdminOrBot,
   notifyBotB: notifyBotB,
   rebuildTeamRecord: rebuildTeamRecord,
 };

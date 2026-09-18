@@ -1,6 +1,6 @@
 Local / Cloud Agent fallback accounts (not for production)
 
-Superuser (PocketBase admin UI /_/)
+Superuser (PocketBase admin UI /_/ and the public /login — site admin)
   admin@local.test / SoftballAdmin1!
 
 region_admin

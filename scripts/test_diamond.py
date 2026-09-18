@@ -120,6 +120,19 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Fields and facilities only", event)
         self.assertIn("/verify", app)
         self.assertIn("verifyPage", app)
+        self.assertIn("Forgot my password", (ROOT / "pb/pb_public/js/flow.js").read_text())
+        self.assertIn("/forgot", app)
+        self.assertIn("adminEvents", app)
+        self.assertIn("loginWithPassword", chrome)
+        self.assertIn("_superusers", chrome)
+        self.assertIn("canAdminEvent", chrome)
+        self.assertIn("This is not your tournament", event)
+        self.assertIn("Remove this tournament", event)
+        self.assertIn("Co-owners", event)
+        self.assertIn("Add co-owner", event)
+        self.assertIn("/co-owners", event)
+        self.assertIn("Public pages never show these addresses", event)
+        self.assertIn(".btn.danger", (ROOT / "pb/pb_public/css/app.css").read_text())
 
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
@@ -511,6 +524,271 @@ class AccountAndYearTests(unittest.TestCase):
             "role": "region_admin",
         })
         self.assertEqual(out["role"], "event_td")
+
+    def test_pocketbase_admin_is_site_admin(self):
+        token = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertTrue(home["user"]["site_admin"])
+        self.assertEqual(home["user"]["email"], "admin@local.test")
+        events = request(BASE, "GET", "/api/admin/events", token)
+        slugs = [e["slug"] for e in events["events"]]
+        self.assertIn("keystone-clash-2026", slugs)
+        clubs = request(BASE, "GET", "/api/admin/clubs", token)
+        self.assertIn("clubs", clubs)
+
+    def test_forgot_and_reset_password(self):
+        email = f"reset.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "OldPass12!",
+            "display_name": "Reset User",
+            "intent": "director",
+        })
+        out = request(BASE, "POST", "/api/account/forgot", None, {"email": email})
+        self.assertTrue(out.get("ok"))
+        self.assertTrue(request(BASE, "POST", "/api/account/forgot", None, {"email": "nobody@nowhere.test"}).get("ok"))
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        from urllib.parse import quote
+        users = request(BASE, "GET", f"/api/collections/users/records?filter={quote(f'email=\"{email}\"')}", admin)
+        token = users["items"][0]["reset_token"]
+        self.assertTrue(token)
+        request(BASE, "POST", "/api/account/reset", None, {"token": token, "password": "NewPass12!"})
+        auth(BASE, email, "NewPass12!")
+        with self.assertRaises(RuntimeError):
+            auth(BASE, email, "OldPass12!")
+
+    def test_site_admin_removes_tournament_director_cannot(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "gone-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Temp Weekend",
+            "slug": slug,
+            "venue": "Temp Park",
+            "ages": "10U",
+        })
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", f"/api/admin/events/{slug}/archive", td)
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        archived = request(BASE, "POST", f"/api/admin/events/{slug}/archive", owner)
+        self.assertEqual(archived["event"]["status"], "archived")
+        self.assertFalse(archived["event"]["public"])
+        found = request(BASE, "GET", f"/api/events/search?q={slug}")
+        self.assertNotIn(slug, [e["slug"] for e in found["events"]])
+        slug2 = "wipe-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Wipe Weekend",
+            "slug": slug2,
+            "venue": "Wipe Park",
+            "ages": "10U",
+        })
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", f"/api/admin/events/{slug2}/delete", td, {"confirm": True, "slug": slug2})
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        deleted = request(BASE, "POST", f"/api/admin/events/{slug2}/delete", admin, {
+            "confirm": True,
+            "slug": slug2,
+        })
+        self.assertTrue(deleted["deleted"])
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", f"/api/event/{slug2}/board")
+
+    def test_stranger_event_td_cannot_run_someone_elses_weekend(self):
+        from urllib.parse import quote
+
+        email = f"stranger.{uuid.uuid4().hex[:8]}@nowhere.test"
+        registered = request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "Stranger99!",
+            "display_name": "Stranger",
+            "intent": "director",
+        })
+        self.assertEqual(registered["role"], "event_td")
+        token = auth(BASE, email, "Stranger99!")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertFalse(home["user"].get("site_admin"))
+        self.assertNotIn("keystone-clash-2026", [e["slug"] for e in home["created"]])
+
+        def denied(method, path, body=None, codes=("403",)):
+            with self.assertRaises(RuntimeError) as caught:
+                request(BASE, method, path, token, body)
+            self.assertTrue(any(code in str(caught.exception) for code in codes), caught.exception)
+
+        denied("POST", "/api/events/keystone-clash-2026/settings", {"venue": "STRANGER WAS HERE"})
+        denied("POST", "/api/events/keystone-clash-2026/rain", {
+            "rain_status": "cancelled",
+            "rain_note": "STRANGER POSTED THIS",
+        })
+        denied("GET", "/api/events/keystone-clash-2026/boxes")
+        denied("GET", "/api/bot/gc-monitor")
+        denied("GET", "/api/bot/event-boxes")
+        denied("POST", "/api/events/import-popup", {})
+        denied("GET", "/api/admin/events")
+        denied("POST", "/api/events/keystone-clash-2026/co-owners", {"email": email})
+
+        listed = request(
+            BASE, "GET",
+            f"/api/collections/events/records?filter={quote('slug=\"keystone-clash-2026\"')}&perPage=1",
+            token,
+        )
+        kid = listed["items"][0]["id"]
+        denied("PATCH", f"/api/collections/events/records/{kid}", {"venue": "STRANGER WAS HERE"}, codes=("403", "404"))
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        self.assertNotEqual(board["event"]["venue"], "STRANGER WAS HERE")
+        self.assertNotIn("STRANGER POSTED THIS", board["event"].get("rain_note") or "")
+        harbor = request(BASE, "GET", "/api/event/harbor-eight/board")
+        game_id = next(g["id"] for g in harbor["schedule"] if g.get("id"))
+        denied("POST", "/api/collections/event_boxes/records", {
+            "schedule_row": game_id,
+            "source": "hack",
+            "note": "stolen box",
+        }, codes=("403", "400", "404"))
+
+        slug = "mine-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", token, {
+            "source": "native",
+            "name": "Stranger Open",
+            "slug": slug,
+            "venue": "Own Park",
+            "ages": "10U",
+        })
+        self.assertEqual(created["event"]["created_by"], home["user"]["id"])
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", token, {"venue": "Own Park 2"})
+        self.assertEqual(saved["event"]["venue"], "Own Park 2")
+
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        rain = request(BASE, "POST", "/api/events/keystone-clash-2026/rain", td, {
+            "rain_status": "moved",
+            "rain_note": "Sunday bracket moved to No Offseason, 306 Chase Drive, Tarentum, PA 15084 after Saturday rain.",
+        })
+        self.assertEqual(rain["event"]["rain_status"], "moved")
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        inbox = request(BASE, "GET", "/api/events/keystone-clash-2026/boxes", owner)
+        self.assertIn("boxes", inbox)
+
+    def test_owner_adds_co_owner_by_email(self):
+        owner_email = f"own.{uuid.uuid4().hex[:8]}@local.test"
+        helper_email = f"help.{uuid.uuid4().hex[:8]}@local.test"
+        extra_email = f"extra.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": owner_email,
+            "password": "OwnerPass1!",
+            "display_name": "Event Owner",
+            "intent": "director",
+        })
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": helper_email,
+            "password": "HelperPass1!",
+            "display_name": "Helper Director",
+            "intent": "director",
+        })
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": extra_email,
+            "password": "ExtraPass1!",
+            "display_name": "Extra Director",
+            "intent": "director",
+        })
+        owner = auth(BASE, owner_email, "OwnerPass1!")
+        helper = auth(BASE, helper_email, "HelperPass1!")
+        extra = auth(BASE, extra_email, "ExtraPass1!")
+        slug = "co-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", owner, {
+            "source": "native",
+            "name": "Co Owner Weekend",
+            "slug": slug,
+            "venue": "Co Park",
+            "ages": "10U",
+        })
+        self.assertTrue(created["event"]["can_admin"])
+        self.assertNotIn("co_owners", created["event"])
+
+        added = request(BASE, "POST", f"/api/events/{slug}/co-owners", owner, {
+            "email": helper_email.upper(),
+        })
+        emails = [row["email"] for row in added["event"]["co_owners"]]
+        self.assertEqual(emails, [helper_email])
+        self.assertTrue(added["event"]["can_manage_owners"])
+        self.assertTrue(added["co_owner"]["has_account"])
+
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", owner)
+        self.assertEqual([row["email"] for row in plan["event"]["co_owners"]], [helper_email])
+        self.assertTrue(plan["event"]["can_admin"])
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertNotIn("co_owners", board["event"])
+        self.assertNotIn("can_manage_owners", board["event"])
+        self.assertNotIn(helper_email, str(board))
+        found = request(BASE, "GET", f"/api/events/search?q={slug}")
+        self.assertNotIn("co_owners", found["events"][0])
+        self.assertNotIn(helper_email, str(found))
+
+        rest = read_or_denied("/api/collections/event_co_owners/records?perPage=200")
+        self.assertFalse(rest, "anonymous REST listed co-owner emails")
+        rest_stranger = read_or_denied(
+            "/api/collections/event_co_owners/records?perPage=200", extra,
+        )
+        self.assertFalse(rest_stranger, "a stranger listed co-owner emails")
+
+        helper_home = request(BASE, "GET", "/api/account/home", helper)
+        self.assertIn(slug, [e["slug"] for e in helper_home["created"]])
+        helper_plan = request(BASE, "GET", f"/api/events/{slug}/plan", helper)
+        self.assertTrue(helper_plan["event"]["can_admin"])
+        self.assertFalse(helper_plan["event"]["can_manage_owners"])
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", helper, {
+            "venue": "Co Park Shared",
+        })
+        self.assertEqual(saved["event"]["venue"], "Co Park Shared")
+        self.assertTrue(saved["event"]["can_admin"])
+
+        with self.assertRaises(RuntimeError) as caught:
+            request(BASE, "POST", f"/api/events/{slug}/co-owners", helper, {
+                "email": extra_email,
+            })
+        self.assertIn("403", str(caught.exception))
+
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", f"/api/events/{slug}/co-owners", extra, {
+                "email": extra_email,
+            })
+
+        owner_board = request(BASE, "GET", f"/api/event/{slug}/board", owner)
+        self.assertTrue(owner_board["event"]["can_admin"])
+        self.assertNotIn("co_owners", owner_board["event"])
+
+        pending_email = f"later.{uuid.uuid4().hex[:8]}@local.test"
+        pending = request(BASE, "POST", f"/api/events/{slug}/co-owners", owner, {
+            "email": pending_email,
+        })
+        pending_row = next(row for row in pending["event"]["co_owners"] if row["email"] == pending_email)
+        self.assertFalse(pending_row["has_account"])
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": pending_email,
+            "password": "LaterPass1!",
+            "display_name": "Later Director",
+            "intent": "director",
+        })
+        later = auth(BASE, pending_email, "LaterPass1!")
+        later_home = request(BASE, "GET", "/api/account/home", later)
+        self.assertIn(slug, [e["slug"] for e in later_home["created"]])
+        later_saved = request(BASE, "POST", f"/api/events/{slug}/settings", later, {
+            "venue": "Co Park Later",
+        })
+        self.assertEqual(later_saved["event"]["venue"], "Co Park Later")
+
+        removed = request(BASE, "POST", f"/api/events/{slug}/co-owners/remove", owner, {
+            "email": helper_email,
+        })
+        self.assertEqual(removed["removed"], helper_email)
+        leftover = [row["email"] for row in removed["event"]["co_owners"]]
+        self.assertNotIn(helper_email, leftover)
+        self.assertEqual(leftover, [pending_email])
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", f"/api/events/{slug}/settings", helper, {"venue": "Should Fail"})
+        still = request(BASE, "POST", f"/api/events/{slug}/settings", later, {
+            "venue": "Co Park Still",
+        })
+        self.assertEqual(still["event"]["venue"], "Co Park Still")
 
     def test_find_harbor_eight_and_not_central_saturday(self):
         found = request(BASE, "GET", "/api/events/search?q=harbor")

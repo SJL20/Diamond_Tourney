@@ -1,4 +1,4 @@
-import { flashSaved, pageShell } from "./chrome.js";
+import { canAdminEvent, flashSaved, isDirector as recordIsDirector, isSiteAdmin, pageShell } from "./chrome.js";
 
 const eventRoot = () => document.getElementById("app");
 const eventPb = new PocketBase(location.origin);
@@ -19,9 +19,10 @@ function goEvent(href) {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+let currentEvent = null;
+
 function isDirector() {
-  const u = eventPb.authStore.record;
-  return u && (u.role === "region_admin" || u.role === "event_td");
+  return canAdminEvent(eventPb.authStore.record, currentEvent);
 }
 
 function authHeader() {
@@ -46,6 +47,7 @@ function withFileToken(url, token) {
 }
 
 function eventChrome(event, page, body) {
+  currentEvent = event || null;
   const site = event ? "" : (page === "create" ? "create" : page);
   return pageShell({ pb: eventPb, site, event, page, body });
 }
@@ -379,6 +381,32 @@ function setupGuidelinesFields(ev = {}) {
     </details>
     ${setupTiebreakFields(ev)}
   `;
+}
+
+function setupCoOwners(ev = {}) {
+  if (!ev.can_admin) return "";
+  const rows = ev.co_owners || [];
+  const manage = ev.can_manage_owners;
+  const list = rows.length
+    ? `<ul class="co-owner-list">${rows.map((row) => `
+        <li>
+          <div>
+            <b>${escapeHtml(row.email)}</b>
+            <span class="muted">${row.has_account ? "Has a login" : "No account yet — they sign in with this email"}</span>
+          </div>
+          ${manage ? `<button class="btn ghost" type="button" data-remove-co-owner="${escapeHtml(row.email)}">Remove</button>` : ""}
+        </li>`).join("")}</ul>`
+    : `<p class="muted">No co-owners yet.</p>`;
+  return `
+    <details class="setup-block" open>
+      <summary>Co-owners</summary>
+      <p class="muted">Add another director by email. They get the Admin tab for this weekend. Public pages never show these addresses.</p>
+      ${list}
+      ${manage ? `<form class="form wide" id="co-owner-form">
+        <label>Co-owner email <input name="email" type="email" required placeholder="coach@example.com" autocomplete="off"></label>
+        <button class="btn" type="submit">Add co-owner</button>
+      </form>` : `<p class="muted">Ask the owner to add or remove co-owners.</p>`}
+    </details>`;
 }
 
 function guidelinesBlock(ev) {
@@ -1138,7 +1166,7 @@ export async function eventAwards(slug) {
 }
 
 export async function eventList() {
-  const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
+  const events = await eventPb.collection("events").getFullList({ filter: "public=true && status!='archived'", sort: "-start" });
   eventRoot().innerHTML = eventChrome(null, "find", `
     <section class="page-head">
       <h1>Tournaments</h1>
@@ -1620,7 +1648,7 @@ export async function directorLinkTm() {
 
 export async function directorDuplicate() {
   if (!directorGate()) return;
-  const events = await eventPb.collection("events").getFullList({ filter: "public=true", sort: "-start" });
+  const events = await eventPb.collection("events").getFullList({ filter: "public=true && status!='archived'", sort: "-start" });
   eventRoot().innerHTML = eventChrome(null, "create", `
     <section class="page-head">
       <h1>Duplicate a tournament</h1>
@@ -1863,6 +1891,16 @@ export async function eventAdmin(slug) {
     return r.json();
   });
   const ev = plan.event;
+  currentEvent = ev;
+  if (!canAdminEvent(eventPb.authStore.record, ev)) {
+    eventRoot().innerHTML = eventChrome(ev, "admin", `
+      <section class="card">
+        <h2>This is not your tournament</h2>
+        <p>Only the owner, a listed co-owner, or a site admin can open the desk.</p>
+        <p><a class="btn" data-link href="/t/${escapeHtml(ev.slug)}">Open the public board</a></p>
+      </section>`);
+    return;
+  }
   const fields = plan.fields || ev.fields || [];
   const games = plan.schedule || [];
   const teams = plan.teams || [];
@@ -1918,16 +1956,30 @@ export async function eventAdmin(slug) {
             <li><button type="button" class="link" data-admin-go="rain">Post a rain notice</button></li>
             <li><button type="button" class="link" data-admin-go="teams">Review team packets</button></li>
           </ul>
+          ${isSiteAdmin(eventPb.authStore.record) ? `
+          <div class="danger-zone">
+            <h3>Remove this tournament</h3>
+            <p class="muted">Site admin only. Remove hides it from Find. Delete erases the weekend after you type the slug.</p>
+            <div class="actions">
+              <button class="btn ghost" type="button" id="archive-event">Remove from Find</button>
+              <a class="btn ghost" data-link href="/admin/events">All tournaments</a>
+            </div>
+            <form class="form wide" id="delete-event-form">
+              <label>Type ${escapeHtml(ev.slug)} to delete <input name="slug" autocomplete="off"></label>
+              <button class="btn danger" type="submit">Delete tournament</button>
+            </form>
+          </div>` : ""}
         </section>
         <section class="card" data-admin-pane="setup" hidden>
           <h2>Tournament setup</h2>
-          <p class="muted">Bracket type, governing body, pitch cap, and what teams must upload.</p>
+          <p class="muted">Bracket type, governing body, pitch cap, what teams must upload, and extra directors by email.</p>
           <form class="form wide" id="guide-form">
             <div class="setup-block">${setupAgeFields(ev)}</div>
             <div class="setup-block">${setupFormatFields(ev)}</div>
             ${setupGuidelinesFields(ev)}
             <button class="btn" type="submit">Save tournament setup</button>
           </form>
+          ${setupCoOwners(ev)}
         </section>
         <section class="card" data-admin-pane="venue" hidden>
           <h2>Venue setups</h2>
@@ -2174,6 +2226,29 @@ export async function eventAdmin(slug) {
       } catch (err) { showErr(err); }
     });
   });
+  const coForm = document.getElementById("co-owner-form");
+  if (coForm) {
+    coForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const email = String(new FormData(evnt.target).get("email") || "").trim();
+      try {
+        await adminPost(slug, "/co-owners", { email });
+        flashSaved("Co-owner added");
+        history.replaceState({}, "", location.pathname + "#admin-setup");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  }
+  eventRoot().querySelectorAll("[data-remove-co-owner]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await adminPost(slug, "/co-owners/remove", { email: btn.dataset.removeCoOwner });
+        flashSaved("Co-owner removed");
+        history.replaceState({}, "", location.pathname + "#admin-setup");
+        eventAdmin(slug);
+      } catch (err) { showErr(err); }
+    });
+  });
   const guide = document.getElementById("guide-form");
   if (guide) {
     guide.addEventListener("submit", async (evnt) => {
@@ -2222,6 +2297,43 @@ export async function eventAdmin(slug) {
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
+  const archiveBtn = document.getElementById("archive-event");
+  if (archiveBtn) {
+    archiveBtn.addEventListener("click", async () => {
+      if (!confirm("Hide " + ev.slug + " from Find?")) return;
+      try {
+        const res = await fetch("/api/admin/events/" + encodeURIComponent(ev.slug) + "/archive", {
+          method: "POST",
+          headers: authHeader(),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved("Tournament removed from Find");
+        goEvent("/admin/events");
+      } catch (err) { showErr(err); }
+    });
+  }
+  const deleteForm = document.getElementById("delete-event-form");
+  if (deleteForm) {
+    deleteForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const typed = new FormData(evnt.target).get("slug");
+      if (typed !== ev.slug) {
+        showErr(new Error("Type the slug " + ev.slug + " to delete this tournament."));
+        return;
+      }
+      if (!confirm("Permanently delete " + ev.slug + "? This cannot be undone.")) return;
+      try {
+        const res = await fetch("/api/admin/events/" + encodeURIComponent(ev.slug) + "/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ confirm: true, slug: ev.slug }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        flashSaved("Tournament deleted");
+        goEvent("/admin/events");
+      } catch (err) { showErr(err); }
+    });
+  }
   const refresh = document.getElementById("refresh-popup");
   if (refresh) {
     refresh.addEventListener("click", async () => {
@@ -2243,7 +2355,7 @@ export async function eventAdmin(slug) {
 
 export async function directorImport() {
   const u = eventPb.authStore.record;
-  if (!u || (u.role !== "region_admin" && u.role !== "event_td")) {
+  if (!recordIsDirector(u)) {
     eventRoot().innerHTML = eventChrome(null, "", `<section class="card"><p>Director login required.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
     return;
   }

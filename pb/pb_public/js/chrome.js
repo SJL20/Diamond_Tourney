@@ -1,3 +1,29 @@
+export function isSiteAdmin(rec) {
+  if (!rec) return false;
+  if (rec.role === "region_admin") return true;
+  return rec.collectionName === "_superusers";
+}
+
+export function canAdminEvent(rec, event) {
+  if (!rec || rec.role === "bot") return false;
+  if (isSiteAdmin(rec)) return true;
+  if (event && event.can_admin === true) return true;
+  return !!(event && event.created_by && rec.id === event.created_by);
+}
+
+export function isDirector(rec, event) {
+  if (event) return canAdminEvent(rec, event);
+  return !!(rec && (isSiteAdmin(rec) || rec.role === "event_td"));
+}
+
+export async function loginWithPassword(pb, email, password) {
+  try {
+    return await pb.collection("users").authWithPassword(email, password);
+  } catch (err) {
+    return await pb.collection("_superusers").authWithPassword(email, password);
+  }
+}
+
 export function siteBar(pb, active = "") {
   const u = pb.authStore.record;
   const item = (href, key, label) =>
@@ -7,7 +33,8 @@ export function siteBar(pb, active = "") {
     ${item("/year/2026", "year", "Year")}
     ${u
       ? `${item("/account", "account", "Account")}
-         ${u.role === "region_admin" ? item("/admin/teams", "admin", "Teams") : ""}
+         ${isSiteAdmin(u) ? item("/admin/events", "adminEvents", "Tournaments") : ""}
+         ${isSiteAdmin(u) ? item("/admin/teams", "admin", "Teams") : ""}
          ${item("/start", "create", "Create")}
          <button class="link" id="logout" type="button">Sign out</button>`
       : `${item("/login", "login", "Log in")}
@@ -33,7 +60,7 @@ export function eventBar(event, page = "", pb = null) {
   if (!event?.slug) return "";
   const slug = event.slug;
   const rec = pb?.authStore?.record;
-  const isDir = rec && (rec.role === "region_admin" || rec.role === "event_td");
+  const isDir = canAdminEvent(rec, event);
   const statsOn = ["stats", "leaders", "awards"].includes(page);
   const links = [
     [`/t/${slug}`, "home", "Home"],
@@ -69,7 +96,7 @@ export function teamBar(team, page = "", pb = null) {
   if (!team?.slug) return "";
   const slug = team.slug;
   const rec = pb?.authStore?.record;
-  const canReview = rec && (rec.role === "region_admin" || (rec.role === "team_coach" && rec.team === team.id));
+  const canReview = rec && (isSiteAdmin(rec) || (rec.role === "team_coach" && rec.team === team.id));
   const links = [
     [`/teams/${slug}/home`, "home", "Home"],
     [`/teams/${slug}/roster`, "roster", "Roster"],

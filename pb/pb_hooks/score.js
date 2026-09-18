@@ -1,12 +1,11 @@
-function isDirector(auth) {
-  return !!(auth && (auth.get("role") === "region_admin" || auth.get("role") === "event_td"));
+function isDirector(auth, event, app) {
+  return require(__hooks + "/softball.js").isEventAdmin(event, auth, app);
 }
 
 function canScore(app, event, rec, auth) {
   if (!auth) return false;
-  if (isDirector(auth)) return true;
+  if (isDirector(auth, event, app)) return true;
   if (auth.get("role") === "bot") return true;
-  if (event.get("created_by") && event.get("created_by") === auth.id) return true;
   const home = rec.get("home") || rec.get("home_team");
   const away = rec.get("away") || rec.get("away_team");
   const mine = {};
@@ -219,7 +218,7 @@ function postScore(app, event, id, body, auth) {
   requireScore(app, event, rec, auth);
   if (body.home_runs != null && body.home_runs !== "") rec.set("home_runs", Number(body.home_runs));
   if (body.away_runs != null && body.away_runs !== "") rec.set("away_runs", Number(body.away_runs));
-  const director = isDirector(auth) || (event.get("created_by") && event.get("created_by") === auth.id);
+  const director = isDirector(auth, event, app);
   if (body.status) {
     if (!director && body.status === "final") rec.set("status", "submitted");
     else rec.set("status", body.status);
@@ -239,7 +238,7 @@ function saveBox(app, event, id, body, files, auth) {
   if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
   requireScore(app, event, rec, auth);
   const host = require(__hooks + "/host.js");
-  const director = isDirector(auth) || (event.get("created_by") && event.get("created_by") === auth.id);
+  const director = isDirector(auth, event, app);
   const bot = !!(auth && auth.get("role") === "bot");
   const hitting = asList(body.hitting);
   const pitching = asList(body.pitching);
@@ -290,12 +289,12 @@ function saveBox(app, event, id, body, files, auth) {
 }
 
 function botApply(app, body, auth) {
-  if (!auth || (auth.get("role") !== "bot" && auth.get("role") !== "region_admin" && auth.get("role") !== "event_td")) {
-    throw new ForbiddenError("Bot or director login required to post extracted stats");
-  }
   const slug = body.event_slug || body.slug;
   if (!slug || !body.schedule_id) throw new BadRequestError("event_slug and schedule_id required");
   const event = app.findFirstRecordByData("events", "slug", slug);
+  if (!auth || (auth.get("role") !== "bot" && !isDirector(auth, event, app))) {
+    throw new ForbiddenError("Bot or the event director can post extracted stats");
+  }
   const rec = app.findRecordById("event_schedule", body.schedule_id);
   if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
   const hitting = asList(body.hitting);
@@ -347,7 +346,7 @@ function gameDetail(app, event, id, auth) {
       has_box: !!box,
     }),
     box: box ? boxJson(app, box) : null,
-    director: isDirector(auth),
+    director: isDirector(auth, event, app),
     routes: ["gc_pdf", "gc_url", "bot", "director_pdf"],
   };
 }
@@ -356,7 +355,7 @@ function postBracketScore(app, event, id, body, auth) {
   const rec = app.findRecordById("bracket_games", id);
   if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
   requireScore(app, event, rec, auth);
-  if (!isDirector(auth) && event.get("created_by") !== auth.id) {
+  if (!isDirector(auth, event, app)) {
     throw new ForbiddenError("Only the director can finalize a bracket game.");
   }
   if (body.home_runs != null) rec.set("home_runs", Number(body.home_runs));

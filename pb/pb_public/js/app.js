@@ -4,8 +4,8 @@ import {
   eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
   eventSchedule, eventSignup, eventStandings, eventStats, startTournament,
 } from "./event.js";
-import { accountHome, adminTeams, findPage, startGate, verifyPage, yearPage } from "./flow.js";
-import { flashSaved, pageShell } from "./chrome.js";
+import { accountHome, adminEvents, adminTeams, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
+import { flashSaved, isSiteAdmin, pageShell } from "./chrome.js";
 
 const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
@@ -13,9 +13,12 @@ const app = document.getElementById("app");
 const ROUTES = [
   [/^\/login\/?$/, "login"],
   [/^\/register\/?$/, "register"],
+  [/^\/forgot\/?$/, "forgot"],
+  [/^\/reset\/?$/, "reset"],
   [/^\/verify\/?$/, "verify"],
   [/^\/find\/?$/, "find"],
   [/^\/account\/?$/, "account"],
+  [/^\/admin\/events\/?$/, "adminEvents"],
   [/^\/admin\/teams\/?$/, "adminTeams"],
   [/^\/year\/([^/]+)\/?$/, "year"],
   [/^\/year\/?$/, "year"],
@@ -76,7 +79,7 @@ function user() {
 function isCoachOf(teamId) {
   const u = user();
   if (!u) return false;
-  return u.role === "region_admin" || (u.role === "team_coach" && u.team === teamId);
+  return isSiteAdmin(u) || (u.role === "team_coach" && u.team === teamId);
 }
 
 function escapeHtml(s) {
@@ -117,7 +120,7 @@ async function requireTeamPage(slug, page) {
     return null;
   }
   const team = await teamBySlug(slug);
-  if (!isCoachOf(team.id) && user().role !== "region_admin") {
+  if (!isCoachOf(team.id) && !isSiteAdmin(user())) {
     app.innerHTML = chrome(team, page, `<section class="card empty">You can see the public record for this team, not the book.</section>`);
     return null;
   }
@@ -366,9 +369,12 @@ async function render() {
   try {
     if (name === "login") return login();
     if (name === "register") return startGate("register");
+    if (name === "forgot") return forgotPage();
+    if (name === "reset") return resetPage();
     if (name === "verify") return verifyPage();
     if (name === "find") return findPage();
     if (name === "account") return accountHome();
+    if (name === "adminEvents") return adminEvents();
     if (name === "adminTeams") return adminTeams();
     if (name === "year") return yearPage(params[0] || "2026");
     if (name === "landing" || name === "teams") return landing();

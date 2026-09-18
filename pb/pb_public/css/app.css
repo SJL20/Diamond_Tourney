@@ -490,6 +490,16 @@ details.setup-block > summary { list-style: none; }
 details.setup-block > summary::-webkit-details-marker { display: none; }
 details.setup-block[open] > summary { margin-bottom: 10px; }
 
+#guide-form + details.setup-block { margin-top: 12px; }
+.co-owner-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.co-owner-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.co-owner-list b { display: block; }
+
 .field-row {
   border: 1px dashed var(--line);
   border-radius: 8px;
@@ -659,6 +669,24 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .muted-row { color: var(--muted); }
 
 .error { color: var(--loss); }
+.btn.danger { background: var(--loss); color: #fff; }
+.danger-zone {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+.inline-delete { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inline-delete input { min-width: 12rem; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 .empty {
   padding: 20px;
   color: var(--muted);
