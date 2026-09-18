@@ -454,6 +454,11 @@ function importSchedule(app, event, csv) {
     app.save(rec);
     created.push(rec.id);
   }
+  const prefs = schedule.parseScheduler(event.get("scheduler"));
+  prefs.origin = "imported";
+  event.set("scheduler", prefs);
+  if (!event.get("format")) event.set("format", "imported");
+  app.save(event);
   return { imported: created.length, standings: poolStandings(app, event.id) };
 }
 

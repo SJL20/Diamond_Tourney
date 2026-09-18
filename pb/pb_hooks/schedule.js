@@ -49,11 +49,13 @@ function parseScheduler(raw) {
     days = days.split(/[,\n]/).map(function (d) { return dateOnly(d.trim()); }).filter(Boolean);
   }
   if (!Array.isArray(days)) days = [];
+  const origin = data.origin === "imported" || data.origin === "generated" ? data.origin : "";
   return {
     games_per_team: Number(data.games_per_team || 2) || 2,
     consolation: data.consolation !== false && data.consolation !== "false" && data.consolation !== "0",
     replace: data.replace !== false && data.replace !== "false" && data.replace !== "0",
     draw_bracket: flag(data.draw_bracket),
+    origin: origin,
     days: days.map(function (d) { return dateOnly(d); }).filter(Boolean),
   };
 }
@@ -79,6 +81,7 @@ function saveScheduler(app, event, body) {
     consolation: current.consolation,
     replace: current.replace,
     draw_bracket: current.draw_bracket,
+    origin: current.origin || "",
     days: current.days.slice(),
   };
   if (hasOwn(body, "scheduler") && body.scheduler && typeof body.scheduler === "object") {
@@ -87,6 +90,7 @@ function saveScheduler(app, event, body) {
     next.consolation = nested.consolation;
     next.replace = nested.replace;
     next.draw_bracket = nested.draw_bracket;
+    if (nested.origin) next.origin = nested.origin;
     if (nested.days.length) next.days = nested.days;
   }
   if (hasOwn(body, "games_per_team") && body.games_per_team !== "") {
@@ -341,7 +345,14 @@ function applyLocation(rec, body) {
     if (body.lat != null && body.lat !== "") rec.set("lat", Number(body.lat));
     if (body.lng != null && body.lng !== "") rec.set("lng", Number(body.lng));
   }
-  if (body.format) rec.set("format", body.format);
+  if (body.format) {
+    if (rec.get("format") === "imported" && body.format !== "imported") {
+      const prefs = parseScheduler(rec.get("scheduler"));
+      prefs.origin = "imported";
+      rec.set("scheduler", prefs);
+    }
+    rec.set("format", body.format);
+  }
   if (body.rain_note != null) rec.set("rain_note", body.rain_note);
   if (body.rain_status) rec.set("rain_status", body.rain_status);
   if (body.hours_start != null) rec.set("hours_start", body.hours_start);
@@ -557,6 +568,20 @@ function formatWantsPool(format) {
   return format !== "single-elim" && format !== "double-elim" && format !== "imported";
 }
 
+function importedGrid(event, prefs) {
+  if (prefs && prefs.origin === "imported") return true;
+  return String(event.get("format") || "") === "imported";
+}
+
+function markSchedulerOrigin(app, event, origin) {
+  const prefs = parseScheduler(event.get("scheduler"));
+  if (prefs.origin === origin) return prefs;
+  prefs.origin = origin;
+  event.set("scheduler", prefs);
+  app.save(event);
+  return prefs;
+}
+
 function formatWantsBracket(format) {
   return format === "pool-to-bracket" || format === "single-elim" || format === "double-elim" || format === "pool-double-elim";
 }
@@ -632,93 +657,106 @@ function savePoolGame(app, event, game, slot, field) {
 function autoSchedule(app, event, body) {
   const prefs = saveScheduler(app, event, body || {});
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id });
-  if (teams.length < 2) throw new BadRequestError("Sign up at least two teams before you auto-schedule.");
+  const format = body.format || event.get("format") || "pool-to-bracket";
+  const keepImported = importedGrid(event, prefs);
+  const generatePool = formatWantsPool(format) && !keepImported;
+  if (generatePool && teams.length < 2) throw new BadRequestError("Sign up at least two teams before you auto-schedule.");
   const fields = app.findRecordsByFilter("fields", "event = {:e} && status != 'closed'", "name", 200, 0, { e: event.id }).filter(function (f) {
     return f.get("status") !== "wet";
   });
-  if (!fields.length) throw new BadRequestError("Add at least one open field in tournament setup.");
   let days = prefs.days && prefs.days.length ? prefs.days.slice() : splitDays(body.days);
   if (!days.length) {
     days = datesBetween(event.get("start"), event.get("end"));
     if (!days.length) days = ["2026-09-19"];
   }
-  const format = body.format || event.get("format") || "pool-to-bracket";
-  const games = formatWantsPool(format) ? poolGames(teams, poolCap(format, prefs, body || {})) : [];
-  if (formatWantsPool(format) && !games.length) throw new BadRequestError("Need at least two teams in the same pool.");
-  if (prefs.replace) {
+  const games = generatePool ? poolGames(teams, poolCap(format, prefs, body || {})) : [];
+  if (generatePool && !games.length) throw new BadRequestError("Need at least two teams in the same pool.");
+  // Selecting a bracket format or drawing a tree must not rewrite an imported
+  // pool grid. Replace only applies when we are generating new pool games.
+  if (prefs.replace && generatePool) {
     const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
     for (const row of old) {
       if (row.get("status") === "final") continue;
       app.delete(row);
     }
   }
-  const gameMin = Number(event.get("game_length_minutes") || 90);
-  const buffer = Number(body.buffer_minutes || 15);
-  const globalStart = event.get("hours_start") || body.start_time || "08:00";
-  const globalEnd = event.get("hours_end") || body.end_time || "18:00";
-  const candidates = [];
-  for (const day of days) {
-    for (const field of fields) {
-      const win = fieldWindow(event, field, day);
-      if (!win.available) continue;
-      const start = win.start || globalStart;
-      const end = win.end || globalEnd;
-      let t = start;
-      let guard = 0;
-      while (minutesOf(t) + gameMin <= minutesOf(end) && guard < 40) {
-        candidates.push({ date: day, time: t, field: field });
-        t = addMinutes(t, gameMin + buffer);
-        guard++;
-      }
-    }
-  }
-  candidates.sort(function (a, b) {
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    if (a.time !== b.time) return minutesOf(a.time) - minutesOf(b.time);
-    return String(a.field.get("name")).localeCompare(String(b.field.get("name")));
-  });
-  if (!candidates.length) throw new BadRequestError("No field is open in that window. Widen global hours or a field's day hours.");
   let remaining = games.slice();
   const placed = [];
-  const busyAt = {};
-  for (const cand of candidates) {
-    if (!remaining.length) break;
-    const key = cand.date + "|" + cand.time;
-    if (!busyAt[key]) busyAt[key] = {};
-    let pick = -1;
-    for (let i = 0; i < remaining.length; i++) {
-      const g = remaining[i];
-      if (busyAt[key][g.home.id] || busyAt[key][g.away.id]) continue;
-      pick = i;
-      break;
+  if (generatePool) {
+    if (!fields.length) throw new BadRequestError("Add at least one open field in tournament setup.");
+    const gameMin = Number(event.get("game_length_minutes") || 90);
+    const buffer = Number(body.buffer_minutes || 15);
+    const globalStart = event.get("hours_start") || body.start_time || "08:00";
+    const globalEnd = event.get("hours_end") || body.end_time || "18:00";
+    const candidates = [];
+    for (const day of days) {
+      for (const field of fields) {
+        const win = fieldWindow(event, field, day);
+        if (!win.available) continue;
+        const start = win.start || globalStart;
+        const end = win.end || globalEnd;
+        let t = start;
+        let guard = 0;
+        while (minutesOf(t) + gameMin <= minutesOf(end) && guard < 40) {
+          candidates.push({ date: day, time: t, field: field });
+          t = addMinutes(t, gameMin + buffer);
+          guard++;
+        }
+      }
     }
-    if (pick === -1) continue;
-    const game = remaining.splice(pick, 1)[0];
-    busyAt[key][game.home.id] = true;
-    busyAt[key][game.away.id] = true;
-    placed.push(savePoolGame(app, event, game, { date: cand.date, time: cand.time }, cand.field));
+    candidates.sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      if (a.time !== b.time) return minutesOf(a.time) - minutesOf(b.time);
+      return String(a.field.get("name")).localeCompare(String(b.field.get("name")));
+    });
+    if (!candidates.length) throw new BadRequestError("No field is open in that window. Widen global hours or a field's day hours.");
+    const busyAt = {};
+    for (const cand of candidates) {
+      if (!remaining.length) break;
+      const key = cand.date + "|" + cand.time;
+      if (!busyAt[key]) busyAt[key] = {};
+      let pick = -1;
+      for (let i = 0; i < remaining.length; i++) {
+        const g = remaining[i];
+        if (busyAt[key][g.home.id] || busyAt[key][g.away.id]) continue;
+        pick = i;
+        break;
+      }
+      if (pick === -1) continue;
+      const game = remaining.splice(pick, 1)[0];
+      busyAt[key][game.home.id] = true;
+      busyAt[key][game.away.id] = true;
+      placed.push(savePoolGame(app, event, game, { date: cand.date, time: cand.time }, cand.field));
+    }
   }
   if (format) {
     event.set("format", format);
     if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
     app.save(event);
   }
+  if (placed.length && !keepImported) markSchedulerOrigin(app, event, "generated");
   let bracket = null;
-  if (prefs.draw_bracket && formatWantsBracket(format)) {
+  const wantBracket = prefs.draw_bracket && (formatWantsBracket(format) || keepImported);
+  if (wantBracket) {
+    const bracketFormat = formatWantsBracket(format) ? format : "pool-to-bracket";
     bracket = buildBracket(app, event, {
       consolation: prefs.consolation,
       replace: true,
-      format: format,
+      format: bracketFormat,
       bracket_flights: body.bracket_flights || event.get("bracket_flights") || "none",
     });
   }
   return {
     games: placed.length,
     leftover: remaining.length,
+    kept: keepImported ? app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id }).length : 0,
+    note: keepImported
+      ? "Imported pool games were left in place. Drawing a bracket does not change pool play."
+      : "",
     fields: fields.map(function (f) { return f.get("name"); }),
     days: days,
     format: event.get("format"),
-    scheduler: prefs,
+    scheduler: parseScheduler(event.get("scheduler")),
     schedule: listSchedule(app, event.id),
     bracket: bracket,
   };

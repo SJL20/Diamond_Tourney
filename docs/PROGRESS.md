@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 71 unit/integration cases + 13 acceptance checks |
+| Tests | 74 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -185,6 +185,13 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — drawing a bracket does not rewrite imported pool play
+
+Door-three import stores `scheduler.origin = imported`. Selecting a bracket
+format, checking “draw bracket,” or clicking Build pool schedule no longer
+deletes those games or invents new pairings. Draw bracket from standings only
+writes `bracket_games`. Covered by `ImportedScheduleBracketTests`.
 
 ### 2026-09-18 — scheduler and custom bracket use registered-team dropdowns
 
