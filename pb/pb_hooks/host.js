@@ -1385,6 +1385,7 @@ function applySettings(app, event, body, auth) {
 
 module.exports = {
   slugify: slugify,
+  uniqueSlug: uniqueSlug,
   isGameChangerUrl: isGameChangerUrl,
   isGcBoxUrl: isGcBoxUrl,
   isTourneyMachineUrl: isTourneyMachineUrl,

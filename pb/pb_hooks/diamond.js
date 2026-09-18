@@ -457,6 +457,14 @@ function importSchedule(app, event, csv) {
   return { imported: created.length, standings: poolStandings(app, event.id) };
 }
 
+function importIntoEvent(app, event, csv, replace) {
+  if (replace === true || replace === "true" || replace === "on" || replace === "1") {
+    const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    for (let i = 0; i < old.length; i++) app.delete(old[i]);
+  }
+  return importSchedule(app, event, csv);
+}
+
 function inferSide(round, side) {
   if (side === "losers" || side === "winners" || side === "championship" || side === "consolation") return side;
   if (side) return side;
@@ -744,6 +752,7 @@ module.exports = {
   parseCsv: parseCsv,
   poolStandings: poolStandings,
   importSchedule: importSchedule,
+  importIntoEvent: importIntoEvent,
   advanceBracket: advanceBracket,
   eventLeaders: eventLeaders,
   publicBoard: publicBoard,
