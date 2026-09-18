@@ -1,0 +1,23 @@
+name: Fly Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: deploy-diamond-tourney
+  cancel-in-progress: true
+jobs:
+  deploy:
+    name: Deploy app
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Fly app
+        run: grep -qx 'app = "diamond-tourney"' fly.toml
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+        with:
+          version: "0.4.104"
+      - run: flyctl deploy --remote-only --app diamond-tourney
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
