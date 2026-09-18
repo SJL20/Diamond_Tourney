@@ -227,22 +227,32 @@ xlsx binaries are not parsed on the server — save as CSV. Template lives at
 
 ---
 
-## [x] 6. Photo upload for fields and venues
+## [ ] 6. Photo upload for fields and venues — on the create form
 
-**Medium.**
+**Medium. Owner-confirmed on the live site.**
 
-Directors should upload photos of the complex so visiting teams know what they
-are driving to. PocketBase file fields with thumbnails on the venue or field
-record — nothing custom needed.
+Add photo upload directly to `/directors/new`, not only to a separate venue
+editing screen. A director setting up a tournament should document the site in
+the same pass, not come back later.
 
-What matters, in order: **the entrance and parking lot** (hardest thing to find,
-source of most Saturday-morning phone calls), a **layout map** showing which
-diamond is Field 1 vs Field 2, then the fields themselves. Keystone Clash had a
-hand-made parking map for exactly this reason; this generalizes it.
+Purpose is wayfinding: show visiting teams what they are driving to and where
+things are. This replaces the draggable map pin (see item 7) — a photo of the
+entrance answers "where do I go" better than a coordinate ever does.
 
-Multiple images per venue with captions, reorderable, first used as the public
-page header. Cap at 2–5 MB with server-side resizing — directors upload straight
-off a phone. Accept jpg, png, webp, heic.
+What matters, in order:
+
+1. **The entrance and parking lot** — the hardest thing to find at an unfamiliar
+   complex, and the source of most Saturday-morning phone calls
+2. **A layout map** showing which diamond is Field 1 vs Field 2
+3. **The fields themselves** — surface, backstop, dugouts
+
+Keystone Clash had a hand-made parking map for exactly this reason. This
+generalizes it.
+
+PocketBase file fields with thumbnails; nothing custom needed. Multiple images
+with captions, reorderable, first used as the public page header. Cap at 2–5 MB
+with server-side resizing — directors upload straight off a phone. Accept jpg,
+png, webp, heic.
 
 **Two requirements, not suggestions:**
 
@@ -251,49 +261,42 @@ off a phone. Accept jpg, png, webp, heic.
   weekend.
 - **No people in field photos.** These pages are public and this is a youth
   sports product. Put a plain line on the upload control: "Photos of fields and
-  facilities only, please — no photos of players." Consider a review step rather
-  than instant publish.
+  facilities only, please — no photos of players."
 
 **Storage:** PocketBase writes uploads to local disk, which on Fly means the
 mounted volume. Confirm a volume is mounted and that backups cover the files
 directory, not only the database.
 
-Shipped: captioned `venue_photos`, unpublished until publish, first published
-photo is the public header, JPEG/PNG EXIF stripped, Fly volume `pb_data` →
-`/data`. This pass adds HEIC/HEIF to the accepted types and a 5 MB cap.
-Pixel resize needs an image converter the Fly image does not ship — the cap
-is the server-side limit.
-
-- [x] Multiple captioned photos per venue, reorderable
-- [x] Server-side resize and cap
-- [x] EXIF stripped
-- [x] Guidance text on the upload control
-- [x] Photos on the public tournament page
-- [x] Uploads survive a redeploy
-
+- [ ] Upload control present on `/directors/new`
+- [ ] Multiple captioned photos per venue, reorderable
+- [ ] Server-side resize and cap
+- [ ] EXIF stripped
+- [ ] Guidance text on the upload control
+- [ ] Photos on the public tournament page
+- [ ] Uploads survive a redeploy
 ---
 
-## [x] 7. Remove lat/long from the director form — geocode the address
+## [ ] 7. Remove lat/long AND the map pin adjuster from the director form
 
-**Medium.**
+**Medium. Owner-confirmed on the live site — supersedes any earlier note about
+keeping a draggable pin.**
 
-Asking a director for decimal coordinates is the wrong ask; nobody knows them,
-and it is friction on a form that should take ninety seconds.
+Remove both the coordinate inputs and the nudge-the-pin map control from
+`/directors/new`. No director knows their decimal coordinates, and dragging a pin
+on a small map is fiddly on a phone in a parking lot. Both are friction on a form
+that should take ninety seconds.
 
-**Keep the coordinates.** Parents driving to an unfamiliar complex need the map
-pin, and the Keystone parking map used it. Take a street address and geocode in
-the background on save. Store the resolved lat/long on the venue and let the
-director nudge the pin on a small map — geocoders routinely land ballfields in
-the wrong lot.
+**Keep the coordinates themselves** — parents driving to an unfamiliar complex
+need a map link. Geocode the street address in the background on save and store
+the result on the venue. If geocoding fails or lands imprecisely, accept it: the
+uploaded parking and entrance photos from item 6 are the real wayfinding, and
+they work better than a pin.
 
-Shipped on `main`. Street address is geocoded (Nominatim). Lat/lng stay on the
-record and only appear under “Nudge the map pin.” Failure does not block save.
-
-- [x] Lat/long inputs removed
-- [x] Address geocoded on save
-- [x] Coordinates stored and used by the public map
-- [x] Pin manually adjustable
-- [x] Geocode failure does not block saving
+- [ ] Lat/long inputs removed from the form
+- [ ] Map pin adjuster removed from the form
+- [ ] Street address geocoded on save, stored on the venue
+- [ ] Public page links to the address for directions
+- [ ] Geocode failure does not block saving the tournament
 
 ---
 
