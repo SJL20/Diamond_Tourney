@@ -282,8 +282,67 @@ routerAdd("POST", "/api/events/{slug}/signup", (e) => {
   }
   const out = host.teamJson(rec);
     out.packet = host.packetSummary(e.app, event, rec, host.canSeeTeamPacket(event, rec, e.auth, e.app));
+    if (team.mail) out.mail = team.mail;
+    if (team.contact && host.canSeeTeamPacket(event, rec, e.auth, e.app)) out.contact = team.contact;
   return e.json(200, { team: out, event: event.get("slug") });
 });
+
+routerAdd("POST", "/api/events/{slug}/teams/{id}", (e) => {
+  const host = require(__hooks + "/host.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  const team = e.app.findRecordById("event_teams", e.request.pathValue("id"));
+  if (team.get("event") !== event.id) throw new BadRequestError("Team is not on this tournament");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const row = host.updateEventTeam(e.app, event, team, e.requestInfo().body || {}, e.auth);
+  return e.json(200, { team: row });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/import-teams/preview", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  return e.json(200, require(__hooks + "/import_teams.js").preview(e.app, event, body, e.auth));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/import-teams", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  return e.json(200, require(__hooks + "/import_teams.js").commit(e.app, event, body, e.auth));
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/admin/season-teams/{slug}/contact", (e) => {
+  const contacts = require(__hooks + "/contacts.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const team = e.app.findFirstRecordByData("teams", "slug", e.request.pathValue("slug"));
+  if (!contacts.canSeeSeasonContact(team, e.auth)) {
+    throw new ForbiddenError("Only that team's coach or a site admin can read this contact.");
+  }
+  return e.json(200, { contact: contacts.contactJson(contacts.findForSeasonTeam(e.app, team.id)), age_group: team.get("age_group") || "" });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/admin/season-teams/{slug}/contact", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const contacts = require(__hooks + "/contacts.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const team = e.app.findFirstRecordByData("teams", "slug", e.request.pathValue("slug"));
+  if (!contacts.canSeeSeasonContact(team, e.auth)) {
+    throw new ForbiddenError("Only that team's coach or a site admin can edit this contact.");
+  }
+  const body = e.requestInfo().body || {};
+  const rec = contacts.upsertForSeasonTeam(e.app, team, body);
+  if (sb.isSiteAdmin(e.auth) && body.age_group) {
+    const allowed = { "6U": 1, "8U": 1, "10U": 1, "12U": 1, "14U": 1, "16U": 1, "18U": 1 };
+    const age = String(body.age_group || "").toUpperCase();
+    if (allowed[age]) {
+      team.set("age_group", age);
+      e.app.save(team);
+    }
+  }
+  return e.json(200, { contact: contacts.contactJson(rec), age_group: team.get("age_group") || "" });
+}, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/docs", (e) => {
   const host = require(__hooks + "/host.js");

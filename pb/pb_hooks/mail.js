@@ -19,11 +19,30 @@ function sender(app) {
   }
 }
 
+function redactedAddr(addr) {
+  const text = String(addr || "");
+  const at = text.indexOf("@");
+  if (at < 1) return "(recipient)";
+  return text.charAt(0) + "…@" + text.slice(at + 1);
+}
+
+function logMail(app, eventId, kind, ok, detail) {
+  try {
+    require(__hooks + "/host.js").writeLog(app, eventId || "", kind || "mail", !!ok, String(detail || "").slice(0, 2000));
+  } catch (err) {}
+}
+
 function sendMail(app, to, subject, html, kind, eventId) {
   const from = sender(app);
   const addr = String(to || "").trim();
-  if (!addr || addr.indexOf("@") === -1) return { sent: false, reason: "no_recipient" };
-  if (!from) return { sent: false, reason: "smtp_not_configured" };
+  if (!addr || addr.indexOf("@") === -1) {
+    logMail(app, eventId, kind, false, "no_recipient");
+    return { sent: false, reason: "no_recipient" };
+  }
+  if (!from) {
+    logMail(app, eventId, kind, false, "smtp_not_configured → " + redactedAddr(addr));
+    return { sent: false, reason: "smtp_not_configured" };
+  }
   try {
     app.newMailClient().send(new MailerMessage({
       from: from,
@@ -31,14 +50,10 @@ function sendMail(app, to, subject, html, kind, eventId) {
       subject: subject,
       html: html,
     }));
-    try {
-      require(__hooks + "/host.js").writeLog(app, eventId || "", kind || "mail", true, subject + " → " + addr);
-    } catch (err) {}
+    logMail(app, eventId, kind, true, subject + " → " + redactedAddr(addr));
     return { sent: true };
   } catch (err) {
-    try {
-      require(__hooks + "/host.js").writeLog(app, eventId || "", kind || "mail", false, String(err));
-    } catch (logErr) {}
+    logMail(app, eventId, kind, false, String(err));
     return { sent: false, reason: String(err) };
   }
 }
@@ -65,8 +80,10 @@ function packetOwed(event) {
   }).join(", ") + ".";
 }
 
-function signupConfirmation(app, event, team) {
-  const email = team.get("contact_email") || "";
+function signupConfirmation(app, event, team, contact) {
+  const email = (contact && (contact.coach_email || contact.get && contact.get("coach_email")))
+    || team.get("contact_email")
+    || "";
   const name = team.get("name") || "your team";
   const slug = event.get("slug");
   const html = "<p>You're on the list for <b>" + escapeHtml(event.get("name")) + "</b>.</p>"
@@ -105,15 +122,26 @@ function rainNotice(app, event) {
     + (note ? "<p>" + escapeHtml(note) + "</p>" : "")
     + "<p><a href=\"" + publicUrl("/t/" + event.get("slug")) + "\">Open the public board</a></p>";
   let sent = 0;
+  let attempted = 0;
+  let lastReason = "";
   const seen = {};
+  const contacts = require(__hooks + "/contacts.js");
   for (let i = 0; i < teams.length; i++) {
-    const email = String(teams[i].get("contact_email") || "").trim().toLowerCase();
-    if (!email || seen[email]) continue;
-    seen[email] = true;
-    const out = sendMail(app, email, subject, html, "rain_mail", event.id);
-    if (out.sent) sent++;
+    const emails = contacts.contactEmails(app, teams[i]);
+    for (let j = 0; j < emails.length; j++) {
+      const email = emails[j];
+      if (!email || seen[email]) continue;
+      seen[email] = true;
+      attempted++;
+      const out = sendMail(app, email, subject, html, "rain_mail", event.id);
+      if (out.sent) sent++;
+      else lastReason = out.reason || lastReason;
+    }
   }
-  return { sent: sent };
+  if (!sent) {
+    logMail(app, event.id, "rain_mail", false, "sent 0 of " + attempted + (lastReason ? " · " + lastReason : ""));
+  }
+  return { sent: sent, attempted: attempted, reason: sent ? "" : lastReason };
 }
 
 function randomToken() {
@@ -126,6 +154,7 @@ function randomToken() {
 module.exports = {
   publicUrl: publicUrl,
   sendMail: sendMail,
+  logMail: logMail,
   signupConfirmation: signupConfirmation,
   directorVerify: directorVerify,
   passwordReset: passwordReset,

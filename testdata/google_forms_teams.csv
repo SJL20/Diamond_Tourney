@@ -1,0 +1,5 @@
+Timestamp,Name of Team,Email Address,Phone Number,Age Group,Class,GameChanger link,Paid,Notes
+9/10/2026 9:15:00,O'Brien's Bandits,obrien@local.test,0412-555-0101,10U,B,https://web.gc.com/team/obriens,Yes,First in
+9/10/2026 9:16:00,"Smash 12U, Gold",smash@local.test,(412) 555-0199,12U,C,,no,"Needs insurance, late"
+9/11/2026 10:00:00,Harbor Heat,heat@local.test,412-555-0144,10U,B,https://gc.com/team/harbor-heat,1,
+9/12/2026 11:30:00,,nobody@local.test,412-555-0000,10U,B,,yes,Missing name
