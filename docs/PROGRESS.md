@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly default-branch deploy after this merge) |
-| Tests | finding-1 ownership + admin-login coverage + 13 acceptance checks |
+| Tests | 56 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800

@@ -122,13 +122,13 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("verifyPage", app)
         self.assertIn("Forgot my password", (ROOT / "pb/pb_public/js/flow.js").read_text())
         self.assertIn("/forgot", app)
-        self.assertIn("/admin/events", app)
+        self.assertIn("adminEvents", app)
         self.assertIn("loginWithPassword", chrome)
         self.assertIn("_superusers", chrome)
         self.assertIn("canAdminEvent", chrome)
         self.assertIn("This is not your tournament", event)
         self.assertIn("Remove this tournament", event)
-        self.assertIn("btn danger", (ROOT / "pb/pb_public/css/app.css").read_text())
+        self.assertIn(".btn.danger", (ROOT / "pb/pb_public/css/app.css").read_text())
 
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
@@ -543,7 +543,7 @@ class AccountAndYearTests(unittest.TestCase):
         out = request(BASE, "POST", "/api/account/forgot", None, {"email": email})
         self.assertTrue(out.get("ok"))
         self.assertTrue(request(BASE, "POST", "/api/account/forgot", None, {"email": "nobody@nowhere.test"}).get("ok"))
-        admin = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
         from urllib.parse import quote
         users = request(BASE, "GET", f"/api/collections/users/records?filter={quote(f'email=\"{email}\"')}", admin)
         token = users["items"][0]["reset_token"]
@@ -632,7 +632,8 @@ class AccountAndYearTests(unittest.TestCase):
         board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
         self.assertNotEqual(board["event"]["venue"], "STRANGER WAS HERE")
         self.assertNotIn("STRANGER POSTED THIS", board["event"].get("rain_note") or "")
-        game_id = next(g["id"] for g in board["schedule"] if g.get("id"))
+        harbor = request(BASE, "GET", "/api/event/harbor-eight/board")
+        game_id = next(g["id"] for g in harbor["schedule"] if g.get("id"))
         denied("POST", "/api/collections/event_boxes/records", {
             "schedule_row": game_id,
             "source": "hack",
