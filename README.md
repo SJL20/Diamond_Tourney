@@ -69,7 +69,7 @@ Lines land in the weekend leaders only when someone (bot or person) types them. 
 | `/t/{slug}/pools` | Pool standings on their own, without the rest of the home page |
 | `/t/{slug}/leaders` | Weekend leaders with the gates applied (min 8 AB, min 3.0 IP) |
 | `/t/{slug}/awards` | All-tournament team, printed Sunday on the field |
-| `/t/central-saturday` | Live demo board (pools, championship tree, consolation) |
+| `/t/harbor-eight` | FAKE 8-team practice weekend — two pools, empty Sunday bracket, one coach login per club |
 | `/login`, `/register`, `/account` | Log in, create a director or team account, see the weekends you run |
 | `/admin/teams` | Region admin club desk — team profiles, GameChanger link optional |
 | `/directors/new`, `/directors/link-tm`, `/directors/import` | The three doors: start it here, link a Tourney Machine page, paste a schedule you already have |
@@ -92,6 +92,7 @@ Keystone Clash 2026 is imported from the public popup. Directors can refresh it 
 |---|---|---|
 | region admin | owner@local.test | RegionAdmin1! |
 | event director | td@local.test | EventTd1! |
+| Harbor Oaks coach (FAKE) | coach.oaks@local.test | CoachOaks1! |
 | demo coach | coach.demo@local.test | CoachDemo1! |
 | Hawks 10U coach | coach.hawks@local.test | CoachHawks1! |
 | bot (optional) | bot@local.test | BotStaging1! |

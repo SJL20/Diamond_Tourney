@@ -170,7 +170,7 @@ export async function startGate(forcedTab) {
         <h2>Find a tournament</h2>
         <p class="muted">Search public boards. Join with a GameChanger URL, or open the live standings.</p>
         <form class="form wide" id="find-form">
-          <label>Name, venue, or age <input name="q" placeholder="Central Saturday, 10U, Harbor"></label>
+          <label>Name, venue, or age <input name="q" placeholder="Keystone, Harbor Eight, 10U"></label>
           <button class="btn" type="submit">Search</button>
         </form>
       </section>

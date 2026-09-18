@@ -27,28 +27,27 @@ class TiebreakTests(unittest.TestCase):
 
 
 class BoardTests(unittest.TestCase):
-    def test_central_saturday_board(self):
-        board = request(BASE, "GET", "/api/event/central-saturday/board")
-        self.assertEqual(board["event"]["slug"], "central-saturday")
+    def test_harbor_eight_board(self):
+        board = request(BASE, "GET", "/api/event/harbor-eight/board")
+        self.assertEqual(board["event"]["slug"], "harbor-eight")
+        self.assertIn("FAKE", board["event"]["name"])
+        names = [t["name"] for t in board["roster"]]
+        self.assertEqual(len(names), 8)
+        self.assertTrue(all("FAKE" in n for n in names))
         pools = {p["name"]: p["teams"] for p in board["standings"]}
-        self.assertEqual([t["name"] for t in pools["A"]], ["Passion", "Hawks 10U", "Lady Dukes"])
-        self.assertEqual(pools["A"][0]["w"], 2)
-        self.assertEqual(pools["A"][1]["w"], 1)
-        sf1 = next(g for g in board["bracket"] if g["round"] == "SF" and g["slot"] == 1)
-        self.assertEqual(sf1["winner"], "Passion")
-        finale = next(g for g in board["bracket"] if g["round"] == "F")
-        self.assertEqual(finale["home"], "Passion")
-        self.assertEqual(finale.get("side") or "championship", "championship")
+        self.assertEqual(len(pools["A"]), 4)
+        self.assertEqual(len(pools["B"]), 4)
+        self.assertTrue(all(t["w"] == 0 and t["l"] == 0 for t in pools["A"] + pools["B"]))
+        pool_games = [g for g in board["schedule"] if g.get("pool") in ("A", "B")]
+        self.assertEqual(len(pool_games), 12)
+        self.assertTrue(all(g["status"] == "scheduled" for g in pool_games))
+        qf = [g for g in board["bracket"] if g["round"] == "QF"]
+        self.assertEqual(len(qf), 4)
+        self.assertTrue(all((g.get("side") or "championship") == "championship" for g in qf))
         fifth = next(g for g in board["bracket"] if g["round"] == "5TH")
         self.assertEqual(fifth["side"], "consolation")
-        self.assertEqual(fifth["home"], "Lady Dukes")
-        self.assertEqual(fifth["away"], "Rivals 10U")
-        third = next(g for g in board["bracket"] if g["round"] == "3RD")
-        self.assertEqual(third["side"], "consolation")
-        self.assertEqual(third["home"], "FP Select")
-        self.assertGreaterEqual(len(board["leaders"]["hitting"]), 1)
-        self.assertEqual(board["leaders"]["hitting"][0]["name_key"], "Maeve D #4")
-        self.assertTrue(board["leaders"]["all_tournament"]["hitters"])
+        # No invented boxes — leaders stay empty until someone types lines.
+        self.assertFalse(board["leaders"].get("hitting"))
 
     def test_import_door_three(self):
         admin = auth(BASE, "owner@local.test", "RegionAdmin1!")
@@ -235,20 +234,45 @@ class AccountAndYearTests(unittest.TestCase):
         })
         self.assertEqual(out["role"], "event_td")
 
-    def test_find_central_saturday(self):
-        found = request(BASE, "GET", "/api/events/search?q=central")
+    def test_find_harbor_eight_and_not_central_saturday(self):
+        found = request(BASE, "GET", "/api/events/search?q=harbor")
         slugs = [e["slug"] for e in found["events"]]
-        self.assertIn("central-saturday", slugs)
+        self.assertIn("harbor-eight", slugs)
+        gone = request(BASE, "GET", "/api/events/search?q=central-saturday")
+        self.assertNotIn("central-saturday", [e["slug"] for e in gone["events"]])
 
-    def test_year_2026_includes_hawks(self):
+    def test_year_2026_includes_keystone_clubs(self):
         board = request(BASE, "GET", "/api/year/2026/board")
         self.assertEqual(board["year"], "2026")
         names = [t["name"] for t in board["teams"]]
-        self.assertIn("Hawks 10U", names)
-        self.assertTrue(any(e["slug"] == "central-saturday" for e in board["events"]))
+        self.assertIn("Pittsburgh Passion", names)
+        slugs = [e["slug"] for e in board["events"]]
+        self.assertIn("keystone-clash-2026", slugs)
+        self.assertIn("harbor-eight", slugs)
+        self.assertNotIn("central-saturday", slugs)
         self.assertTrue(board["hitting"])
         hit_names = [r["name_key"] for r in board["hitting"]]
-        self.assertIn("Maeve D #4", hit_names)
+        self.assertIn("Lily M #15", hit_names)
+
+    def test_harbor_eight_coach_logins(self):
+        coaches = [
+            ("coach.oaks@local.test", "CoachOaks1!", "Harbor Oaks"),
+            ("coach.river@local.test", "CoachRiver1!", "River City"),
+            ("coach.maple@local.test", "CoachMaple1!", "Maple Ridge"),
+            ("coach.lake@local.test", "CoachLake1!", "Lakeview"),
+            ("coach.iron@local.test", "CoachIron1!", "Iron Bridge"),
+            ("coach.pine@local.test", "CoachPine1!", "Pine Hollow"),
+            ("coach.cedar@local.test", "CoachCedar1!", "Cedar Falls"),
+            ("coach.west@local.test", "CoachWest1!", "Westfield"),
+        ]
+        for email, password, club in coaches:
+            token = auth(BASE, email, password)
+            home = request(BASE, "GET", "/api/account/home", token)
+            self.assertEqual(home["user"]["role"], "team_coach")
+            joined = home.get("joined") or []
+            slugs = [e["slug"] for e in joined]
+            self.assertIn("harbor-eight", slugs, f"{email} is not attached to Harbor Eight")
+            self.assertTrue(any(club in (e.get("team_name") or "") for e in joined), club)
 
     def test_keystone_clash_from_popup(self):
         found = request(BASE, "GET", "/api/events/search?q=keystone")

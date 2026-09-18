@@ -47,7 +47,7 @@ Phases are from outline §10.
 | 0 — Box lives | **Done** | Collections, demo team, login, FAKE players |
 | 1 — One real team book | **Done** | `scripts/acceptance_test.py` is green on all of outline §15 |
 | 2 — Region hub | **Partial** | `/find`, `/year/{year}`, `/teams/{slug}` exist. Outline §2 still lists `/tournaments`, `/fields`, `/news`, and `/join`, which are not routed |
-| 3 — First tournament site | **Mostly live** | Native create, Tourney Machine link, CSV import, signup, auto-schedule, bracket desk, rain desk, four stats doors, leaders, awards. Keystone Clash 2026 and `central-saturday` are seeded |
+| 3 — First tournament site | **Mostly live** | Native create, Tourney Machine link, CSV import, signup, auto-schedule, bracket desk, rain desk, four stats doors, leaders, awards. Seeded public events: Keystone Clash 2026 and Harbor Eight (FAKE) |
 | 4 — Scale | **Not started** | Family logins, player cards, rain texts (Resend), CSV export |
 
 ## Open findings
@@ -197,6 +197,15 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — Harbor Eight practice weekend
+
+Public board is now two events: Keystone Clash 2026 and Harbor Eight (FAKE).
+Central Saturday and leftover test weekends are deleted by
+`1700000017_harbor_eight.js`. Harbor Eight is eight labeled-FAKE clubs in two
+pools, a Saturday round-robin with no scores, and an empty Sunday bracket. No
+player lines. Each club has a `team_coach` login in `scripts/local-accounts.txt`
+(`coach.oaks@local.test` / `CoachOaks1!` and the seven siblings).
 
 ### 2026-09-18 — first review session
 
