@@ -127,16 +127,11 @@ python3 scripts/acceptance_test.py
 
 Or `bash scripts/ci.sh` (starts PocketBase if needed).
 
-## Deploy (SSL)
+## Deploy
 
-```bash
-fly apps create region-softball
-fly volumes create pb_data --size 1
-fly secrets set PB_ADMIN_EMAIL=... PB_ADMIN_PASSWORD=...
-fly deploy
-```
+Production is the Fly app `diamond-tourney` (`fly.toml`). Merge to `main` and the GitHub Action `.github/workflows/fly.yml` deploys it. Set repo secret `FLY_API_TOKEN`. Do not also turn on Fly dashboard auto-deploy, or you will double-deploy.
 
-`fly.toml` forces HTTPS. Default-branch deploys after you connect Fly. Until a domain is chosen, use the Fly URL.
+`fly.toml` forces HTTPS. Live site: https://www.diamondtourney.com
 
 ## Automations
 

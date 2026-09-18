@@ -21,13 +21,14 @@ The running answer to "where is this thing?" Read this before you read code.
 
 | | |
 |---|---|
-| Default branch | `main`, deploys to Fly |
+| Default branch | `main` |
 | Repository | **public** — assume anything committed or served is world-readable |
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
-| Live URL | https://www.diamondtourney.com (Fly default-branch deploy after this merge) |
+| Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
 | Tests | 57 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
+| Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
 lines of browser JS. Complexity concentrates in three files — `schedule.js`,
@@ -184,6 +185,16 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — Fly deploys only `diamond-tourney` from GitHub Actions
+
+`fly.toml` named the wrong app (`region-softball`). It now says
+`diamond-tourney`. The only automatic deploy path is
+`.github/workflows/fly.yml`: push or merge to `main` (plus
+`workflow_dispatch` on `main`), concurrency group
+`deploy-diamond-tourney`, secret `FLY_API_TOKEN`, and an explicit
+`flyctl deploy --remote-only --app diamond-tourney`. Do not also enable
+Fly dashboard GitHub auto-deploy. `ci.yml` is unchanged.
 
 ### 2026-09-18 — owner adds co-owners by email
 

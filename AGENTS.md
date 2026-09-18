@@ -37,7 +37,7 @@ You are a Cursor Cloud Agent (Grok). The owner does not write HTML or SQL. You d
 - One box, one URL. No Next.js unless the owner later asks to split a CDN frontend.
 - Local: `bash scripts/start-pocketbase.sh` → `http://127.0.0.1:8097`
 - Cloud Agent boot: `scripts/ensure-pocketbase.sh` (`.cursor/environment.json` `start`) makes `:8097` healthy and **returns**. Do not `exec` PocketBase from `start` — that hangs boot and Preview port-forward. `terminals` only tails logs (`--attach`).
-- Production: Docker + Fly (`fly.toml`). Default branch deploys.
+- Production: Docker + Fly app `diamond-tourney` (`fly.toml`). Merge to `main` deploys via `.github/workflows/fly.yml`.
 
 ## Collections
 
