@@ -123,6 +123,7 @@ function poolStandings(app, eventId) {
 function importSchedule(app, event, csv) {
   const rows = parseCsv(csv);
   const created = [];
+  const schedule = require(__hooks + "/schedule.js");
   for (const row of rows) {
     const home = upsertEventTeam(app, event.id, row.home || row.home_team, row.pool || row.home_pool);
     const away = upsertEventTeam(app, event.id, row.away || row.away_team, row.pool || row.away_pool);
@@ -139,7 +140,6 @@ function importSchedule(app, event, csv) {
     if (row.pool) rec.set("pool", row.pool);
     if (row.field || row.field_name) {
       try {
-        const schedule = require(__hooks + "/schedule.js");
         const field = schedule.resolveField(app, event, { field: row.field || row.field_name });
         if (field) {
           rec.set("field", field.id);
@@ -149,6 +149,8 @@ function importSchedule(app, event, csv) {
         rec.set("field_name", row.field || row.field_name);
       }
     }
+    if (row.game || row.game_number) rec.set("game_number", Number(row.game || row.game_number));
+    schedule.assignGameNumber(app, rec);
     app.save(rec);
     created.push(rec.id);
   }
@@ -284,6 +286,7 @@ function listOverall(schedule, bracket) {
     rows.push({
       kind: "pool",
       id: g.id,
+      game_number: g.game_number || 0,
       date: g.date || "",
       time: g.time || "",
       field: g.field || "",
@@ -303,6 +306,7 @@ function listOverall(schedule, bracket) {
     rows.push({
       kind: "bracket",
       id: g.id,
+      game_number: g.game_number || 0,
       date: g.date || "",
       time: g.time || "",
       field: g.field || "",
@@ -343,6 +347,7 @@ function publicBoard(app, event, auth) {
       return {
         id: g.id,
         game_id: g.get("game_id") || "",
+        game_number: Number(g.get("game_number") || 0) || 0,
         round: round,
         slot: g.get("slot"),
         side: inferSide(round, g.get("side")),

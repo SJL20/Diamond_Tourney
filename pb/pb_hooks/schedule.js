@@ -344,6 +344,7 @@ function scheduleRow(app, rec, extras) {
     id: rec.id,
     date: rec.get("date") || "",
     time: rec.get("time") || "",
+    game_number: Number(rec.get("game_number") || 0) || 0,
     field: fieldLabel(app, rec),
     field_id: rec.get("field") || "",
     pool: rec.get("pool") || "",
@@ -461,6 +462,29 @@ function timeSlots(days, start, end, gameMinutes, buffer) {
   return slots;
 }
 
+function nextGameNumber(app, eventId) {
+  let max = 0;
+  const cols = ["event_schedule", "bracket_games"];
+  for (let c = 0; c < cols.length; c++) {
+    try {
+      const rows = app.findRecordsByFilter(cols[c], "event = {:e}", "", 400, 0, { e: eventId });
+      for (let i = 0; i < rows.length; i++) {
+        const n = Number(rows[i].get("game_number") || 0);
+        if (n > max) max = n;
+      }
+    } catch (err) {}
+  }
+  return max + 1;
+}
+
+function assignGameNumber(app, rec) {
+  const existing = Number(rec.get("game_number") || 0);
+  if (existing > 0) return existing;
+  const n = nextGameNumber(app, rec.get("event"));
+  rec.set("game_number", n);
+  return n;
+}
+
 function savePoolGame(app, event, game, slot, field) {
   const rec = new Record(app.findCollectionByNameOrId("event_schedule"));
   rec.set("event", event.id);
@@ -474,6 +498,7 @@ function savePoolGame(app, event, game, slot, field) {
     rec.set("field", field.id);
     rec.set("field_name", field.get("name"));
   }
+  assignGameNumber(app, rec);
   app.save(rec);
   return rec;
 }
@@ -586,6 +611,8 @@ function addGame(app, event, body) {
     rec.set("field", field.id);
     rec.set("field_name", field.get("name"));
   }
+  if (body.game_number) rec.set("game_number", Number(body.game_number));
+  assignGameNumber(app, rec);
   app.save(rec);
   return scheduleRow(app, rec);
 }
@@ -654,6 +681,7 @@ function upsertBracket(app, event, round, slot, side, homeId, awayId) {
   rec.set("status", rec.get("status") || "scheduled");
   if (homeId) rec.set("home_team", homeId);
   if (awayId) rec.set("away_team", awayId);
+  assignGameNumber(app, rec);
   app.save(rec);
   return rec;
 }
@@ -924,4 +952,6 @@ module.exports = {
   listSchedule: listSchedule,
   scheduleRow: scheduleRow,
   addMinutes: addMinutes,
+  nextGameNumber: nextGameNumber,
+  assignGameNumber: assignGameNumber,
 };
