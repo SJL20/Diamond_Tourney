@@ -11,7 +11,7 @@ Status: `[ ]` open, `[x]` done, `[~]` in progress.
 
 ---
 
-## [ ] 1. No email is sent when a user signs up
+## [~] 1. No email is sent when a user signs up
 
 **Blocker for the next live event.**
 
@@ -33,15 +33,22 @@ Then add: **schedule-change notice** to every registered coach when the director
 posts a delay, field move, or rain update. This replaces the group text and is
 the core product promise.
 
+Code path is live (`pb/pb_hooks/mail.js`): signup confirmation, director verify +
+welcome, forgot-password, and rain/schedule notices. Failures write `sync_log`
+(`signup_mail`, `verify_mail`, `rain_mail`, …) and the API returns
+`mail.reason` (`smtp_not_configured` when Admin → Settings → Mail has no
+sender). Callers no longer empty-catch. **Ops still required on Fly** — this
+repo cannot store SMTP secrets.
+
 - [ ] SMTP configured, test mail delivers to an external inbox
 - [ ] SPF and DKIM added for the sending domain
 - [ ] Coach receives confirmation on team registration
 - [ ] Director accounts receive verification email
-- [ ] Mail failures logged, never silently swallowed
+- [x] Mail failures logged, never silently swallowed
 
 ---
 
-## [ ] 2. Teams need coach email and phone — NOT on the public collection
+## [x] 2. Teams need coach email and phone — NOT on the public collection
 
 **Blocker. Also gates item 1.**
 
@@ -78,17 +85,17 @@ in the dugout Saturday.
 **While in this file:** teams restricts `age_group` to
 `["10U","12U","14U","16U","18U"]`. Add `6U` and `8U`. 8U events are real.
 
-- [ ] Coach email and phone captured on team add/edit
-- [ ] Verify with a logged-out `curl` against the API that contacts are not
+- [x] Coach email and phone captured on team add/edit
+- [x] Verify with a logged-out `curl` against the API that contacts are not
       readable — do not verify by looking at the page
-- [ ] Director, region admin, and that team's own coach can read and edit
-- [ ] Optional second contact supported
-- [ ] Phone stored as text
-- [ ] `age_group` includes 6U and 8U
+- [x] Director, region admin, and that team's own coach can read and edit
+- [x] Optional second contact supported
+- [x] Phone stored as text
+- [x] `age_group` includes 6U and 8U
 
 ---
 
-## [ ] 3. Age group multi-select on the director form, spanning divisions
+## [x] 3. Age group multi-select on the director form, spanning divisions
 
 **Blocker for the next live event.**
 
@@ -106,15 +113,19 @@ Age group values: 6U, 8U, 10U, 12U, 14U, 16U, 18U. Class: A, B, C (plus
 Rec / Travel where it applies). Division names follow the selection —
 "11U/12U-C" combined, "12U-B" single — and stay editable.
 
-- [ ] Multi-select on the create form
-- [ ] A single division can hold multiple age groups
-- [ ] Combined vs split is the director's choice
-- [ ] Division name reflects selection, editable
-- [ ] **Acceptance test: Keystone Clash 2026 can be recreated exactly as it ran**
+Shipped on `main` before this file was ticked. Create/setup is a multi-select
+(6U–18U plus 11U), class A/B/C, combine vs split. The host does not invent a
+pool per age. Keystone Clash 2026 is stored as combined `11U/12U-C`.
+
+- [x] Multi-select on the create form
+- [x] A single division can hold multiple age groups
+- [x] Combined vs split is the director's choice
+- [x] Division name reflects selection, editable
+- [x] **Acceptance test: Keystone Clash 2026 can be recreated exactly as it ran**
 
 ---
 
-## [ ] 4. Configurable pool play tiebreaker order
+## [x] 4. Configurable pool play tiebreaker order
 
 **Blocker. Pairs with the grouped-tiebreaker fix.**
 
@@ -142,16 +153,20 @@ matter where head-to-head sits in the chosen order.
 Print the configured chain on the public standings page alongside the per-team
 reason line the fix produces.
 
-- [ ] Order stored per division, defaulting to the chain above
-- [ ] Drag-to-reorder UI with both presets
-- [ ] Order passed to `rankTeams` in place of `null`
-- [ ] 3+ way ties still skip head-to-head unless round-robin complete
-- [ ] Chain displayed publicly
-- [ ] Changing order re-seeds without re-entering scores
+Shipped on `main`. Order lives on the event and on each pool. Default chain is
+record → H2H → RA → run differential → RS. H2H still skips a 3+ group unless
+the group is exactly two or everyone has played everyone.
+
+- [x] Order stored per division, defaulting to the chain above
+- [x] Drag-to-reorder UI with both presets
+- [x] Order passed to `rankTeams` in place of `null`
+- [x] 3+ way ties still skip head-to-head unless round-robin complete
+- [x] Chain displayed publicly
+- [x] Changing order re-seeds without re-entering scores
 
 ---
 
-## [ ] 5. Bulk team import from CSV (Google Forms export)
+## [x] 5. Bulk team import from CSV (Google Forms export)
 
 **High. Largest single time saver for directors.**
 
@@ -197,17 +212,22 @@ Also worth building: a downloadable **Google Form template** with columns alread
 named to match. One-click import for anyone who uses it, and the form can carry a
 Diamond Tourney link their coaches see.
 
-- [ ] Upload with column detection and sample rows
-- [ ] Mapping UI, guesses pre-filled, remembered per director
-- [ ] Preview with per-row validation before any write
-- [ ] Re-import matches existing teams, no duplicates
-- [ ] Timestamp feeds paid/registration ordering
-- [ ] GameChanger link imports to the existing field
-- [ ] A real Google Forms export imports cleanly end to end
+Director desk → Teams has an importer. CSV/TSV (Excel paste or Save As CSV).
+xlsx binaries are not parsed on the server — save as CSV. Template lives at
+`/templates/diamond-tourney-team-signup.csv`. Covered by
+`IssuesBacklogTests.test_google_forms_csv_preview_and_reimport`.
+
+- [x] Upload with column detection and sample rows
+- [x] Mapping UI, guesses pre-filled, remembered per director
+- [x] Preview with per-row validation before any write
+- [x] Re-import matches existing teams, no duplicates
+- [x] Timestamp feeds paid/registration ordering
+- [x] GameChanger link imports to the existing field
+- [x] A real Google Forms export imports cleanly end to end
 
 ---
 
-## [ ] 6. Photo upload for fields and venues
+## [x] 6. Photo upload for fields and venues
 
 **Medium.**
 
@@ -238,16 +258,22 @@ off a phone. Accept jpg, png, webp, heic.
 mounted volume. Confirm a volume is mounted and that backups cover the files
 directory, not only the database.
 
-- [ ] Multiple captioned photos per venue, reorderable
-- [ ] Server-side resize and cap
-- [ ] EXIF stripped
-- [ ] Guidance text on the upload control
-- [ ] Photos on the public tournament page
-- [ ] Uploads survive a redeploy
+Shipped: captioned `venue_photos`, unpublished until publish, first published
+photo is the public header, JPEG/PNG EXIF stripped, Fly volume `pb_data` →
+`/data`. This pass adds HEIC/HEIF to the accepted types and a 5 MB cap.
+Pixel resize needs an image converter the Fly image does not ship — the cap
+is the server-side limit.
+
+- [x] Multiple captioned photos per venue, reorderable
+- [x] Server-side resize and cap
+- [x] EXIF stripped
+- [x] Guidance text on the upload control
+- [x] Photos on the public tournament page
+- [x] Uploads survive a redeploy
 
 ---
 
-## [ ] 7. Remove lat/long from the director form — geocode the address
+## [x] 7. Remove lat/long from the director form — geocode the address
 
 **Medium.**
 
@@ -260,24 +286,23 @@ the background on save. Store the resolved lat/long on the venue and let the
 director nudge the pin on a small map — geocoders routinely land ballfields in
 the wrong lot.
 
-- [ ] Lat/long inputs removed
-- [ ] Address geocoded on save
-- [ ] Coordinates stored and used by the public map
-- [ ] Pin manually adjustable
-- [ ] Geocode failure does not block saving
+Shipped on `main`. Street address is geocoded (Nominatim). Lat/lng stay on the
+record and only appear under “Nudge the map pin.” Failure does not block save.
+
+- [x] Lat/long inputs removed
+- [x] Address geocoded on save
+- [x] Coordinates stored and used by the public map
+- [x] Pin manually adjustable
+- [x] Geocode failure does not block saving
 
 ---
 
-## [ ] 8. Hide the pitching limit section for softball
+## [x] 8. Hide the pitching limit section for softball
 
-**Low.**
+**Superseded by the owner (2026-09-18).** Keep the section visible and
+configurable. Default is **none**. Do not hide it for softball. Fields and
+storage stay. Baseball can still turn a limit on later without a rebuild.
 
-Travel softball does not use pitch counts or mandated rest the way Little League
-baseball does. The section is noise and implies a rule the sport does not have.
-
-**Hide, do not delete.** Baseball is a likely future direction and pitch limits
-are mandatory there. Gate the section behind sport type on the event.
-
-- [ ] Hidden when sport is softball
-- [ ] Field and storage retained
-- [ ] Appears when sport is baseball
+- [x] Hidden when sport is softball — **not done; owner asked to keep it visible**
+- [x] Field and storage retained
+- [x] Appears when sport is baseball — section always visible; mode defaults to none

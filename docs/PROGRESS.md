@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly default-branch deploy after this merge) |
-| Tests | 57 unit/integration cases + 13 acceptance checks |
+| Tests | 60 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 
 Roughly 4,000 lines of PocketBase hooks, 1,700 lines of migrations, and 2,800
@@ -184,6 +184,20 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — issues + Derek backlog in one PR
+
+Private `team_contacts` (and `import_maps`) stay closed at the collection.
+Signup and the director Teams pane capture coach phone plus a second contact.
+Season `teams.age_group` includes 6U/8U. Public board / Find / anonymous REST
+never see those addresses. Team CSV import (Google Forms / Excel-as-CSV) maps
+columns, previews, rematches on email then name, and stores the timestamp in
+`registered_at`. Mail failures log to `sync_log` and return `smtp_not_configured`
+instead of an empty catch. Ages, tiebreak, geocode, and venue photos were
+already on `main`; BACKLOG 3/4/6/7 are ticked. Pitching limits stay visible
+and default to none (BACKLOG 8 superseded). SMTP/SPF on Fly is still ops.
+
+Covered by `IssuesBacklogTests` and the existing packet-privacy contact test.
 
 ### 2026-09-18 — owner adds co-owners by email
 

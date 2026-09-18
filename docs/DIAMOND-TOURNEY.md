@@ -28,9 +28,10 @@ Site admin manages **team profiles** (`/admin/teams`) and can hide or delete wee
 
 | Door | Status in this repo |
 |---|---|
-| You already have a schedule | **Live** — CSV import + public board (`/directors/import`) |
+| You already have a schedule | **Live** — schedule CSV import + public board (`/directors/import`) |
+| You already have a team list | **Live** — director desk → Teams imports a Google Forms / Excel CSV with column mapping |
 | Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
-| Team signup | **Live** — director or team (`/t/{slug}/signup`). GameChanger is optional; a paper team signs up without one. Hosted job pings those public pages for reachability. Grok bots poll the same stored URLs for live scores/boxes. |
+| Team signup | **Live** — director or team (`/t/{slug}/signup`). Coach email and phone go in private `team_contacts`, never on the public `teams` collection. GameChanger is optional. Hosted job pings those public pages for reachability. Grok bots poll the same stored URLs for live scores/boxes. |
 | Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
 | Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Bots may monitor those public GC pages. Individual pool boxes that are not on the popup are not invented. |
 

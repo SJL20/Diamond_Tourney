@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import struct
 import sys
@@ -1508,6 +1509,14 @@ class PacketPrivacyTests(unittest.TestCase):
                          "/api/collections/club_teams/records?perPage=500"):
                 for row in (read_or_denied(path, token) or []):
                     self.assertFalse(row.get("contact_email"), f"{path} leaked a contact email")
+                    self.assertFalse(row.get("coach_email"), f"{path} leaked a coach email")
+                    self.assertFalse(row.get("coach_phone"), f"{path} leaked a coach phone")
+            leaked = read_or_denied("/api/collections/team_contacts/records?perPage=500", token)
+            self.assertFalse(leaked, "team_contacts must not list to anonymous or a stranger")
+            self.assertFalse(
+                read_or_denied("/api/collections/import_maps/records?perPage=200", token),
+                "import_maps must not list to anonymous or a stranger",
+            )
 
     def test_packet_file_needs_a_token(self):
         packet = self.packet_for(f"/api/events/{self.slug}/plan", self.td)
@@ -1786,6 +1795,128 @@ class GcMonitorTests(unittest.TestCase):
         self.assertEqual(box_row["write"], "POST /api/bot/event-box")
         inbox = request(BASE, "GET", f"/api/bot/event-boxes?event={slug}", bot)
         self.assertTrue(any(b.get("gc_url") == gc_box for b in inbox["boxes"]))
+
+
+class IssuesBacklogTests(unittest.TestCase):
+    """Remaining GitHub issues + Derek BACKLOG items that were still open."""
+
+    def test_season_age_includes_6u_8u_and_contacts_stay_private(self):
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        slug = "minis-8u-" + uuid.uuid4().hex[:6]
+        created = request(BASE, "POST", "/api/collections/teams/records", owner, {
+            "name": "Minis 8U (FAKE)",
+            "slug": slug,
+            "age_group": "8U",
+            "coach_name": "Coach Mini",
+        })
+        self.assertEqual(created.get("age_group"), "8U")
+        public = request(BASE, "GET", f"/api/collections/teams/records?filter=(slug='{slug}')")
+        self.assertEqual(public["items"][0]["age_group"], "8U")
+        self.assertNotIn("coach_email", public["items"][0])
+        self.assertNotIn("coach_phone", public["items"][0])
+        saved = request(BASE, "POST", f"/api/admin/season-teams/{slug}/contact", owner, {
+            "coach_email": "mini.coach@local.test",
+            "coach_phone": "0412-555-0108",
+            "alt_name": "Team manager",
+            "alt_email": "mini.manager@local.test",
+            "alt_phone": "412-555-0199",
+            "role": "head_coach",
+            "age_group": "6U",
+        })
+        self.assertEqual(saved["contact"]["coach_phone"], "0412-555-0108")
+        self.assertEqual(saved["age_group"], "6U")
+        self.assertFalse(read_or_denied("/api/collections/team_contacts/records?perPage=200"))
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", f"/api/admin/season-teams/{slug}/contact")
+        coach_view = request(BASE, "GET", f"/api/admin/season-teams/{slug}/contact", owner)
+        self.assertEqual(coach_view["contact"]["coach_email"], "mini.coach@local.test")
+
+    def test_signup_stores_phone_and_logs_missing_smtp(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "contacts-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Contact Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        email = f"dugout.{uuid.uuid4().hex[:6]}@local.test"
+        out = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Dugout Heat",
+            "contact_name": "Pat Coach",
+            "contact_email": email,
+            "coach_phone": "0412-555-0110",
+            "alt_name": "Billing parent",
+            "alt_email": f"bills.{uuid.uuid4().hex[:6]}@local.test",
+            "as_director": True,
+        })
+        team = out["team"]
+        self.assertEqual(team["contact"]["coach_phone"], "0412-555-0110")
+        self.assertFalse(team["mail"]["sent"])
+        self.assertEqual(team["mail"]["reason"], "smtp_not_configured")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        public_names = [row.get("name") for row in board.get("roster") or board.get("teams") or []]
+        blob = json.dumps(board)
+        self.assertNotIn(email, blob)
+        self.assertNotIn("0412-555-0110", blob)
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        desk = next(t for t in plan["teams"] if t["name"] == "Dugout Heat")
+        self.assertEqual(desk["contact"]["coach_email"], email)
+        self.assertEqual(desk["contact"]["coach_phone"], "0412-555-0110")
+        logs = request(BASE, "GET", "/api/collections/sync_log/records?perPage=200&sort=-created", td)
+        kinds = [row.get("kind") for row in logs.get("items") or []]
+        self.assertIn("signup_mail", kinds)
+        mail_rows = [row for row in logs["items"] if row.get("kind") == "signup_mail"]
+        self.assertTrue(any("smtp_not_configured" in (row.get("detail") or "") for row in mail_rows))
+        self.assertTrue(any(row.get("ok") is False for row in mail_rows))
+
+    def test_google_forms_csv_preview_and_reimport(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "csv-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "CSV Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        csv = (ROOT / "testdata" / "google_forms_teams.csv").read_text(encoding="utf-8-sig")
+        preview = request(BASE, "POST", f"/api/events/{slug}/import-teams/preview", td, {"csv": csv})
+        self.assertIn("Name of Team", preview["headers"])
+        self.assertEqual(preview["mapping"].get("Name of Team"), "name")
+        self.assertEqual(preview["mapping"].get("Email Address"), "coach_email")
+        self.assertEqual(preview["mapping"].get("Phone Number"), "coach_phone")
+        self.assertEqual(preview["mapping"].get("Timestamp"), "timestamp")
+        names = {row["name"]: row for row in preview["rows"]}
+        self.assertEqual(names["O'Brien's Bandits"]["status"], "new")
+        self.assertEqual(names["Smash 12U, Gold"]["status"], "new")
+        self.assertEqual(names["Smash 12U, Gold"]["coach_phone"], "(412) 555-0199")
+        missing = next(row for row in preview["rows"] if "missing team name" in row["problems"])
+        self.assertEqual(missing["status"], "problem")
+        first = request(BASE, "POST", f"/api/events/{slug}/import-teams", td, {
+            "csv": csv,
+            "mapping": preview["mapping"],
+            "on_match": "skip",
+        })
+        self.assertEqual(first["counts"]["new"], 3)
+        self.assertEqual(first["counts"]["skipped"], 0)
+        self.assertEqual(first["counts"]["problems"], 1)
+        again = request(BASE, "POST", f"/api/events/{slug}/import-teams", td, {
+            "csv": csv,
+            "on_match": "skip",
+        })
+        self.assertEqual(again["counts"]["new"], 0)
+        self.assertEqual(again["counts"]["skipped"], 3)
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        by_name = {t["name"]: t for t in plan["teams"]}
+        self.assertEqual(by_name["O'Brien's Bandits"]["contact"]["coach_phone"], "0412-555-0101")
+        self.assertTrue(by_name["O'Brien's Bandits"]["registered_at"])
+        self.assertTrue(by_name["O'Brien's Bandits"]["paid"])
+        self.assertEqual(by_name["Harbor Heat"]["gamechanger_url"], "https://gc.com/team/harbor-heat")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertNotIn("obrien@local.test", json.dumps(board))
+        self.assertNotIn("0412-555-0101", json.dumps(board))
 
 
 if __name__ == "__main__":
