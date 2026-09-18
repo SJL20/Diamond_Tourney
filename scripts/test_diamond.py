@@ -109,7 +109,7 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("seed-why", event)
         self.assertIn("setupTiebreakFields", event)
         self.assertIn("directorDuplicate", event)
-        self.assertIn("/directors/duplicate", app)
+        self.assertIn("directors\\/duplicate", app)
         self.assertIn(".tiebreak-order", css)
         self.assertIn("setupAgeFields", event)
         self.assertIn('pitch_limit_mode || "none"', event)

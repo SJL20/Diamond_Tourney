@@ -19,8 +19,8 @@ function geocodeAddress(address) {
 }
 
 function applyGeocode(rec, body) {
-  const nudged = body.pin_set === true || body.pin_set === "true" || body.pin_set === "1";
-  if (nudged && body.lat != null && body.lat !== "" && body.lng != null && body.lng !== "") {
+  const hasCoords = body.lat != null && body.lat !== "" && body.lng != null && body.lng !== "";
+  if (hasCoords) {
     rec.set("lat", Number(body.lat));
     rec.set("lng", Number(body.lng));
     return { source: "nudge", lat: Number(body.lat), lng: Number(body.lng) };

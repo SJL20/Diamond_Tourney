@@ -1362,8 +1362,23 @@ export async function eventInfo(slug) {
   `);
 }
 
+function dropUnusedPins(fd) {
+  if (fd.get("pin_set") !== "on") {
+    fd.delete("lat");
+    fd.delete("lng");
+  }
+  for (const key of [...fd.keys()]) {
+    if (!key.startsWith("field_pin_set_")) continue;
+    if (fd.get(key) === "on") continue;
+    const i = key.slice("field_pin_set_".length);
+    fd.delete("field_lat_" + i);
+    fd.delete("field_lng_" + i);
+  }
+  return fd;
+}
+
 function packGuidelines(form) {
-  const fd = new FormData(form);
+  const fd = dropUnusedPins(new FormData(form));
   for (const k of ["require_insurance", "require_roster", "require_birth_certs", "require_waiver", "require_coach_cert"]) {
     fd.set(k, form.querySelector(`[name="${k}"]`)?.checked ? "true" : "false");
   }
@@ -2045,7 +2060,7 @@ export async function eventAdmin(slug) {
       await fetch("/api/events/" + encodeURIComponent(slug) + "/settings", {
         method: "POST",
         headers: { ...authHeader() },
-        body: new FormData(evnt.target),
+        body: dropUnusedPins(new FormData(evnt.target)),
       }).then(async (r) => { if (!r.ok) throw new Error(await r.text()); });
       flashSaved("Venue saved");
       eventAdmin(slug);
