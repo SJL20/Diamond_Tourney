@@ -68,7 +68,9 @@ function decodeJsonField(raw) {
 
 function parseTiebreak(raw) {
   let data = decodeJsonField(raw);
+  let explicit = false;
   if (data && typeof data === "object" && !Array.isArray(data)) {
+    explicit = data.explicit === true;
     data = data.order || data.tiebreak || data.criteria || data;
   }
   if (typeof data === "string") {
@@ -84,10 +86,19 @@ function parseTiebreak(raw) {
       seen[key] = true;
     }
   }
-  for (let i = 0; i < DEFAULT_TIEBREAK.length; i++) {
-    if (!seen[DEFAULT_TIEBREAK[i]]) out.push(DEFAULT_TIEBREAK[i]);
+  if (!explicit) {
+    for (let i = 0; i < DEFAULT_TIEBREAK.length; i++) {
+      if (!seen[DEFAULT_TIEBREAK[i]]) out.push(DEFAULT_TIEBREAK[i]);
+    }
   }
-  return out;
+  return out.length ? out : DEFAULT_TIEBREAK.slice();
+}
+
+function tiebreakKeys(order) {
+  if (order && order.length !== undefined && typeof order !== "string" && !order.order) {
+    return order.length ? order : DEFAULT_TIEBREAK.slice();
+  }
+  return parseTiebreak(order);
 }
 
 function tiebreakLabel(order) {
@@ -98,13 +109,44 @@ function tiebreakLabel(order) {
     diff: "run differential",
     rs: "most runs scored",
   };
-  return parseTiebreak(order).map(function (key) { return names[key]; }).join(", then ");
+  return tiebreakKeys(order).map(function (key) { return names[key]; }).join(", then ");
 }
 
 function saveTiebreak(event, body) {
   if (!event || !body) return;
   if (body.tiebreak_order == null && body.tiebreak == null) return;
-  event.set("tiebreak", { order: parseTiebreak(body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak) });
+  const raw = body.tiebreak_order != null ? body.tiebreak_order : body.tiebreak;
+  const forceExplicit = body.tiebreak_explicit === true || body.tiebreak_explicit === "true" || body.tiebreak_explicit === "1";
+  const order = parseTiebreak(forceExplicit ? { order: raw, explicit: true } : raw);
+  event.set("tiebreak", { order: order, explicit: true });
+}
+
+function savePoolTiebreaks(app, event, body) {
+  if (!app || !event || !body) return;
+  const keys = Object.keys(body);
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf("pool_tiebreak_") !== 0) continue;
+    const name = String(keys[i].slice("pool_tiebreak_".length) || "").trim();
+    if (!name) continue;
+    let rec;
+    try {
+      rec = app.findFirstRecordByFilter("pools", "event = {:e} && name = {:n}", { e: event.id, n: name });
+    } catch (err) {
+      rec = new Record(app.findCollectionByNameOrId("pools"));
+      rec.set("event", event.id);
+      rec.set("name", name);
+    }
+    rec.set("tiebreak", { order: parseTiebreak({ order: body[keys[i]], explicit: true }), explicit: true });
+    app.save(rec);
+  }
+}
+
+function poolTiebreak(app, eventId, poolName, fallback) {
+  try {
+    const pool = app.findFirstRecordByFilter("pools", "event = {:e} && name = {:n}", { e: eventId, n: poolName });
+    if (pool.get("tiebreak")) return parseTiebreak(pool.get("tiebreak"));
+  } catch (err) {}
+  return fallback || eventTiebreak(app, eventId);
 }
 
 function gGet(game, key) {
@@ -268,11 +310,8 @@ function sortGroup(teams, games, order, reasons, suffix) {
   const ranked = [];
   for (let i = 0; i < keys.length; i++) {
     const bucket = buckets[keys[i]].teams;
-    if (reasons && split) {
-      const label = reasonLabel(crit, mode, suffix);
-      for (let j = 0; j < bucket.length; j++) {
-        if (!reasons[bucket[j].id]) reasons[bucket[j].id] = label;
-      }
+    if (reasons && split && bucket.length === 1 && !reasons[bucket[0].id]) {
+      reasons[bucket[0].id] = reasonLabel(crit, mode, suffix);
     }
     ranked.push.apply(ranked, sortGroup(bucket, games, rest, reasons, split ? "" : suffix));
   }
@@ -280,7 +319,9 @@ function sortGroup(teams, games, order, reasons, suffix) {
 }
 
 function sortPool(teams, games, order) {
-  const criteria = parseTiebreak(order);
+  const criteria = (order && order.length !== undefined && typeof order !== "string" && !order.order)
+    ? (order.length ? order.slice() : parseTiebreak(null))
+    : parseTiebreak(order);
   const reasons = {};
   const ranked = sortGroup(teams.slice(), games, criteria, reasons, "");
   for (let i = 0; i < ranked.length; i++) {
@@ -319,8 +360,7 @@ function eventTiebreak(app, eventId) {
 }
 
 function poolStandings(app, eventId) {
-  const order = eventTiebreak(app, eventId);
-  const label = tiebreakLabel(order);
+  const eventOrder = eventTiebreak(app, eventId);
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: eventId });
   const published = teams.some(function (t) {
     return Number(t.get("published_w") || 0) + Number(t.get("published_l") || 0) + Number(t.get("published_t") || 0) > 0;
@@ -376,8 +416,9 @@ function poolStandings(app, eventId) {
   const out = [];
   const names = Object.keys(pools).sort();
   for (const name of names) {
+    const order = poolTiebreak(app, eventId, name, eventOrder);
     const ranked = sortPool(pools[name], games, order);
-    out.push({ name: name, teams: ranked, tiebreak_label: label });
+    out.push({ name: name, teams: ranked, tiebreak_label: tiebreakLabel(order), tiebreak: { order: order, label: tiebreakLabel(order) } });
   }
   return out;
 }
@@ -668,6 +709,18 @@ function publicBoard(app, event, auth) {
         return [];
       }
     })(),
+    photos: (function () {
+      try {
+        const director = auth && (auth.get("role") === "event_td" || auth.get("role") === "region_admin");
+        return require(__hooks + "/photos.js").listPhotos(app, eventId, !director);
+      } catch (err) {
+        return [];
+      }
+    })(),
+    header_photo: (function () {
+      try { return require(__hooks + "/photos.js").headerPhoto(app, eventId); }
+      catch (err) { return null; }
+    })(),
   };
 }
 
@@ -683,6 +736,8 @@ module.exports = {
   upsertEventTeam: upsertEventTeam,
   parseTiebreak: parseTiebreak,
   saveTiebreak: saveTiebreak,
+  savePoolTiebreaks: savePoolTiebreaks,
+  poolTiebreak: poolTiebreak,
   tiebreakLabel: tiebreakLabel,
   sortPool: sortPool,
   DEFAULT_TIEBREAK: DEFAULT_TIEBREAK,

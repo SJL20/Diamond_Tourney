@@ -247,6 +247,7 @@ function parseFieldRows(body) {
       address: body["field_address_" + i] || "",
       lat: body["field_lat_" + i],
       lng: body["field_lng_" + i],
+      pin_set: body["field_pin_set_" + i],
       surface: body["field_surface_" + i] || "",
       lights: body["field_lights_" + i],
       availability: availability,
@@ -272,8 +273,18 @@ function saveField(app, event, data) {
   rec.set("event", event.id);
   rec.set("name", name);
   if (data.address != null) rec.set("address", data.address);
-  if (data.lat != null && data.lat !== "") rec.set("lat", Number(data.lat));
-  if (data.lng != null && data.lng !== "") rec.set("lng", Number(data.lng));
+  try {
+    require(__hooks + "/geo.js").applyGeocode(rec, {
+      address: data.address || rec.get("address") || event.get("address") || "",
+      lat: data.lat,
+      lng: data.lng,
+      pin_set: data.pin_set,
+      geocode: data.geocode,
+    });
+  } catch (err) {
+    if (data.lat != null && data.lat !== "") rec.set("lat", Number(data.lat));
+    if (data.lng != null && data.lng !== "") rec.set("lng", Number(data.lng));
+  }
   if (data.surface != null) rec.set("surface", data.surface);
   if (data.lights != null) rec.set("lights", data.lights === true || data.lights === "true" || data.lights === "on");
   if (data.notes != null) rec.set("notes", data.notes);
@@ -286,9 +297,13 @@ function saveField(app, event, data) {
 
 function applyLocation(rec, body) {
   if (body.address != null) rec.set("address", body.address);
-  if (body.lat != null && body.lat !== "") rec.set("lat", Number(body.lat));
-  if (body.lng != null && body.lng !== "") rec.set("lng", Number(body.lng));
   if (body.venue != null) rec.set("venue", body.venue);
+  try {
+    require(__hooks + "/geo.js").applyGeocode(rec, body);
+  } catch (err) {
+    if (body.lat != null && body.lat !== "") rec.set("lat", Number(body.lat));
+    if (body.lng != null && body.lng !== "") rec.set("lng", Number(body.lng));
+  }
   if (body.format) rec.set("format", body.format);
   if (body.rain_note != null) rec.set("rain_note", body.rain_note);
   if (body.rain_status) rec.set("rain_status", body.rain_status);
@@ -912,6 +927,10 @@ function rainUpdate(app, event, body) {
     postponed: postponed,
     reassigned: reassigned,
     schedule: listSchedule(app, event.id),
+    mail_sent: (function () {
+      try { return require(__hooks + "/mail.js").rainNotice(app, event).sent || 0; }
+      catch (err) { return 0; }
+    })(),
   };
 }
 
@@ -923,6 +942,10 @@ function plan(app, event, auth) {
     schedule: listSchedule(app, event.id, auth),
     teams: host.publicRoster(app, event, auth),
     pending_boxes: require(__hooks + "/score.js").listPendingBoxes(app, event.id),
+    photos: (function () {
+      try { return require(__hooks + "/photos.js").listPhotos(app, event.id, false); }
+      catch (err) { return []; }
+    })(),
   };
 }
 

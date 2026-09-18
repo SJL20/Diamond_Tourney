@@ -50,7 +50,9 @@ def parse_order(raw) -> list[str]:
     allowed = set(DEFAULT_ORDER)
     if raw is None or raw == "":
         return list(DEFAULT_ORDER)
+    explicit = False
     if isinstance(raw, dict):
+        explicit = raw.get("explicit") is True
         raw = raw.get("order") or raw.get("tiebreak") or raw.get("criteria")
     if isinstance(raw, str):
         raw = [part.strip() for part in raw.replace("|", ",").split(",") if part.strip()]
@@ -61,10 +63,11 @@ def parse_order(raw) -> list[str]:
         if key in allowed and key not in seen:
             out.append(key)
             seen.add(key)
-    for key in DEFAULT_ORDER:
-        if key not in seen:
-            out.append(key)
-    return out
+    if not explicit:
+        for key in DEFAULT_ORDER:
+            if key not in seen:
+                out.append(key)
+    return out or list(DEFAULT_ORDER)
 
 
 def tiebreak_label(order=None) -> str:
@@ -75,7 +78,8 @@ def tiebreak_label(order=None) -> str:
         "diff": "run differential",
         "rs": "most runs scored",
     }
-    return ", then ".join(names[k] for k in parse_order(order))
+    keys = order if isinstance(order, list) and order else parse_order(order)
+    return ", then ".join(names[k] for k in keys)
 
 
 def win_pct(team: dict) -> float:
@@ -228,17 +232,19 @@ def sort_group(
     split = len(buckets) > 1
     for value in sorted(buckets.keys(), reverse=True):
         bucket = buckets[value]
-        if reasons is not None and split:
+        if reasons is not None and split and len(bucket) == 1:
             label = _reason_label(crit, mode, suffix)
-            for team in bucket:
-                reasons.setdefault(team["id"], label)
+            reasons.setdefault(bucket[0]["id"], label)
         next_suffix = "" if split else suffix
         ranked.extend(sort_group(bucket, games, rest, reasons, next_suffix))
     return ranked
 
 
 def sort_pool(teams: list[dict], games: list[dict], order=None) -> list[dict]:
-    criteria = parse_order(order)
+    if isinstance(order, list) and order:
+        criteria = list(order)
+    else:
+        criteria = parse_order(order)
     reasons: dict[str, str] = {}
     ranked = sort_group(list(teams), games, criteria, reasons)
     for index, team in enumerate(ranked):
