@@ -725,11 +725,9 @@ function autoSchedule(app, event, body) {
       placed.push(savePoolGame(app, event, game, { date: cand.date, time: cand.time }, cand.field));
     }
   }
-  if (format) {
-    event.set("format", format);
-    if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
-    app.save(event);
-  }
+  if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
+  if (format) event.set("format", format);
+  if (body.bracket_flights != null || format) app.save(event);
   if (placed.length && !keepImported) markSchedulerOrigin(app, event, "generated");
   let bracket = null;
   const wantBracket = prefs.draw_bracket && (formatWantsBracket(format) || keepImported);
