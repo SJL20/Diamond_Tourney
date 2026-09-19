@@ -335,3 +335,141 @@ index is `rows.length` and submitted names stay `field_name_0`, `field_name_1`,
 - [x] Submitted names are dense (`field_name_0`, `field_name_1`)
 - [x] Twenty fields save and reload
 - [x] Existing tournament fields re-save unchanged
+
+- [ ] ## [ ] 10. Remove both map pin nudge controls; add a field map upload instead
+
+**High. Owner has raised this repeatedly — it is still live on the site.**
+
+Replaces items 6 and 7, which split this across two entries and left item 7
+asking to keep a draggable pin. There is no draggable pin. Remove all of it.
+
+### Remove — two places in `pb/pb_public/js/event.js`
+
+**Per-diamond**, inside `fieldRow()` around lines 106–113:
+
+    <summary>Nudge this diamond's pin</summary>
+    <label>Latitude <input name="field_lat_${i}" ...></label>
+    <label>Longitude <input name="field_lng_${i}" ...></label>
+
+**Venue level**, inside `setupVenueFields()` around lines 219–227:
+
+    <summary>Nudge the map pin</summary>
+    <label>Latitude <input name="lat" ...></label>
+    <label>Longitude <input name="lng" ...></label>
+
+Remove the `<details>` wrapper, the summary, and both coordinate inputs in each
+case. Remove the surrounding helper text about pins. Around line 1494 there is
+already `fd.delete("field_lat_" + i)` / `fd.delete("field_lng_" + i)` — that
+cleanup can go too once the inputs no longer exist.
+
+**Keep the coordinates in the data.** Geocode from the street address on save and
+store the result on the venue and field records. Directors never type or adjust
+coordinates. If geocoding lands imprecisely, accept it — the uploaded map below
+is the real wayfinding.
+
+### Add — a field map upload on `/directors/new`
+
+In place of the venue-level pin control, an upload for images that show people
+where to go. This is what the nudge control was badly trying to do.
+
+What directors will actually upload, in order of usefulness:
+
+1. **A complex map** — which diamond is Field 1 vs Field 2, where parking is,
+   where the gate is. Usually a hand-drawn or marked-up image.
+2. **The entrance and parking lot** — the hardest thing to find at an unfamiliar
+   complex, and the source of most Saturday-morning phone calls.
+3. **The fields themselves.**
+
+Keystone Clash 2026 used exactly this: a hand-made parking map linked from the
+tournament page. This makes it a first-class feature instead of a one-off.
+
+PocketBase file fields with thumbnails; nothing custom needed. Multiple images
+per venue, each with a caption. Reorderable. First image shown on the public
+tournament page. Cap 2–5 MB with server-side resizing — directors upload straight
+off a phone. Accept jpg, png, webp, heic, and pdf (complex maps are often PDFs).
+
+**Two requirements, not suggestions:**
+
+- **Strip EXIF on upload.** Phone photos carry GPS and timestamps. Publishing
+  those on a public page is a privacy leak about where children are on a given
+  weekend.
+- **No people in the images.** These pages are public and this is a youth sports
+  product. Put a plain line on the upload control: "Fields and facilities only,
+  please — no photos of players."
+
+Uploads land on the mounted Fly volume at `/data`, so they persist across
+deploys. Confirm backups cover the files directory and not only the database.
+
+### Acceptance criteria
+
+- [ ] No "Nudge this diamond's pin" control anywhere on the form
+- [ ] No "Nudge the map pin" control anywhere on the form
+- [ ] No latitude or longitude input visible to a director, at venue or field level
+- [ ] Street address geocoded on save; coordinates stored, never typed
+- [ ] Image upload present on `/directors/new`, not only on a separate venue screen
+- [ ] Multiple captioned images, reorderable, pdf accepted
+- [ ] EXIF stripped on upload
+- [ ] Guidance text shown on the upload control
+- [ ] Images render on the public tournament page
+- [ ] Uploads survive a redeploy
+
+
+## [ ] 11. Import: admin link creates a new tournament instead of importing into the current one
+
+**High. Owner-reproduced on the live site.**
+
+### 11a. Wrong destination from the admin page
+
+`pb/pb_public/js/event.js` line 2297, on a tournament's admin overview:
+
+    <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+
+`/directors/import` is the standalone create-an-event-from-CSV flow — it asks for
+Event slug and Event name. Clicking it from inside an existing tournament creates
+a second, unrelated tournament rather than importing into the current one. A
+director following it during setup silently ends up with a duplicate.
+
+**Keep `/directors/import` exactly as it is.** Starting a new tournament from a
+grid is a real and wanted flow, reached from the directors landing page.
+
+**Add the scoped version** for use from inside a tournament: same CSV parsing, no
+slug or name fields, games land in the tournament the director is already in.
+There is already a scoped importer to build on — `teamImportDesk()` and
+`bindTeamImport(slug, ...)` — with column mapping and preview.
+
+### 11b. Rename the label
+
+"Import a grid" → **"Import schedule"**. Directors do not call it a grid.
+
+### 11c. Importing must not disable brackets
+
+The CSV import sets `format = "imported"` (`pb/pb_hooks/main.pb.js` line 714,
+`pb/pb_hooks/host.js` line 588). In `pb/pb_hooks/schedule.js`, `"imported"` is
+excluded from both `formatWantsBracket()` and `formatWantsPool()`, so a director
+who imports a pool schedule can never draw a bracket from the standings, and pool
+handling is off too.
+
+**This breaks the core positioning.** "Bring the schedule you already have" is the
+main way a director is expected to start. If importing means no bracket, they go
+back to Tourney Machine for the part that matters most on Sunday.
+
+`"imported"` describes where the games came from, not what the tournament is. It
+should not be a format and should not restrict anything afterward.
+
+**Fix:** record provenance separately — an `imported` boolean, or the existing
+`source` field (`ev.source === "popup"` is already used at line 2299) — and let
+the director pick a real format for an imported event, defaulting to
+`pool-to-bracket`. Imported games populate pool play, standings compute normally,
+the bracket draws from them.
+
+### Acceptance criteria
+
+- [ ] `/directors/import` unchanged: still creates a new tournament from a grid
+- [ ] A scoped import inside a tournament loads games into that tournament only,
+      with no slug or name fields and no new event created
+- [ ] Admin label reads "Import schedule"
+- [ ] An imported pool schedule produces standings
+- [ ] A bracket can be drawn from those standings
+- [ ] Provenance recorded without restricting format
+- [ ] **End-to-end: import the Keystone Clash pool grid as CSV, confirm standings
+      compute with correct seeds, then draw the 8-team double-elim bracket from them**
