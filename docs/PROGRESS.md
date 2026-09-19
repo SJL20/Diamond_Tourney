@@ -199,7 +199,9 @@ SMTP still needs Fly Admin + SPF/DKIM (item 1). GameChanger menu names are not
 invented. Item 26 is untouched. Covered by `BoxScoreTeamPageTests`.
 A stray backtick in the game-page score ternary (`eventGame`) left the SPA
 on “Loading…” in Chrome (`Missing } in template expression`); the false
-branch is one template again.
+branch is one template again. Browser-verified on isolated `:8112`
+(`box-card-classic`): first book 5–3 one-book, mismatch held as —, director
+picked the Dukes book to verified, assist stayed GET-only.
 
 ### 2026-09-19 — open backlog 10–19 and scheduler format save
 
