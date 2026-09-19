@@ -447,3 +447,72 @@ the bracket draws from them.
 - [ ] Provenance recorded without restricting format
 - [ ] **End-to-end: import the Keystone Clash pool grid as CSV, confirm standings
       compute with correct seeds, then draw the 8-team double-elim bracket from them**
+
+
+      ## [ ] 12. Info page shows Keystone Clash's dates and parking map on other tournaments
+
+**High. Owner-reproduced on /t/scarecrow-slugfest/info — wrong data shown publicly.**
+
+### 12a. Hardcoded date fallback
+
+`pb/pb_public/js/event.js` line 1462:
+
+    ["Dates", packet?.dates || "September 11–13, 2026"],
+
+September 11–13 2026 is Keystone Clash. Any tournament without a `packet.dates`
+value displays Keystone's dates on its own public info page. Scarecrow Slugfest
+runs September 26–28 and shows September 11–13.
+
+Every other row in that block falls back correctly to the event's own record —
+Where, Format, Questions all read from `board.event`. Dates is the only one
+carrying a literal.
+
+**Fix:** derive the dates from `board.event.start` and `board.event.end`,
+formatted the same way ("September 26–28, 2026"). Never fall back to a literal
+date. If start and end are missing, show nothing — an empty row is correct; the
+wrong dates are not. Note the `.filter(([, v]) => v)` on that array already drops
+empty rows, so returning an empty string is safe.
+
+### 12b. The parking map is Keystone's, on every local event
+
+Lines 1455–1459, immediately above:
+
+    <img src="/popup/parking-map.png"
+         alt="Aerial map of East End Park showing the main lot off Meadow St and the Field 2 lot.">
+    <p class="muted">Both lots are marked in orange. Enter off Meadow St.
+       Overflow parking is on East O'Hara St.</p>
+
+This renders whenever `local` is true. The image, the alt text, and the
+directions are all East End Park — hardcoded. A tournament at Ambridge Middle
+School shows a map of a park forty minutes away, with instructions to enter off a
+street that isn't there.
+
+**This is worse than the dates.** Wrong dates look like a bug; a wrong parking map
+sends families to the wrong place on a Saturday morning.
+
+**Fix:** render this section only when the event has its own uploaded map, and use
+that image and that event's directions text. This is what item 10 (field map
+upload) provides — until it exists, the section should not render for any event
+that is not Keystone Clash.
+
+### Why this keeps happening
+
+Keystone Clash was imported as the first real tournament and its values were
+written inline as defaults. They are correct for exactly one event and wrong for
+every other one, and they fail silently — the page renders cleanly with the wrong
+information.
+
+Worth a sweep of `event.js` and the hooks for other literals of the same kind:
+East End Park, Meadow St, McDonald, specific 2026-09 dates, the Keystone contact
+names. Anything that names a specific venue, date, or person should come from the
+event record.
+
+### Acceptance criteria
+
+- [ ] Dates on the info page come from the event's own start and end
+- [ ] A tournament with no dates set shows no Dates row, not a fallback date
+- [ ] Scarecrow Slugfest shows September 26–28, 2026
+- [ ] The parking section renders only for events with their own uploaded map
+- [ ] No other tournament displays the East End Park map, alt text, or directions
+- [ ] Grep for remaining hardcoded venue names, addresses, dates and contacts;
+      list anything found
