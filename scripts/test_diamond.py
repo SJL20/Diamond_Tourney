@@ -132,6 +132,8 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Publish blank bracket", event)
         self.assertIn("publish-blank-bracket", event)
         self.assertIn("function bracketPageActions", event)
+        self.assertIn("function isDirector(ev)", event)
+        self.assertIn("function rememberEvent", event)
         self.assertNotIn("September 11–13, 2026", event)
         self.assertNotIn("a.date + a.time + a.field + a.home", event)
         self.assertIn("tb-remove", event)

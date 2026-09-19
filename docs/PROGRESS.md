@@ -203,7 +203,8 @@ order. Public Find looks up a slug exactly instead of scanning only the
 newest 80 weekends, so a new event still appears on a busy box. The
 `/year/{year}` board pages through every public weekend instead of the
 first 80 names, so Keystone Clash stays on 2026 after a long test run.
-SMTP
+The Bracket tab sets the current event before it paints director actions,
+so “Publish blank bracket” still shows on a cold load. SMTP
 (item 1) is still Fly Admin + Cloudflare DNS. Covered by
 `BacklogOpenTests`.
 

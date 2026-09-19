@@ -21,8 +21,8 @@ function goEvent(href) {
 
 let currentEvent = null;
 
-function isDirector() {
-  return canAdminEvent(eventPb.authStore.record, currentEvent);
+function isDirector(ev) {
+  return canAdminEvent(eventPb.authStore.record, ev || currentEvent);
 }
 
 function isTeamScorer() {
@@ -111,6 +111,11 @@ function eventChrome(event, page, body) {
   currentEvent = event || null;
   const site = event ? "" : (page === "create" ? "create" : page);
   return pageShell({ pb: eventPb, site, event, page, body });
+}
+
+function rememberEvent(event) {
+  currentEvent = event || null;
+  return event;
 }
 
 function dateInput(v) {
@@ -1076,7 +1081,7 @@ export async function eventPools(slug) {
 }
 
 function bracketPageActions(board, slug) {
-  if (!isDirector()) return "";
+  if (!isDirector(board.event)) return "";
   const finals = (board.schedule || []).filter((g) => g.status === "final").length;
   const empty = !(board.bracket || []).length;
   return `<section class="card no-print">
@@ -1130,14 +1135,16 @@ function bindBracketPageActions(slug, board) {
 
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
+  rememberEvent(board.event);
   const plan = buildDeskPlan(board);
+  const director = isDirector(board.event);
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head">
       <h1>Bracket</h1>
-      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${isDirector() ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${director ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
     </section>
     ${bracketPageActions(board, slug)}
-    ${board.bracket.length ? `<div class="bracket-print">${bracketBoards(board.bracket, board.roster, plan)}</div>` : `<section class="card">${tabEmpty(board.event, slug, "bracket")}</section>`}
+    ${board.bracket.length ? `<div class="bracket-print">${bracketBoards(board.bracket, board.roster, plan)}</div>` : (director ? "" : `<section class="card">${tabEmpty(board.event, slug, "bracket")}</section>`)}
     ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
   `);
   eventRoot()._deskPlan = plan;
@@ -1986,7 +1993,8 @@ export async function eventSignup(slug) {
     return r.json();
   });
   const ev = roster.event;
-  const director = isDirector();
+  rememberEvent(ev);
+  const director = isDirector(ev);
   const req = ev.required_docs || [];
   const labels = {
     insurance: "Certificate of insurance",
