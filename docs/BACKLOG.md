@@ -786,3 +786,69 @@ Offer it in the refusal message.
 - [ ] Any bracket currently drawn on scarecrow-slugfest from empty standings is
       cleared
 
+
+## [ ] 17. Add a "Clear bracket" action
+
+**High. Owner hit this directly — a bracket drawn in error has no way out.**
+
+A bracket drawn from empty standings (item 16) cannot be removed. Redrawing does
+not help: `buildBracket`'s replace path deletes only games that are not `final`,
+and it immediately draws a new bracket in their place. There is no way to get
+back to no bracket.
+
+A director who presses "Draw bracket from standings" to see what it does now has
+a public bracket with alphabetical matchups on it, and no way to take it down.
+
+### What to build
+
+A **Clear bracket** action in the scheduler section of the admin page, beside
+"Draw bracket from standings."
+
+Deletes all rows in `bracket_games` for the event and resets the event's bracket
+state so the Bracket tab returns to its empty state.
+
+### Behavior
+
+**Confirm first**, naming what will be removed: "Delete all 8 bracket games?
+Games already marked final will be kept." Destructive and not undoable.
+
+**Never delete a final game.** Same rule as the existing replace logic — a
+completed game is a result, not a draft. If finals exist, say so plainly before
+and after: "3 games kept because they are already final."
+
+**Refuse cleanly when every game is final.** Clearing a completed bracket is
+almost certainly a mistake. Say why rather than doing nothing silently.
+
+**Reset bracket state**, not just the rows — `bracket_mode` and anything else set
+by `buildBracket` — so a later draw starts clean rather than inheriting settings
+from the bad one.
+
+### Build on what exists
+
+- `schedule.deleteGame(app, event, id)` at `pb/pb_hooks/main.pb.js` line 584 is the
+  single-game equivalent
+- The `DELETE /api/events/{slug}/teams/{id}` route at line 310 is the pattern to follow
+- `buildBracket`'s replace block already does the bulk delete with the final guard —
+  the same loop, without the redraw
+
+Suggested route: `DELETE /api/events/{slug}/bracket`, director or region admin only.
+
+### While here
+
+The same problem exists for pool play. "Replace unplayed pool games" rebuilds but
+cannot empty. A **Clear schedule** action with identical rules would close the
+gap, and it pairs with item 13 where that checkbox is already flagged as unclear
+and over-broad.
+
+### Acceptance criteria
+
+- [ ] Clear bracket present in the scheduler section
+- [ ] Confirmation names the game count before deleting
+- [ ] Final games are never deleted, and the count kept is reported
+- [ ] Clearing a fully-final bracket is refused with a reason
+- [ ] Bracket state reset, so a later draw starts clean
+- [ ] The Bracket tab returns to its empty state afterward
+- [ ] Director and region admin only — verify with a logged-out request
+- [ ] Equivalent Clear schedule action for pool play
+
+
