@@ -162,6 +162,11 @@ class TournamentUiTests(unittest.TestCase):
         self.assertNotIn('value="clipboard-open"', event)
         self.assertNotIn('value="Clipboard Open"', event)
         self.assertNotIn('value="Hawks Classic"', event)
+        self.assertIn("function rewriteFieldInputName", event)
+        self.assertIn("function renumberFieldRows", event)
+        self.assertIn("does not change imported pool games", event)
+        self.assertIn("does not rewrite an imported pool grid", event)
+        self.assertIn("delete body.replace", event)
         add_game = event.split('id="add-game-form"', 1)[1].split("customBracketDesk", 1)[0]
         self.assertNotIn('<input name="home"', add_game)
         self.assertNotIn('<input name="away"', add_game)
@@ -189,6 +194,28 @@ class TournamentUiTests(unittest.TestCase):
         self.assertLess(desk.find("class=\"bk-score\""), desk.find("</details>"))
         self.assertGreater(desk.find("</details>"), desk.find("data-bk-id"))
         self.assertIn(".bk-desk-box:not([open]) > *:not(summary)", css)
+
+    def test_field_rows_renumber_from_dom(self):
+        src = (ROOT / "pb/pb_public/js/event.js").read_text()
+        bind = src.split("function bindFieldRows", 1)[1].split("function setupFormatFields", 1)[0]
+        self.assertIn("renumberFieldRows(root)", bind)
+        self.assertIn("querySelectorAll(\".field-row\").length", bind)
+        self.assertNotIn("n += 1", bind)
+        self.assertNotIn("Math.max(n,", bind)
+        rewrite = src.split("function rewriteFieldInputName", 1)[1].split("function renumberFieldRows", 1)[0]
+        self.assertIn("field_day_", rewrite)
+        js = (
+            "function rewriteFieldInputName" + rewrite
+            + "const eq=(a,b)=>{if(a!==b) throw new Error(a+' != '+b)};"
+            + "eq(rewriteFieldInputName('field_name_3',0),'field_name_0');"
+            + "eq(rewriteFieldInputName('field_id_3',1),'field_id_1');"
+            + "eq(rewriteFieldInputName('field_pin_set_12',1),'field_pin_set_1');"
+            + "eq(rewriteFieldInputName('field_day_3_2_start',0),'field_day_0_2_start');"
+            + "eq(rewriteFieldInputName('field_day_3_2_on',1),'field_day_1_2_on');"
+            + "eq(rewriteFieldInputName('venue',0),'venue');"
+        )
+        import subprocess
+        subprocess.check_call(["node", "-e", js])
 
 
 class BoardTests(unittest.TestCase):
@@ -2444,6 +2471,124 @@ class ScheduleCsvImportTests(unittest.TestCase):
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertEqual(board["event"]["name"], "Named Grid Classic")
         self.assertEqual((board["event"].get("pitch_limit_mode") or "none"), "none")
+
+
+class FieldRowNumberTests(unittest.TestCase):
+    """Form field indexes stay dense so Add another field never skips a number."""
+
+    def test_dense_and_gapped_field_names_persist(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "field-n-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Field Numbers Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        first_id = created["event"]["fields"][0]["id"]
+        after_remove_middle = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "field_id_0": first_id,
+            "field_name_0": "Harbor 1",
+            "field_name_1": "Harbor 3",
+        })
+        names = [f["name"] for f in after_remove_middle["event"]["fields"]]
+        self.assertEqual(names, ["Harbor 1", "Harbor 3"])
+        keys = {k: f"Diamond {i + 1}" for i, k in enumerate([f"field_name_{i}" for i in range(20)])}
+        keys["field_id_0"] = after_remove_middle["event"]["fields"][0]["id"]
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", td, keys)
+        got = [f["name"] for f in saved["event"]["fields"]]
+        self.assertEqual(len(got), 20)
+        self.assertEqual(set(got), {f"Diamond {i}" for i in range(1, 21)})
+        again = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertEqual({f["name"] for f in again["fields"]}, set(got))
+
+
+class ImportedScheduleBracketTests(unittest.TestCase):
+    """Selecting or drawing a bracket must not rewrite an imported pool grid."""
+
+    CSV = (
+        "date,time,home,away,pool,field,home_runs,away_runs,status\n"
+        "2026-09-20,09:00,Northside,West End,A,Harbor 1,5,3,final\n"
+        "2026-09-20,10:30,West End,Northside,A,Harbor 1,1,4,final\n"
+        "2026-09-20,09:00,Eastside,South Ridge,B,Harbor 2,,,scheduled\n"
+        "2026-09-21,11:00,Northside,Eastside,A,Harbor 1,,,scheduled\n"
+    )
+
+    def _import(self, td, prefix="imp-bk"):
+        slug = prefix + "-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/event/import-schedule", td, {
+            "event_slug": slug,
+            "event_name": "Imported Bracket Weekend",
+            "csv": self.CSV,
+            "replace": True,
+            "create": True,
+        })
+        return slug
+
+    def _snap(self, slug):
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        rows = [(g["id"], g["date"], g["time"], g["home"], g["away"], g["status"], g.get("field") or "")
+                for g in board["schedule"]]
+        return board, sorted(rows)
+
+    def test_draw_bracket_keeps_imported_pool_games(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._import(td, "draw")
+        _, before = self._snap(slug)
+        self.assertEqual(len(before), 4)
+        request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "format": "pool-to-bracket",
+            "replace": True,
+            "draw_bracket": True,
+        })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "format": "pool-to-bracket",
+            "consolation": True,
+        })
+        self.assertGreaterEqual(drawn["games"], 2)
+        board, after = self._snap(slug)
+        self.assertEqual(after, before)
+        self.assertTrue(board["bracket"])
+
+    def test_selecting_bracket_then_auto_keeps_imported_pool(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._import(td, "auto")
+        _, before = self._snap(slug)
+        request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "format": "pool-to-bracket",
+            "bracket_flights": "none",
+        })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-20", "2026-09-21"],
+            "replace": True,
+            "draw_bracket": True,
+            "format": "pool-to-bracket",
+            "games_per_team": 2,
+        })
+        self.assertEqual(auto["games"], 0)
+        self.assertIn("imported", (auto.get("note") or "").lower())
+        board, after = self._snap(slug)
+        self.assertEqual(after, before)
+        self.assertTrue(board["bracket"])
+        names = {(g["home"], g["away"], g["time"]) for g in board["schedule"]}
+        self.assertIn(("Eastside", "South Ridge", "09:00"), names)
+        self.assertIn(("Northside", "Eastside", "11:00"), names)
+
+    def test_auto_with_imported_format_does_not_drop_unplayed(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._import(td, "keep")
+        _, before = self._snap(slug)
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-20"],
+            "replace": True,
+            "draw_bracket": False,
+            "format": "imported",
+        })
+        self.assertEqual(auto["games"], 0)
+        _, after = self._snap(slug)
+        self.assertEqual(after, before)
 
 
 if __name__ == "__main__":

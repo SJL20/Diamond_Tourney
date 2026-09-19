@@ -128,8 +128,26 @@ function weekendFromForm(root, ev = {}) {
   };
 }
 
+function rewriteFieldInputName(name, next) {
+  const raw = String(name || "");
+  const day = raw.match(/^field_day_(\d+)_(\d+)_(.+)$/);
+  if (day) return "field_day_" + next + "_" + day[2] + "_" + day[3];
+  const row = raw.match(/^field_([a-z_]+)_(\d+)$/);
+  if (row) return "field_" + row[1] + "_" + next;
+  return raw;
+}
+
+function renumberFieldRows(root) {
+  [...root.querySelectorAll(".field-row")].forEach((fs, i) => {
+    const legend = fs.querySelector("legend");
+    if (legend) legend.textContent = "Field " + (i + 1);
+    fs.querySelectorAll("[name]").forEach((el) => {
+      el.setAttribute("name", rewriteFieldInputName(el.getAttribute("name"), i));
+    });
+  });
+}
+
 function bindFieldRows(root, startCount, ev = {}) {
-  let n = startCount;
   const add = root.querySelector("#add-field");
   const syncRemoves = () => {
     const rows = root.querySelectorAll(".field-row");
@@ -161,10 +179,9 @@ function bindFieldRows(root, startCount, ev = {}) {
     add.addEventListener("click", () => {
       const box = root.querySelector("#field-rows");
       const { dates, hoursStart, hoursEnd } = weekendFromForm(root, ev);
-      const used = [...root.querySelectorAll("[name^='field_name_']")].map((el) => Number(String(el.name).replace("field_name_", ""))).filter((v) => !Number.isNaN(v));
-      n = Math.max(n, ...(used.length ? used : [-1])) + 1;
-      box.insertAdjacentHTML("beforeend", fieldRow({}, n, dates, hoursStart, hoursEnd));
-      n += 1;
+      const next = root.querySelectorAll(".field-row").length;
+      box.insertAdjacentHTML("beforeend", fieldRow({}, next, dates, hoursStart, hoursEnd));
+      renumberFieldRows(root);
       syncRemoves();
     });
   }
@@ -174,6 +191,7 @@ function bindFieldRows(root, startCount, ev = {}) {
     const rows = root.querySelectorAll(".field-row");
     if (rows.length <= 1) return;
     btn.closest(".field-row")?.remove();
+    renumberFieldRows(root);
     syncRemoves();
   });
   ["start", "end", "hours_start", "hours_end"].forEach((name) => {
@@ -204,7 +222,7 @@ function setupFormatFields(ev = {}) {
         <option value="platinum-gold-silver" ${flights === "platinum-gold-silver" ? "selected" : ""}>Platinum / Gold / Silver (split by overall ranking)</option>
       </select>
     </label>
-    <p class="muted">Pool games are scheduled per field. Round robin plays every team in a pool. Gold/Silver and Platinum/Gold/Silver cut the overall seed list from the top. Double-elim adds a losers bracket. Use the custom bracket builder on Scheduler to place teams by hand.</p>
+    <p class="muted">Pool games are scheduled per field. Round robin plays every team in a pool. Gold/Silver and Platinum/Gold/Silver cut the overall seed list from the top. Double-elim adds a losers bracket. Changing this format or drawing a bracket does not rewrite an imported pool grid. Use the custom bracket builder on Scheduler to place teams by hand.</p>
   `;
 }
 
@@ -2379,7 +2397,9 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="scheduler" hidden>
           <h2>Scheduler</h2>
-          <p class="muted">Round-robin inside each pool. A diamond is only used while it is open that day.</p>
+          <p class="muted">${ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported")
+            ? "This weekend has an imported pool grid. Draw a bracket from standings — that does not change pool play. Build pool schedule will not replace those games."
+            : "Round-robin inside each pool. A diamond is only used while it is open that day. Drawing or selecting a bracket does not change imported pool games."}</p>
           ${scheduleImportDesk()}
           <form class="form wide" id="auto-form">
             <div class="form-grid two">
@@ -2396,7 +2416,7 @@ export async function eventAdmin(slug) {
               </select>
             </label>
             <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> If you draw a bracket, include consolation games</label>
-            <label class="check"><input type="checkbox" name="replace"${!ev.scheduler || ev.scheduler.replace !== false ? " checked" : ""}> Replace unplayed pool games</label>
+            <label class="check"><input type="checkbox" name="replace"${ev.format !== "imported" && (!ev.scheduler || ev.scheduler.origin !== "imported") && (!ev.scheduler || ev.scheduler.replace !== false) ? " checked" : ""}> Replace unplayed pool games</label>
             <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also draw empty bracket slots now</label>
             <div class="actions">
               <button class="btn" type="submit">Build pool schedule</button>
@@ -2583,6 +2603,7 @@ export async function eventAdmin(slug) {
   });
   document.getElementById("build-bracket").addEventListener("click", async () => {
     const body = schedulerBody(new FormData(document.getElementById("auto-form")));
+    delete body.replace;
     try {
       await adminPost(slug, "/settings", body);
       const out = await adminPost(slug, "/bracket/build", body);
