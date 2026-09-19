@@ -2914,12 +2914,21 @@ export async function eventAdmin(slug) {
         <section class="card" data-admin-pane="stats" hidden>
           <h2>Stats inbox</h2>
           <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Bots also poll stored public GC URLs during a live event. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
-          ${pending.length ? table(["Game", "Door", "Status", ""], pending.map((b) => `<tr>
+          ${pending.length ? table(["Game", "Door", "Status", ""], pending.map((b) => {
+            const waiting = b.status === "queued" || b.status === "submitted" || b.status === "needs_review";
+            return `<tr>
             <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
             <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>
             <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
-            <td>${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open</a>` : ""}</td>
-          </tr>`)) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
+            <td>
+              ${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open</a>` : ""}
+              ${waiting && b.id ? `
+                <button class="btn" type="button" data-box-review="${escapeHtml(b.id)}" data-box-status="approved">Approve</button>
+                <button class="btn ghost" type="button" data-box-review="${escapeHtml(b.id)}" data-box-status="rejected">Reject</button>
+              ` : ""}
+            </td>
+          </tr>`;
+          })) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
         </section>
         <section class="card" data-admin-pane="boxes" hidden>
           <h2>Box scores</h2>
@@ -3196,6 +3205,19 @@ export async function eventAdmin(slug) {
         flashSaved("Packet approved");
         eventAdmin(slug);
       } catch (err) { showErr(err); }
+    });
+  });
+  eventRoot().querySelectorAll("[data-box-review]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await adminPost(slug, "/boxes/" + btn.dataset.boxReview + "/review", { status: btn.dataset.boxStatus });
+        flashSaved(btn.dataset.boxStatus === "approved" ? "Box approved" : "Box rejected");
+        eventAdmin(slug);
+      } catch (err) {
+        btn.disabled = false;
+        showErr(err);
+      }
     });
   });
   const dupBtn = document.getElementById("duplicate-event");
