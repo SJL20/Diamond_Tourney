@@ -1902,3 +1902,69 @@ before shipping uploads — it is the state most teams will be in.
 - [ ] Resized server-side; page weight stays reasonable with 14+ logos
 - [ ] Printed bracket still readable in black and white
 - [ ] Nothing pulled from GameChanger or any third party
+
+
+## [ ] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
+
+**High. Blocks building a bracket before pool play. Corrects a recent change.**
+
+The custom bracket builder restricts Home and Away to registered teams
+(`pb/pb_public/js/event.js` line 2230, tightened by the commit "Require
+registered-team dropdowns on the scheduler and custom bracket").
+
+That is backwards for the moment brackets are actually built. A director designs
+the bracket **before pool play ends**, when nobody knows which team is the 2
+seed. The bracket is defined in seeds and advancement, and teams resolve into it
+as results land.
+
+The director's own Scarecrow Slugfest sheet is written exactly this way:
+
+    Gold:    2nd v 7th (G1)    3rd v 6th (G2)    1st v 8th (G3)    4th v 5th (G4)
+             WG1 v WG2         WG3 v WG4         Championship
+    Silver:  3rd v 6th (G1)    4th v 5th (G2)    1st v WG2    2nd v WG1
+
+Not one team name anywhere. That is the native format, not a placeholder for a
+real bracket.
+
+### The CSV importer already gets this right
+
+Line 2179: "Home and away may be a registered team, seed:3, winner:B1, or
+loser:B5."
+
+The builder and the importer must accept the same things. Two bracket paths
+disagreeing about what a slot can hold is worse than either restriction alone.
+
+### What a slot must accept
+
+- **A seed within the flight** — `seed:3`, displayed as "3rd". The common case.
+- **The winner of another game** — `winner:G1`, displayed as "WG1"
+- **The loser of another game** — `loser:G3`, for double elim and consolation
+- **A registered team** — for a fixed matchup the director sets deliberately
+- **Empty / TBD** — for a slot not yet decided
+
+Dropdown grouped by kind, with seeds listed first since that is what directors
+reach for.
+
+### Seeds are scoped to the flight
+
+`seed:3` in Silver means Silver's third seed, not the overall third. Per item
+26b, a director may reseed within a flight or keep overall seeds — the display
+should make clear which is in effect: "3rd (Silver)" versus "3rd overall".
+
+### Resolution
+
+When pool play produces final standings, seed references resolve to teams
+automatically. The bracket does not get rebuilt — the same games fill in.
+
+A director can still override any resolved slot by hand afterward (item 26g).
+
+### Acceptance criteria
+
+- [ ] Home and Away accept seed, winner-of, loser-of, registered team, or empty
+- [ ] Builder and CSV importer accept the same set of values
+- [ ] Seed references scoped to the flight, with the scope shown
+- [ ] A full bracket can be built with zero teams registered
+- [ ] Seeds resolve to teams when standings are final, without a rebuild
+- [ ] Manual override still available after resolution
+- [ ] **Build the Scarecrow Slugfest Gold and Silver brackets above entirely in
+      seed and winner references, before any pool game is played**
