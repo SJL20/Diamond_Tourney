@@ -109,7 +109,7 @@ migrate((app) => {
     maxSize: 15728640,
     mimeTypes: ["application/pdf", "image/jpeg", "image/png", "image/webp"],
   }));
-  col.fields.add(new UrlField({ name: "gc_url" }));
+  col.fields.add(new URLField({ name: "gc_url" }));
   col.fields.add(new JSONField({ name: "parsed" }));
   col.fields.add(new SelectField({
     name: "status",

@@ -212,8 +212,10 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("data-assist", event)
         self.assertIn("/boxes/desk", event)
         self.assertIn("next-game", event)
-        self.assertIn("/team/", app)
-        self.assertIn("/box/", app)
+        self.assertIn("eteam", app)
+        self.assertIn("eventTeamPage", app)
+        self.assertIn("boxupload", app)
+        self.assertIn("boxHelpPage", app)
         self.assertIn("box-score-ask", (ROOT / "pb/pb_hooks/main.pb.js").read_text())
         self.assertIn("box_submissions", (ROOT / "pb/pb_migrations/1700000029_box_submissions.js").read_text())
 

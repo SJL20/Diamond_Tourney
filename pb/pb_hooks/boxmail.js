@@ -47,9 +47,24 @@ function expectedEndMs(event, game) {
   return start + (mins + BUFFER_MINUTES) * 60000;
 }
 
+function dateMs(v) {
+  if (v == null || v === "" || v === false) return 0;
+  const t = Date.parse(String(v).replace(" ", "T"));
+  if (t && t > 24 * 3600 * 1000) return t;
+  try {
+    const n = new Date(v).getTime();
+    return n > 24 * 3600 * 1000 ? n : 0;
+  } catch (err) {
+    return 0;
+  }
+}
+
+function hasDate(rec, field) {
+  return dateMs(rec.get(field)) > 0;
+}
+
 function reminderDue(emailedAt, nowMs) {
-  if (!emailedAt) return false;
-  const sent = new Date(emailedAt).getTime();
+  const sent = dateMs(emailedAt);
   if (!sent) return false;
   const sentDay = new Date(sent).toISOString().slice(0, 10);
   const nowDay = new Date(nowMs).toISOString().slice(0, 10);
@@ -163,7 +178,7 @@ function sendInvite(app, event, game, team, rec, reminder, nowMs) {
     else reason = out.reason || reason;
   }
   const now = new Date(nowMs || Date.now()).toISOString();
-  rec.set("emailed_at", rec.get("emailed_at") || now);
+  if (!hasDate(rec, "emailed_at")) rec.set("emailed_at", now);
   if (reminder) rec.set("reminder_at", now);
   app.save(rec);
   return { sent: sent, reason: reason, token: rec.get("token") };
@@ -212,12 +227,12 @@ function runBoxMail(app, opts) {
         try { team = app.findRecordById("event_teams", ids[t]); } catch (err) { continue; }
         if (optedOut(app, team)) { summary.skipped++; continue; }
         let rec = findInvite(app, event.id, game.id, team.id, kind);
-        if (rec && rec.get("submitted_at")) { summary.skipped++; continue; }
+        if (rec && hasDate(rec, "submitted_at")) { summary.skipped++; continue; }
         if (rec && rec.get("unsubscribed")) { summary.skipped++; continue; }
-        if (rec && rec.get("emailed_at") && rec.get("reminder_at")) { summary.skipped++; continue; }
-        if (rec && rec.get("emailed_at") && !reminderDue(rec.get("emailed_at"), nowMs)) { summary.skipped++; continue; }
+        if (rec && hasDate(rec, "emailed_at") && hasDate(rec, "reminder_at")) { summary.skipped++; continue; }
+        if (rec && hasDate(rec, "emailed_at") && !reminderDue(rec.get("emailed_at"), nowMs)) { summary.skipped++; continue; }
         if (!rec) rec = inviteRow(app, event, game, team, kind);
-        const reminder = !!(rec.get("emailed_at") && !rec.get("reminder_at"));
+        const reminder = !!(hasDate(rec, "emailed_at") && !hasDate(rec, "reminder_at"));
         const out = sendInvite(app, event, game, team, rec, reminder, nowMs);
         if (reminder) summary.reminded++;
         else summary.invited++;
@@ -247,7 +262,7 @@ function publicInvite(app, rec) {
   else game = app.findRecordById("event_schedule", rec.get("schedule_row"));
   const meta = gameLabel(app, event, game);
   const expires = rec.get("expires");
-  const expired = expires && new Date(expires).getTime() < Date.now();
+  const expired = dateMs(expires) && dateMs(expires) < Date.now();
   return {
     event: { name: event.get("name"), slug: event.get("slug") },
     team: { name: team.get("name"), slug: team.get("slug") },
@@ -262,15 +277,14 @@ function publicInvite(app, rec) {
       away: meta.away,
     },
     expired: !!expired,
-    submitted: !!rec.get("submitted_at"),
+    submitted: hasDate(rec, "submitted_at"),
     help: "/help/box-score",
   };
 }
 
 function assertLiveToken(rec) {
   if (rec.get("unsubscribed")) throw new BadRequestError("This team asked not to get box-score mail.");
-  const expires = rec.get("expires");
-  if (expires && new Date(expires).getTime() < Date.now()) {
+  if (dateMs(rec.get("expires")) && dateMs(rec.get("expires")) < Date.now()) {
     throw new BadRequestError("That upload link is expired.");
   }
 }
@@ -300,6 +314,7 @@ function loadGame(app, rec) {
 }
 
 function runsOf(rec) {
+  if (!hasDate(rec, "submitted_at")) return null;
   if (rec.get("home_runs") == null || rec.get("away_runs") == null) return null;
   return { home: Number(rec.get("home_runs")), away: Number(rec.get("away_runs")) };
 }
@@ -449,7 +464,7 @@ function unsubscribeToken(app, token) {
 }
 
 function gameStateFromRows(rows) {
-  const parsed = rows.filter(function (r) { return r.get("submitted_at") && r.get("home_runs") != null; });
+  const parsed = rows.filter(function (r) { return hasDate(r, "submitted_at") && r.get("status") !== "invited"; });
   if (parsed.length === 0) {
     if (rows.some(function (r) { return r.get("submitted_at"); })) return "waiting";
     return "none";
@@ -472,9 +487,9 @@ function deskRow(app, rec) {
     team: team ? team.get("name") : "",
     team_slug: team ? team.get("slug") : "",
     status: rec.get("status") || "invited",
-    emailed: !!rec.get("emailed_at"),
-    reminded: !!rec.get("reminder_at"),
-    submitted: !!rec.get("submitted_at"),
+    emailed: hasDate(rec, "emailed_at"),
+    reminded: hasDate(rec, "reminder_at"),
+    submitted: hasDate(rec, "submitted_at"),
     method: rec.get("method") || "",
     home_runs: rec.get("home_runs"),
     away_runs: rec.get("away_runs"),
