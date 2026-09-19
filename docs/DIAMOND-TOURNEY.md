@@ -49,7 +49,7 @@ Age groups are a multi-select (6U–18U, including 11U). Class A/B/C and combine
 
 ## Awards
 
-All-tournament team is the leaderboard with gates (min 8 AB / 3.0 IP), printed Sunday on the field — `/t/{slug}/awards`. Not “who the director happened to watch.”
+All-tournament team is the leaderboard with gates (min 8 AB / 3.0 IP), printed Sunday on the field — `/t/{slug}/awards`. Not “who the director happened to watch.” Live `/leaders` and `/stats` gates start at 2 AB / 1.0 IP after the first final and rise with games played (2 AB and 1.0 IP per game, capped at those weekend numbers). Pitching-count “over” only appears when the event has a posted IP cap.
 
 ## GameChanger monitor loop
 

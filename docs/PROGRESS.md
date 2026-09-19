@@ -186,6 +186,19 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-19 — Dynamic leader gates and no “over” without an IP cap
+
+Test Run on diamondtourney.com showed Min 8 AB / Min 5 IP and pitching counts
+“Weekend limit 0.0 IP” with an over badge. Native weekends default to no
+pitching cap; a 0.0 cap treated any inning as over. Counts now say “No posted
+weekend inning cap” and never print over/ok unless `pitch_limit_mode` is ip or
+both and the IP cap is above zero.
+
+Live qualifying mins scale with finals played: 2 AB / 1.0 IP after the first
+game, 4 AB / 2.0 IP after two, up to the Sunday awards line (8 AB / 3.0 IP).
+Keystone packet mins stay as published. Awards still use 8 / 3.0. Covered by
+`LeaderQualifyTests`.
+
 ### 2026-09-19 — Claude 8:33: parking map href + flights persist
 
 Derek’s 8:33 mail (Claude, on his behalf) said PR #26 left two items half-done.

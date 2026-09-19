@@ -419,6 +419,17 @@ function teamNameLink(eventSlug, roster, name) {
   return teamLink(eventSlug, slugForName(roster, name), name);
 }
 
+function hasPitchIpCap(ev, leaders) {
+  if (leaders && leaders.has_pitch_ip_cap === true) return true;
+  if (leaders && leaders.has_pitch_ip_cap === false) return false;
+  const mode = (ev && ev.pitch_limit_mode) || "none";
+  return (mode === "ip" || mode === "both") && Number(ev && ev.pitch_limit_ip) > 0;
+}
+
+function qualifyNote(leaders) {
+  return (leaders && leaders.stats_note) || "Qualifying minimums rise with games played, up to 8 at-bats and 3.0 innings. Lines come from each team’s published scorebook.";
+}
+
 function gameNo(g) {
   const n = Number(g?.game_number || 0);
   return n > 0 ? "Game " + n : "";
@@ -1398,24 +1409,31 @@ export async function eventLeaders(slug) {
     <td>${r.ip ?? ""}</td><td>${r.k ?? r.so ?? ""}</td><td>${r.era || r.era_display || ""}</td>
   </tr>`);
   const full = fullHit.filter((r) => r.q !== false).concat(fullHit.filter((r) => r.q === false));
-  const counts = board.leaders.pitch_counts.map((r) => `<tr>
+  const cap = hasPitchIpCap(board.event, board.leaders);
+  const minAb = board.leaders.min_ab != null ? board.leaders.min_ab : 8;
+  const minIp = board.leaders.min_ip != null ? board.leaders.min_ip : 3;
+  const hitRank = board.leaders.qualify_source === "packet" ? "ranked by OPS on the popup" : "ranked by batting average";
+  const counts = (board.leaders.pitch_counts || []).map((r) => cap ? `<tr>
     <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-    <td>${r.ip}</td><td>${board.event.pitch_limit_ip}.0</td>
-    <td>${r.ip_outs > board.event.pitch_limit_ip * 3 ? `<span class="badge l">over</span>` : `<span class="badge w">ok</span>`}</td>
+    <td>${r.ip}</td><td>${r.limit_ip != null ? r.limit_ip : board.event.pitch_limit_ip}.0</td>
+    <td>${r.over ? `<span class="badge l">over</span>` : `<span class="badge w">ok</span>`}</td>
+  </tr>` : `<tr>
+    <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
+    <td>${r.ip}</td>
   </tr>`);
   eventRoot().innerHTML = eventChrome(board.event, "stats", `
     <section class="page-head">
       <h1>Stat leaders</h1>
-      <p class="muted">${escapeHtml(board.leaders.stats_note || "Qualifying minimums are 8 at-bats and 5 innings. Lines come from each team’s published scorebook.")}</p>
+      <p class="muted">${escapeHtml(qualifyNote(board.leaders))}</p>
       <div class="actions">
         <a class="btn ghost" data-link href="/t/${board.event.slug}/stats">Full board</a>
         <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
       </div>
     </section>
     <section class="grid two">
-      <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${board.leaders.min_ab || 8} AB · ranked by OPS on the popup</p>
+      <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${minAb} AB · ${hitRank}</p>
         ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS"], hit)}</div>
-      <div class="card"><h2>Pitching leaders</h2><p class="muted">Min ${board.leaders.min_ip || 5} IP · ERA as published</p>
+      <div class="card"><h2>Pitching leaders</h2><p class="muted">Min ${minIp} IP · ERA as published</p>
         ${table(["Player", "Team", "IP", "K", "ERA"], pit)}</div>
     </section>
     ${full.length ? `<section class="card"><h2>Full published hitting board</h2>
@@ -1426,8 +1444,8 @@ export async function eventLeaders(slug) {
         <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
       </tr>`))}</section>` : ""}
     <section class="card"><h2>Pitching counts</h2>
-      <p class="muted">Weekend limit ${board.event.pitch_limit_ip}.0 IP. Tracked in one place, not forty texts.</p>
-      ${table(["Player", "Team", "IP used", "Limit", ""], counts)}
+      <p class="muted">${cap ? `Weekend limit ${board.event.pitch_limit_ip}.0 IP. Tracked in one place, not forty texts.` : "No posted weekend inning cap. IP used is tracked here."}</p>
+      ${table(cap ? ["Player", "Team", "IP used", "Limit", ""] : ["Player", "Team", "IP used"], counts)}
     </section>`);
 }
 
@@ -1437,7 +1455,7 @@ export async function eventAwards(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "awards", `
     <section class="page-head print-sheet">
       <h1>All-tournament</h1>
-      <p class="muted">Picked on numbers, not on which kid the director happened to watch.</p>
+      <p class="muted">Picked on numbers, not on which kid the director happened to watch. Weekend awards stay 8 AB / 3.0 IP.</p>
       <div class="actions"><button class="btn" type="button" onclick="window.print()">Print award sheet</button></div>
     </section>
     <section class="grid two">
@@ -1569,7 +1587,7 @@ export async function eventStats(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "stats", `
     <section class="page-head">
       <h1>Full stats board</h1>
-      <p class="muted">${escapeHtml(board.leaders.stats_note || "Published scorebook lines. Filter by team. Qualifying line is 8 AB / 5 IP.")}</p>
+      <p class="muted">${escapeHtml(qualifyNote(board.leaders) || "Published scorebook lines. Filter by team. Qualifying line scales with games played, up to 8 AB / 3.0 IP.")}</p>
       <div class="actions">
         <a class="btn ghost" data-link href="/t/${board.event.slug}/leaders">Leaders</a>
         <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
