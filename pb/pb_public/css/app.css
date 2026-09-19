@@ -269,6 +269,9 @@ button, input, select, textarea { font: inherit; }
 }
 .admin-stage { min-width: 0; }
 .admin-stage .card[hidden] { display: none; }
+.approve-banner { border-color: var(--navy, #1b2a4a); }
+.approve-banner h2, .approve-banner h3 { margin-top: 0; }
+.approve-stats-actions { margin-top: 8px; }
 .admin-jump { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 6px; }
 .admin-jump button.link {
   background: none;

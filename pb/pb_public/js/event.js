@@ -1267,6 +1267,11 @@ export async function eventGame(slug, id) {
       <p class="muted">${escapeHtml([g.date, g.time, g.field, g.pool ? "Pool " + g.pool : ""].filter(Boolean).join(" · "))}</p>
       <p><a data-link href="/t/${escapeHtml(slug)}/schedule">Back to games</a></p>
     </section>
+    ${detail.director && boxWaiting(box) ? `<section class="card approve-banner">
+      <h2>Approve stats</h2>
+      <p class="muted">${escapeHtml(box.source || "box")} · ${escapeHtml(box.status)}. Approve publishes this game’s hitting and pitching on the public board.</p>
+      ${approveStatsButtons(box.id)}
+    </section>` : ""}
     <section class="card">
       <h2>Score</h2>
       ${can ? `<form class="form wide" id="score-form">
@@ -1322,7 +1327,7 @@ export async function eventGame(slug, id) {
       </details>
       <details class="setup-block">
         <summary>3. Grok bot upload</summary>
-        <p class="muted">Queued PDFs and public GC links show in Admin → Stats inbox and <code>GET /api/bot/gc-monitor</code>. A bot (or you) posts extracted hitting, pitching, and score to <code>/api/bot/event-box</code>. Local: <code>python3 scripts/bot_gc_monitor.py --list</code> then <code>python3 scripts/bot_c_event_box.py --event ${escapeHtml(slug)} --game ${escapeHtml(id)}</code>.</p>
+        <p class="muted">Queued PDFs and public GC links show in Admin → Approve stats and <code>GET /api/bot/gc-monitor</code>. A bot (or you) posts extracted hitting, pitching, and score to <code>/api/bot/event-box</code>. Local: <code>python3 scripts/bot_gc_monitor.py --list</code> then <code>python3 scripts/bot_c_event_box.py --event ${escapeHtml(slug)} --game ${escapeHtml(id)}</code>.</p>
       </details>
       ${detail.director ? `<details class="setup-block" open>
         <summary>4. Director PDF</summary>
@@ -1392,6 +1397,9 @@ export async function eventGame(slug, id) {
       });
     }
   });
+  if (detail.director && boxWaiting(box)) {
+    bindBoxReview(slug, () => eventGame(slug, id));
+  }
 }
 
 export async function eventLeaders(slug) {
@@ -1421,6 +1429,7 @@ export async function eventLeaders(slug) {
     <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
     <td>${r.ip}</td>
   </tr>`);
+  const approveBanner = await directorApproveBanner(slug, board.event);
   eventRoot().innerHTML = eventChrome(board.event, "stats", `
     <section class="page-head">
       <h1>Stat leaders</h1>
@@ -1430,6 +1439,7 @@ export async function eventLeaders(slug) {
         <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
       </div>
     </section>
+    ${approveBanner}
     <section class="grid two">
       <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${minAb} AB · ${hitRank}</p>
         ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS"], hit)}</div>
@@ -1584,6 +1594,7 @@ export async function eventStats(slug) {
   const hitting = board.leaders.full_hitting || [];
   const pitching = board.leaders.full_pitching || [];
   const teams = [...new Set([...hitting, ...pitching].map((r) => r.team).filter(Boolean))].sort();
+  const approveBanner = await directorApproveBanner(slug, board.event);
   eventRoot().innerHTML = eventChrome(board.event, "stats", `
     <section class="page-head">
       <h1>Full stats board</h1>
@@ -1594,6 +1605,7 @@ export async function eventStats(slug) {
         ${board.event.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/stats.html">Popup stats</a>` : ""}
       </div>
     </section>
+    ${approveBanner}
     <section class="card">
       <div class="tabs" role="tablist">
         <button class="tab active" type="button" data-stats-tab="hit">Hitting</button>
@@ -2156,6 +2168,62 @@ async function adminPost(slug, path, body, json = true) {
   return res.json();
 }
 
+function boxWaiting(box) {
+  const status = box && box.status;
+  return status === "queued" || status === "submitted" || status === "needs_review";
+}
+
+function approveStatsButtons(boxId) {
+  if (!boxId) return "";
+  return `<div class="actions approve-stats-actions">
+    <button class="btn" type="button" data-box-review="${escapeHtml(boxId)}" data-box-status="approved">Approve stats</button>
+    <button class="btn ghost" type="button" data-box-review="${escapeHtml(boxId)}" data-box-status="rejected">Reject</button>
+  </div>`;
+}
+
+function bindBoxReview(slug, reload, showErr) {
+  eventRoot().querySelectorAll("[data-box-review]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await adminPost(slug, "/boxes/" + btn.dataset.boxReview + "/review", { status: btn.dataset.boxStatus });
+        flashSaved(btn.dataset.boxStatus === "approved" ? "Box approved" : "Box rejected");
+        reload();
+      } catch (err) {
+        btn.disabled = false;
+        if (showErr) showErr(err);
+        else {
+          const box = document.getElementById("score-err") || document.getElementById("admin-err");
+          if (box) {
+            box.hidden = false;
+            box.textContent = err.message || String(err);
+          }
+        }
+      }
+    });
+  });
+}
+
+async function directorApproveBanner(slug, ev) {
+  if (!isDirector(ev)) return "";
+  try {
+    const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/plan", { headers: authHeader() });
+    if (!res.ok) return "";
+    const plan = await res.json();
+    const n = (plan.pending_boxes || []).filter(boxWaiting).length;
+    if (!n) return "";
+    return `<section class="card approve-banner">
+      <h2>Approve stats</h2>
+      <p class="muted">${n} box${n === 1 ? "" : "es"} waiting. The public Stats tab only shows published lines. Approve is on the director desk.</p>
+      <div class="actions">
+        <a class="btn" data-link href="/t/${escapeHtml(slug)}/admin#admin-stats">Open approve list</a>
+      </div>
+    </section>`;
+  } catch (err) {
+    return "";
+  }
+}
+
 function adminPaneFromHash() {
   const id = String(location.hash || "").replace(/^#admin-/, "");
   const allowed = ["overview", "setup", "venue", "scheduler", "rain", "teams", "stats", "boxes", "assist"];
@@ -2684,7 +2752,7 @@ export async function eventAdmin(slug) {
     ["scheduler", "Scheduler", games.length ? String(games.length) : ""],
     ["rain", "Rain notice", rainOn ? ev.rain_status : ""],
     ["teams", "Teams", teams.length ? String(teams.length) : ""],
-    ["stats", "Stats inbox", pending.length ? String(pending.length) : ""],
+    ["stats", "Approve stats", pending.length ? String(pending.length) : ""],
     ["boxes", "Box scores", conflictN ? String(conflictN) : (openBooks ? String(openBooks) : "")],
     ["assist", "Schedule fit", ""],
   ];
@@ -2717,11 +2785,25 @@ export async function eventAdmin(slug) {
             ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
           </div>
           <ul class="admin-jump">
+            <li><button type="button" class="link" data-admin-go="stats">${pending.length ? `Approve stats (${pending.length} waiting)` : "Approve stats"}</button></li>
             <li><button type="button" class="link" data-admin-go="venue">Set fields and hours</button></li>
             <li><button type="button" class="link" data-admin-go="scheduler">Build the weekend grid</button></li>
             <li><button type="button" class="link" data-admin-go="rain">Post a rain notice</button></li>
             <li><button type="button" class="link" data-admin-go="teams">Review team packets</button></li>
           </ul>
+          ${pending.length ? `<div class="approve-banner">
+            <h3>Approve stats</h3>
+            <p class="muted">${pending.length} box${pending.length === 1 ? "" : "es"} waiting. This list is here — not on the public Stats tab.</p>
+            ${table(["Game", "Door", "Status", ""], pending.map((b) => {
+              const waiting = boxWaiting(b);
+              return `<tr>
+              <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
+              <td>${escapeHtml(b.source || "")}${b.schedule_id ? ` · <a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open game</a>` : ""}</td>
+              <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
+              <td>${waiting && b.id ? approveStatsButtons(b.id) : ""}</td>
+            </tr>`;
+            }))}
+          </div>` : ""}
           ${isSiteAdmin(eventPb.authStore.record) ? `
           <div class="danger-zone">
             <h3>Remove this tournament</h3>
@@ -2930,20 +3012,17 @@ export async function eventAdmin(slug) {
           ${rosterBlock(teams, ev.slug)}
         </section>
         <section class="card" data-admin-pane="stats" hidden>
-          <h2>Stats inbox</h2>
-          <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Bots also poll stored public GC URLs during a live event. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
+          <h2>Approve stats</h2>
+          <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Approve publishes the lines. Reject leaves them off the public board. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
           ${pending.length ? table(["Game", "Door", "Status", ""], pending.map((b) => {
-            const waiting = b.status === "queued" || b.status === "submitted" || b.status === "needs_review";
+            const waiting = boxWaiting(b);
             return `<tr>
             <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
             <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>
             <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
             <td>
-              ${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open</a>` : ""}
-              ${waiting && b.id ? `
-                <button class="btn" type="button" data-box-review="${escapeHtml(b.id)}" data-box-status="approved">Approve</button>
-                <button class="btn ghost" type="button" data-box-review="${escapeHtml(b.id)}" data-box-status="rejected">Reject</button>
-              ` : ""}
+              ${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open game</a>` : ""}
+              ${waiting && b.id ? approveStatsButtons(b.id) : ""}
             </td>
           </tr>`;
           })) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
@@ -3225,19 +3304,7 @@ export async function eventAdmin(slug) {
       } catch (err) { showErr(err); }
     });
   });
-  eventRoot().querySelectorAll("[data-box-review]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      try {
-        await adminPost(slug, "/boxes/" + btn.dataset.boxReview + "/review", { status: btn.dataset.boxStatus });
-        flashSaved(btn.dataset.boxStatus === "approved" ? "Box approved" : "Box rejected");
-        eventAdmin(slug);
-      } catch (err) {
-        btn.disabled = false;
-        showErr(err);
-      }
-    });
-  });
+  bindBoxReview(slug, () => eventAdmin(slug), showErr);
   const dupBtn = document.getElementById("duplicate-event");
   if (dupBtn) {
     dupBtn.addEventListener("click", () => {
