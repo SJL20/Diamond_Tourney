@@ -984,3 +984,60 @@ is simply in the wrong order.
 - [ ] Games with no game number still sort sensibly, by field
 - [ ] Same fix applied to the overall schedule and any other concatenated sort
 
+
+## [ ] 20. Publish the bracket structure before pool play finishes
+
+**High. Owner request. Extends items 15 and 16.**
+
+The Bracket tab's empty state reads:
+
+    No bracket games yet. Draw the bracket from Admin after pool play.
+
+Three problems, and the third is the real one.
+
+### 20a. It tells the director to go elsewhere instead of acting
+
+Same as item 15. The viewer is a director — the Admin tab is visible in the nav.
+Put the actions here: **Publish blank bracket**, **Draw from standings** (disabled
+with a reason until results exist, per item 16), and **Import a bracket** (item 18).
+
+### 20b. The paragraph above it is written for directors and shows to everyone
+
+"Open Edit game to set field, time, sides, or the final" renders for any viewer.
+A parent cannot act on it. Gate on `isDirector()`, which this file already uses.
+
+### 20c. A blank bracket should be publishable before pool play ends
+
+This is the actual request, and the capability exists but is unreachable from
+here. The "Also draw empty bracket slots now" checkbox in the scheduler generates
+the bracket shape with TBD placeholders. It is only offered as a side effect of
+building the pool schedule, so a director who already has a schedule cannot get
+one.
+
+**Why it matters.** A posted blank bracket answers the question every coach asks
+on Saturday afternoon: if we win our pool, when and where do we play Sunday? It
+shows the shape of the day — how many rounds, what times, which fields, whether
+there is a consolation side. Families plan travel and hotels around it. It is the
+sheet that gets taped to the fence Friday night, and it is useful precisely
+*because* the names are not filled in yet.
+
+Tournament Machine posts a blank bracket. Paper directors draw one by hand. Not
+being able to show one until Sunday morning is a step backward from both.
+
+**Make it a first-class action:** a "Publish blank bracket" button on this screen
+that generates the structure from the configured format, bracket levels and team
+count, with TBD in every slot. Times and fields set where known. Printable.
+
+As results come in, slots fill from the same advancement wiring a drawn bracket
+uses — the blank bracket should become the real bracket, not be replaced by one.
+
+### Acceptance criteria
+
+- [ ] Bracket empty state offers publish-blank, draw-from-standings, and import
+- [ ] Director-only copy never renders for non-admin viewers
+- [ ] A blank bracket can be published without touching the pool scheduler
+- [ ] Blank bracket shows correct round count, times and fields for the format
+- [ ] It prints cleanly on one page
+- [ ] Slots fill in as pool results land, without redrawing
+- [ ] Non-admin viewers see the blank bracket, not an empty state
+
