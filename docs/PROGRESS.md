@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 97 unit/integration cases + 13 acceptance checks |
+| Tests | 101 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -193,6 +193,19 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-19 — Dynamic leader gates and no “over” without an IP cap
+
+Test Run on diamondtourney.com showed Min 8 AB / Min 5 IP and pitching counts
+“Weekend limit 0.0 IP” with an over badge. Native weekends default to no
+pitching cap; a 0.0 cap treated any inning as over. Counts now say “No posted
+weekend inning cap” and never print over/ok unless `pitch_limit_mode` is ip or
+both and the IP cap is above zero.
+
+Live qualifying mins scale with finals played: 2 AB / 1.0 IP after the first
+game, 4 AB / 2.0 IP after two, up to the Sunday awards line (8 AB / 3.0 IP).
+Keystone packet mins stay as published. Awards still use 8 / 3.0. Covered by
+`LeaderQualifyTests`.
 
 ### 2026-09-19 — director Approve/Reject for pending event boxes
 

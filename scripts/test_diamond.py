@@ -218,6 +218,12 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("boxHelpPage", app)
         self.assertIn("box-score-ask", (ROOT / "pb/pb_hooks/main.pb.js").read_text())
         self.assertIn("box_submissions", (ROOT / "pb/pb_migrations/1700000029_box_submissions.js").read_text())
+        self.assertIn("function hasPitchIpCap", event)
+        self.assertIn("No posted weekend inning cap", event)
+        self.assertIn("function dynamicLeaderMins", (ROOT / "pb/pb_hooks/diamond.js").read_text())
+        self.assertIn("WEEKEND_MIN_AB", (ROOT / "pb/pb_hooks/diamond.js").read_text())
+        self.assertNotIn("r.ip_outs > board.event.pitch_limit_ip * 3", event)
+        self.assertNotIn("Qualifying minimums are 8 at-bats and 5 innings", event)
         inbox = event.split("<h2>Stats inbox</h2>", 1)[1].split('data-admin-pane="boxes"', 1)[0]
         self.assertIn("data-box-review", inbox)
         self.assertIn(">Approve<", inbox)
@@ -3316,6 +3322,148 @@ class BoxScoreTeamPageTests(unittest.TestCase):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
         self.assertIn("function teamLink", src)
         self.assertIn("/t/${eventSlug}/team/${teamSlug}", src)
+
+
+
+class LeaderQualifyTests(unittest.TestCase):
+    """Live leader gates scale with games played; no 'over' without an IP cap."""
+
+    def _weekend(self, td, name):
+        slug = name + "-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": name.replace("-", " ").title(),
+            "slug": slug,
+            "venue": "La Roche College",
+            "ages": "11U",
+            "start": "2026-09-19",
+            "end": "2026-09-20",
+            "format": "pool-only",
+            "fields": [{"name": "Main"}],
+        })
+        return created["event"]["slug"]
+
+    def _teams(self, td, slug):
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Gate Hawks",
+            "pool": "A",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Gate Heat",
+            "pool": "A",
+            "as_director": True,
+        })
+
+    def _game(self, td, slug, number, time):
+        return request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Gate Hawks",
+            "away": "Gate Heat",
+            "date": "2026-09-19",
+            "time": time,
+            "field": "Main",
+            "pool": "A",
+            "game_number": number,
+        })["game"]
+
+    def _final_box(self, td, slug, game_id, ab=3, ip="2.0"):
+        request(BASE, "POST", f"/api/events/{slug}/schedule/{game_id}/score", td, {
+            "home_runs": 5,
+            "away_runs": 2,
+            "status": "final",
+            "confirm": True,
+        })
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        return request(BASE, "POST", "/api/bot/event-box", bot, {
+            "event_slug": slug,
+            "schedule_id": game_id,
+            "home_runs": 5,
+            "away_runs": 2,
+            "hitting": [{
+                "side": "home", "jersey": "4", "name": "Maeve D",
+                "ab": ab, "r": 1, "h": 1, "rbi": 1, "bb": 0, "so": 0,
+            }],
+            "pitching": [{
+                "side": "home", "jersey": "7", "name": "Sam P",
+                "ip": ip, "h": 2, "r": 1, "er": 1, "bb": 0, "so": 2,
+            }],
+        })
+
+    def test_no_cap_does_not_mark_over_and_early_lines_qualify(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._weekend(td, "gate-early")
+        self.assertEqual((request(BASE, "GET", f"/api/event/{slug}/board")["event"].get("pitch_limit_mode") or "none"), "none")
+        self._teams(td, slug)
+        game = self._game(td, slug, 1, "09:00")
+        self._final_box(td, slug, game["id"], ab=3, ip="2.0")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        leaders = board["leaders"]
+        self.assertEqual(leaders["min_ab"], 2)
+        self.assertEqual(leaders["min_ip"], 1)
+        self.assertEqual(leaders["games_played"], 1)
+        self.assertEqual(leaders["qualify_source"], "dynamic")
+        self.assertFalse(leaders["has_pitch_ip_cap"])
+        hit_names = [r.get("name_key") or r.get("player") for r in leaders["hitting"]]
+        pit_names = [r.get("name_key") or r.get("player") for r in leaders["pitching"]]
+        self.assertIn("Maeve D #4", hit_names)
+        self.assertIn("Sam P #7", pit_names)
+        self.assertFalse(leaders["all_tournament"]["hitters"])
+        counts = leaders["pitch_counts"]
+        self.assertTrue(counts)
+        self.assertFalse(any(r.get("over") for r in counts))
+        self.assertTrue(all(r.get("limit_ip") is None for r in counts))
+
+    def test_mins_rise_to_weekend_awards_line(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._weekend(td, "gate-rise")
+        self._teams(td, slug)
+        first = self._game(td, slug, 1, "09:00")
+        later = [self._game(td, slug, n, f"{8 + n}:00") for n in (2, 3, 4)]
+        self._final_box(td, slug, first["id"], ab=3, ip="2.0")
+        early = request(BASE, "GET", f"/api/event/{slug}/board")["leaders"]
+        self.assertEqual(early["min_ab"], 2)
+        self.assertIn("Maeve D #4", [r.get("name_key") for r in early["hitting"]])
+        for game in later:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                "home_runs": 4,
+                "away_runs": 1,
+                "status": "final",
+                "confirm": True,
+            })
+        late = request(BASE, "GET", f"/api/event/{slug}/board")["leaders"]
+        self.assertEqual(late["games_played"], 4)
+        self.assertEqual(late["min_ab"], 8)
+        self.assertEqual(late["min_ip"], 3)
+        self.assertNotIn("Maeve D #4", [r.get("name_key") for r in late["hitting"]])
+        full = [r for r in late["full_hitting"] if (r.get("player") or r.get("name_key")) == "Maeve D #4"]
+        self.assertTrue(full)
+        self.assertFalse(full[0].get("q"))
+        self.assertFalse(late["all_tournament"]["hitters"])
+
+    def test_posted_ip_cap_marks_over(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._weekend(td, "gate-cap")
+        request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "pitch_limit_mode": "ip",
+            "pitch_limit_ip": 6,
+        })
+        self._teams(td, slug)
+        game = self._game(td, slug, 1, "10:00")
+        self._final_box(td, slug, game["id"], ab=3, ip="7.0")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(board["event"]["pitch_limit_mode"], "ip")
+        leaders = board["leaders"]
+        self.assertTrue(leaders["has_pitch_ip_cap"])
+        sam = next(r for r in leaders["pitch_counts"] if r.get("name_key") == "Sam P #7")
+        self.assertTrue(sam["over"])
+        self.assertEqual(sam["limit_ip"], 6)
+
+    def test_keystone_keeps_packet_mins(self):
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        self.assertEqual(board["leaders"]["min_ab"], 8)
+        self.assertEqual(board["leaders"]["qualify_source"], "packet")
+        self.assertEqual(board["event"]["pitch_limit_mode"], "ip")
+        self.assertTrue(board["leaders"]["has_pitch_ip_cap"])
 
 
 class EventBoxReviewTests(unittest.TestCase):

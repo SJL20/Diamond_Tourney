@@ -625,7 +625,84 @@ function era(er, ipOuts) {
   return (er * 7) / (ipOuts / 3);
 }
 
-function eventLeaders(app, eventId) {
+const WEEKEND_MIN_AB = 8;
+const WEEKEND_MIN_IP = 3;
+
+function maxFinalsPerTeam(schedule, bracket) {
+  const counts = {};
+  function bump(name) {
+    if (!name) return;
+    counts[name] = (counts[name] || 0) + 1;
+  }
+  const rows = (schedule || []).concat(bracket || []);
+  for (let i = 0; i < rows.length; i++) {
+    const g = rows[i];
+    if ((g.status || "") !== "final") continue;
+    bump(g.home);
+    bump(g.away);
+  }
+  let max = 0;
+  const keys = Object.keys(counts);
+  for (let i = 0; i < keys.length; i++) {
+    if (counts[keys[i]] > max) max = counts[keys[i]];
+  }
+  return max;
+}
+
+function dynamicLeaderMins(gamesPlayed, packet) {
+  if (packet && packet.min_ab != null && packet.min_ab !== "") {
+    return {
+      min_ab: Number(packet.min_ab),
+      min_ip: packet.min_ip != null && packet.min_ip !== "" ? Number(packet.min_ip) : WEEKEND_MIN_IP,
+      source: "packet",
+      games_played: Number(gamesPlayed) || 0,
+    };
+  }
+  const g = Math.max(0, Number(gamesPlayed) || 0);
+  return {
+    min_ab: Math.min(WEEKEND_MIN_AB, Math.max(2, g * 2)),
+    min_ip: Math.min(WEEKEND_MIN_IP, Math.max(1, g)),
+    source: "dynamic",
+    games_played: g,
+  };
+}
+
+function pitchIpCapOuts(eventLike) {
+  if (!eventLike) return null;
+  const mode = eventLike.pitch_limit_mode || "none";
+  if (mode !== "ip" && mode !== "both") return null;
+  const ip = Number(eventLike.pitch_limit_ip || 0);
+  if (!(ip > 0)) return null;
+  return ip * 3;
+}
+
+function liveStatsNote(mins, packetNote) {
+  if (mins && mins.source === "packet") return packetNote || "";
+  const g = (mins && mins.games_played) || 0;
+  const ab = mins && mins.min_ab != null ? mins.min_ab : 2;
+  const ip = mins && mins.min_ip != null ? mins.min_ip : 1;
+  const ipText = Number(ip).toFixed(1);
+  if (g < 1) {
+    return "Qualifying line starts at 2 AB / 1.0 IP after the first final, then rises with games played (cap 8 AB / 3.0 IP). Lines come from each team’s published scorebook.";
+  }
+  return "Qualifying line is " + ab + " AB / " + ipText + " IP after " + g + " game" + (g === 1 ? "" : "s") + " played (scales up to 8 AB / 3.0 IP). Lines come from each team’s published scorebook.";
+}
+
+function sortHitLeaders(a, b) {
+  return (b.avg || 0) - (a.avg || 0);
+}
+
+function sortPitLeaders(a, b) {
+  if (a.era == null) return 1;
+  if (b.era == null) return -1;
+  return a.era - b.era;
+}
+
+function eventLeaders(app, eventId, opts) {
+  opts = opts || {};
+  const minAb = opts.min_ab != null ? Number(opts.min_ab) : WEEKEND_MIN_AB;
+  const minIp = opts.min_ip != null ? Number(opts.min_ip) : WEEKEND_MIN_IP;
+  const minIpOuts = Math.round(minIp * 3);
   const hitRows = app.findRecordsByFilter("event_hitting", "event = {:e}", "", 800, 0, { e: eventId });
   const pitRows = app.findRecordsByFilter("event_pitching", "event = {:e}", "", 800, 0, { e: eventId });
   const hit = {};
@@ -649,8 +726,10 @@ function eventLeaders(app, eventId) {
     } catch (err) {}
     r.avg = r.ab ? (r.h / r.ab) : 0;
     r.avg_display = r.ab ? (r.h / r.ab).toFixed(3).replace(/^0/, "") : ".000";
+    r.q = r.ab >= minAb;
     return r;
-  }).filter(function (r) { return r.ab >= 8; }).sort(function (a, b) { return b.avg - a.avg; });
+  });
+  const gatedHit = hitting.filter(function (r) { return r.q; }).sort(sortHitLeaders);
 
   const pit = {};
   for (const row of pitRows) {
@@ -674,20 +753,19 @@ function eventLeaders(app, eventId) {
     r.ip = Math.floor(r.ip_outs / 3) + "." + (r.ip_outs % 3);
     r.era = era(r.er, r.ip_outs);
     r.era_display = r.era == null ? "—" : r.era.toFixed(2);
+    r.q = r.ip_outs >= minIpOuts;
     return r;
   });
-  const gatedPitch = pitching.filter(function (r) { return r.ip_outs >= 9; }).sort(function (a, b) {
-    if (a.era == null) return 1;
-    if (b.era == null) return -1;
-    return a.era - b.era;
-  });
+  const gatedPitch = pitching.filter(function (r) { return r.q; }).sort(sortPitLeaders);
   return {
-    hitting: hitting,
+    hitting: gatedHit,
     pitching: gatedPitch,
-    pitch_counts: pitching.sort(function (a, b) { return b.ip_outs - a.ip_outs; }),
+    all_hitting: hitting,
+    all_pitching: pitching,
+    pitch_counts: pitching.slice().sort(function (a, b) { return b.ip_outs - a.ip_outs; }),
     all_tournament: {
-      hitters: hitting.slice(0, 8),
-      pitchers: gatedPitch.slice(0, 2),
+      hitters: hitting.filter(function (r) { return r.ab >= WEEKEND_MIN_AB; }).sort(sortHitLeaders).slice(0, 8),
+      pitchers: pitching.filter(function (r) { return r.ip_outs >= WEEKEND_MIN_IP * 3; }).sort(sortPitLeaders).slice(0, 2),
     },
   };
 }
@@ -839,7 +917,46 @@ function publicBoard(app, event, auth) {
     bracket: bracket,
     overall: listOverall(schedule, bracket),
     leaders: (function () {
-      const computed = eventLeaders(app, eventId);
+      const mins = dynamicLeaderMins(maxFinalsPerTeam(schedule, bracket), packet);
+      const computed = eventLeaders(app, eventId, mins);
+      computed.min_ab = mins.min_ab;
+      computed.min_ip = mins.min_ip;
+      computed.games_played = mins.games_played;
+      computed.qualify_source = mins.source;
+      computed.award_min_ab = WEEKEND_MIN_AB;
+      computed.award_min_ip = WEEKEND_MIN_IP;
+      computed.stats_note = liveStatsNote(mins, packet && packet.stats_note);
+      const capOuts = pitchIpCapOuts({
+        pitch_limit_mode: event.get("pitch_limit_mode") || "none",
+        pitch_limit_ip: event.get("pitch_limit_ip") || 0,
+      });
+      computed.has_pitch_ip_cap = capOuts != null;
+      computed.pitch_limit_ip = capOuts != null ? capOuts / 3 : null;
+      computed.pitch_counts = (computed.pitch_counts || []).map(function (r) {
+        r.over = capOuts != null && r.ip_outs > capOuts;
+        r.limit_ip = capOuts != null ? capOuts / 3 : null;
+        return r;
+      });
+      function displayHit(r) {
+        return {
+          player: r.name_key || r.player || "",
+          team: r.team || "",
+          ab: r.ab, h: r.h, rbi: r.rbi,
+          avg: r.avg_display || r.avg || "",
+          ops: r.ops || "",
+          q: !!r.q,
+        };
+      }
+      function displayPit(r) {
+        return {
+          player: r.name_key || r.player || "",
+          team: r.team || "",
+          ip: r.ip, k: r.so || r.k, era: r.era_display || r.era || "",
+          q: !!r.q,
+        };
+      }
+      computed.full_hitting = (computed.all_hitting || []).map(displayHit);
+      computed.full_pitching = (computed.all_pitching || []).map(displayPit);
       if (!packet) return computed;
       const hit = (packet.leaders && packet.leaders.hitting) || [];
       const pit = (packet.leaders && packet.leaders.pitching) || [];
@@ -855,11 +972,9 @@ function publicBoard(app, event, auth) {
           return { name_key: r.player, team: r.team, ip: r.ip, era_display: r.era, so: r.k };
         });
       }
-      computed.stats_note = packet.stats_note || "";
-      computed.min_ab = packet.min_ab || 8;
-      computed.min_ip = packet.min_ip || 5;
-      computed.full_hitting = packet.stats_hitting || [];
-      computed.full_pitching = packet.stats_pitching || [];
+      if (packet.stats_note) computed.stats_note = packet.stats_note;
+      if (packet.stats_hitting && packet.stats_hitting.length) computed.full_hitting = packet.stats_hitting;
+      if (packet.stats_pitching && packet.stats_pitching.length) computed.full_pitching = packet.stats_pitching;
       return computed;
     })(),
     packet: packet,
@@ -895,6 +1010,9 @@ module.exports = {
   isPlaceholderWeekend: isPlaceholderWeekend,
   advanceBracket: advanceBracket,
   eventLeaders: eventLeaders,
+  dynamicLeaderMins: dynamicLeaderMins,
+  maxFinalsPerTeam: maxFinalsPerTeam,
+  pitchIpCapOuts: pitchIpCapOuts,
   publicBoard: publicBoard,
   listOverall: listOverall,
   compareWeekendGames: compareWeekendGames,
