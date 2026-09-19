@@ -151,6 +151,8 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn('name="away_id"', event)
         self.assertIn("function flightSelect", event)
         self.assertIn("function roundSelect", event)
+        self.assertIn("function rewriteFieldInputName", event)
+        self.assertIn("function renumberFieldRows", event)
         self.assertIn("does not change imported pool games", event)
         self.assertIn("does not rewrite an imported pool grid", event)
         self.assertIn("delete body.replace", event)
@@ -181,6 +183,28 @@ class TournamentUiTests(unittest.TestCase):
         self.assertLess(desk.find("class=\"bk-score\""), desk.find("</details>"))
         self.assertGreater(desk.find("</details>"), desk.find("data-bk-id"))
         self.assertIn(".bk-desk-box:not([open]) > *:not(summary)", css)
+
+    def test_field_rows_renumber_from_dom(self):
+        src = (ROOT / "pb/pb_public/js/event.js").read_text()
+        bind = src.split("function bindFieldRows", 1)[1].split("function setupFormatFields", 1)[0]
+        self.assertIn("renumberFieldRows(root)", bind)
+        self.assertIn("querySelectorAll(\".field-row\").length", bind)
+        self.assertNotIn("n += 1", bind)
+        self.assertNotIn("Math.max(n,", bind)
+        rewrite = src.split("function rewriteFieldInputName", 1)[1].split("function renumberFieldRows", 1)[0]
+        self.assertIn("field_day_", rewrite)
+        js = (
+            "function rewriteFieldInputName" + rewrite
+            + "const eq=(a,b)=>{if(a!==b) throw new Error(a+' != '+b)};"
+            + "eq(rewriteFieldInputName('field_name_3',0),'field_name_0');"
+            + "eq(rewriteFieldInputName('field_id_3',1),'field_id_1');"
+            + "eq(rewriteFieldInputName('field_pin_set_12',1),'field_pin_set_1');"
+            + "eq(rewriteFieldInputName('field_day_3_2_start',0),'field_day_0_2_start');"
+            + "eq(rewriteFieldInputName('field_day_3_2_on',1),'field_day_1_2_on');"
+            + "eq(rewriteFieldInputName('venue',0),'venue');"
+        )
+        import subprocess
+        subprocess.check_call(["node", "-e", js])
 
 
 class BoardTests(unittest.TestCase):
@@ -2330,6 +2354,37 @@ class SchedulerTeamDropdownTests(unittest.TestCase):
         })
         self.assertEqual(ok["bracket"][0]["home"], "Drop Hawks")
         self.assertEqual(ok["bracket"][0]["away"], "Drop Heat")
+
+
+class FieldRowNumberTests(unittest.TestCase):
+    """Form field indexes stay dense so Add another field never skips a number."""
+
+    def test_dense_and_gapped_field_names_persist(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "field-n-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Field Numbers Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        first_id = created["event"]["fields"][0]["id"]
+        after_remove_middle = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "field_id_0": first_id,
+            "field_name_0": "Harbor 1",
+            "field_name_1": "Harbor 3",
+        })
+        names = [f["name"] for f in after_remove_middle["event"]["fields"]]
+        self.assertEqual(names, ["Harbor 1", "Harbor 3"])
+        keys = {k: f"Diamond {i + 1}" for i, k in enumerate([f"field_name_{i}" for i in range(20)])}
+        keys["field_id_0"] = after_remove_middle["event"]["fields"][0]["id"]
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", td, keys)
+        got = [f["name"] for f in saved["event"]["fields"]]
+        self.assertEqual(len(got), 20)
+        self.assertEqual(set(got), {f"Diamond {i}" for i in range(1, 21)})
+        again = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertEqual({f["name"] for f in again["fields"]}, set(got))
 
 
 class ImportedScheduleBracketTests(unittest.TestCase):

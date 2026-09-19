@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 74 unit/integration cases + 13 acceptance checks |
+| Tests | 76 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -185,6 +185,15 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — field rows stay 1, 2, 3
+
+Derek’s 6:07 note: Add another field on `/directors/new` jumped 1 → 3 → 5
+because `bindFieldRows` incremented its index twice. Remove left leftover
+numbers frozen. Add and remove now renumber legends and `field_name_<i>` /
+`field_day_<i>_…` from DOM order, so a hole cannot walk the form off the
+end. Covered by `FieldRowNumberTests` and
+`TournamentUiTests.test_field_rows_renumber_from_dom`. BACKLOG item 9.
 
 ### 2026-09-18 — drawing a bracket does not rewrite imported pool play
 
