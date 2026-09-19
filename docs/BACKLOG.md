@@ -542,3 +542,60 @@ event record.
 - [ ] No other tournament displays the East End Park map, alt text, or directions
 - [ ] Grep for remaining hardcoded venue names, addresses, dates and contacts;
       list anything found
+
+
+## [ ] 13. Scheduler page: purpose and button labels are unclear, and one silently deletes games
+
+**High. Owner could not tell what the buttons did — and he is the domain expert.**
+
+On `/t/<slug>/admin#admin-scheduler`, the two primary buttons sit side by side
+with no indication that they belong to different moments in the weekend, and the
+checkbox labels describe implementation rather than consequence.
+
+### What each control actually does
+
+- **Build pool schedule** — generates pool games across the days, hours and fields.
+  Setup-time action, run once before the tournament.
+- **Draw bracket from standings** — seeds by record and creates bracket games.
+  Run *after* pool play is complete. A completely different moment.
+- **Replace unplayed pool games** — deletes every scheduled game and rebuilds.
+  Skips anything `status === "final"`.
+- **Also draw empty bracket slots now** — builds the bracket skeleton with TBD
+  placeholders alongside the pool schedule.
+- **If you draw a bracket, include consolation games** — adds losers-bracket and
+  placement games.
+
+### Problems
+
+**13a. The two buttons imply they are alternatives.** They are sequential and
+days apart. Separate them: pool building in one section, bracket drawing in
+another, ideally disabled with an explanation until pool play has results.
+
+**13b. "Replace unplayed pool games" is mislabeled and it deletes.** The code at
+`pb/pb_hooks/schedule.js` line 648 deletes *all* non-final rows in
+`event_schedule`, bracket games included — not only pool games. The label
+understates the scope, and "Replace" reads as harmless.
+
+It is also checked by default. Correct during setup, dangerous on Saturday when a
+director is only nudging a time. At minimum: rename to something like "Clear and
+rebuild the schedule (keeps completed games)", and confirm before deleting when
+any games already exist.
+
+**13c. "Also draw empty bracket slots now" does not say why.** Reword to name the
+use: it produces a printable blank bracket for the fence before teams are known.
+
+**13d. No explanation of sequence.** One line at the top of the section stating
+the order — set fields and hours, build pool, play, then draw bracket from
+standings — would remove most of the confusion.
+
+### Acceptance criteria
+
+- [ ] Pool building and bracket drawing are visually separate, not adjacent buttons
+- [ ] "Draw bracket from standings" explains when to use it, and is unavailable
+      with a reason given until pool results exist
+- [ ] The replace checkbox names its real scope, including bracket games
+- [ ] Confirmation before deleting when the schedule already has games
+- [ ] The replace checkbox is not checked by default once a schedule exists
+- [ ] One line at the top stating the order of operations
+- [ ] **A director who has never used the product can tell what each button does
+      without being told**
