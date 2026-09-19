@@ -1808,3 +1808,97 @@ identity is fine. What it needs is contrast and weight, not new colors.
 - [ ] Usable on a phone in sunlight, one-handed
 - [ ] **Open it on a phone and find your team's next game in under five seconds
       without scrolling past anything irrelevant**
+
+
+      ## [ ] 28b. Live scores on the tournament home page
+
+**Coordinate with Steve before building — he has live score work in progress.
+This item describes what the home page needs from it, not how to build it.**
+
+Live scores are the reason to open the page twice on a Saturday instead of once.
+They should be the dominant element while the tournament is running.
+
+What the home page needs:
+
+- **Games in progress**, by diamond, with the current score and how long they
+  have been playing. Under a 90-minute finish-the-inning limit, elapsed time is
+  nearly as useful as the score — it tells a coach whether the field will turn
+  over on schedule.
+- **Recently final**, last hour or so, so someone arriving mid-afternoon can see
+  what just happened without opening the schedule.
+- **Up next per diamond**, which already exists in concept and should sit
+  directly beneath.
+
+Requirements:
+
+- **Auto-refresh** while the page is open. A live score that needs a manual
+  reload is not live.
+- **Degrade honestly.** If no game is in progress, show the next games rather
+  than an empty "live" panel.
+- **Big type.** This is a scoreboard. Scores should be the largest thing on the
+  screen while games are running.
+- **Cheap to poll.** Hundreds of phones on park wifi hitting this at once — a
+  small dedicated endpoint, not the full board payload.
+
+Check with Steve on what he has built before implementing any of this. The point
+is that the home page surfaces it, not that a second version gets written.
+
+---
+
+## [ ] 29. Team logos
+
+**Medium. Owner request. Large visual payoff for modest work.**
+
+Logos are what make a bracket look like a real bracket instead of a table of text.
+Every club already has one and is proud of it.
+
+### Where they come from
+
+- **Coach uploads at registration** — one square image, part of the signup form
+- **Director uploads or replaces** from the team edit screen
+- **Never scraped.** Do not pull from GameChanger or anywhere else. A club's logo
+  is the club's property; they upload it or it is not used.
+
+### The fallback matters more than the logo
+
+Most teams will not upload one, especially early. A page where four teams have
+logos and ten have empty boxes looks worse than a page with none.
+
+**Generate a fallback for every team without an upload:** the team's initials on
+a solid background, with the color derived deterministically from the team name
+so it is stable across pages and sessions. Same team, same color, always.
+
+The fallback must look deliberate, not like a missing image. Get this right
+before shipping uploads — it is the state most teams will be in.
+
+### Where they appear
+
+- Standings rows
+- Schedule and game rows
+- **Bracket slots** — the biggest payoff
+- Team pages (item 24), larger
+- Team chips on the tournament home page
+- Printed brackets and schedules, if they reproduce cleanly in black and white
+
+### Constraints
+
+- **Team name always stays visible.** The logo supplements, never replaces. On a
+  phone, a coach scanning for their team reads the name.
+- Square, served at a small fixed size, resized server-side on upload. Accept
+  png, jpg, webp, svg.
+- Same EXIF stripping and storage rules as item 10; uploads land on the Fly
+  volume.
+- **No logos of people or players.** Club marks only.
+- Small enough not to slow the page on park wifi. Many logos per page, so size
+  discipline matters.
+
+### Acceptance criteria
+
+- [ ] Coach can upload a logo at registration; director can upload or replace
+- [ ] Every team without an upload gets a deterministic initials fallback
+- [ ] Fallback color is stable for a given team name across pages and sessions
+- [ ] Logos appear in standings, schedule, bracket, team pages and home chips
+- [ ] Team name remains visible everywhere a logo appears
+- [ ] Resized server-side; page weight stays reasonable with 14+ logos
+- [ ] Printed bracket still readable in black and white
+- [ ] Nothing pulled from GameChanger or any third party
