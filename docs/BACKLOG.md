@@ -1125,3 +1125,186 @@ a director actually wants Sunday morning, and it tells them who to find in perso
       email, upload a real GameChanger PDF from the link, confirm stats appear on
       the tournament leaderboard**
 
+
+## [ ] 22. Track box score submissions per team, and reconcile the two books against each other
+
+**High. Extends item 21.**
+
+### 22a. Per-team submission tracking
+
+Every game has two books. Track them separately:
+
+    box_submissions
+      game          relation -> event_schedule or bracket_games
+      team          relation -> teams
+      submitted_at  date
+      submitted_by  text        // name or email from the token link
+      method        select      // gc_pdf, gc_link, photo, manual
+      file          file
+      parsed        json        // extracted line score and player lines
+      status        select      // pending, parsed, failed, verified, conflict
+
+One row per game per team. A game is complete when both exist.
+
+Status per game, derived:
+
+- **None** — neither team has submitted
+- **Waiting on [team]** — one in, one outstanding
+- **Verified** — both in and the scores agree
+- **Conflict** — both in and the scores disagree
+
+That third and fourth state are the point.
+
+### 22b. Reconcile the two books
+
+When the second submission for a game is parsed, compare the two.
+
+**What actually overlaps.** Each team's book carries its own players' stat lines
+and both teams' runs. So player stats do not overlap between books, but the line
+score does. Compare:
+
+- Final runs for each side
+- Runs by inning, where both books have them
+- Innings played
+
+**On agreement:** mark the game verified and publish. Two independent books
+matching is stronger confirmation than a director typing a number, and it is
+worth surfacing — a small "verified" marker on the game tells a coach the score
+on the board came from both scorebooks.
+
+**On disagreement:** do not publish either. Flag for the director with both
+versions side by side and what differs: "Game 4 — Dukes book says 5-3, Roadrunners
+book says 6-3. Third inning differs." The director picks one, or enters the
+correct score, and that choice is recorded.
+
+This is exactly the argument that happens in the parking lot on Sunday. Having
+both books on screen with the disagreement isolated to one inning settles it in
+thirty seconds.
+
+### 22c. Director view
+
+A grid: games down, two columns for the two teams. At a glance — who has
+submitted, who has not, what needs attention.
+
+Sort conflicts to the top. Outstanding submissions next, with a resend button per
+team. Everything verified drops to the bottom.
+
+This is the Sunday-morning screen. It tells a director exactly which two coaches
+to go find.
+
+### 22d. First submission still populates the score
+
+Do not make the board wait for both books. The first parsed submission fills the
+score, marked as coming from one book. The second either confirms it — flipping
+the marker to verified — or raises the conflict. A game with one book is still
+better than a game with none.
+
+### 22e. Help content
+
+Owner is supplying screenshots of the GameChanger export flow. They belong in two
+places: inline in the upload email (item 21), and on a standalone help page the
+upload link also points to. Version them — GameChanger changes its UI and stale
+screenshots are worse than none.
+
+### Acceptance criteria
+
+- [ ] One submission row per game per team, with timestamp, method and submitter
+- [ ] Game status derives correctly across all four states
+- [ ] Second submission triggers comparison of final runs and innings
+- [ ] Agreement marks the game verified; the marker is visible publicly
+- [ ] Disagreement blocks publication and flags the director with both versions
+      and the specific difference
+- [ ] Director resolves a conflict and the choice is recorded
+- [ ] Director grid shows games by team with conflicts sorted first
+- [ ] Resend works per team
+- [ ] First submission still populates the score before the second arrives
+- [ ] GameChanger screenshots shown in the email and on a help page
+- [ ] **End-to-end: upload two books that disagree, confirm the conflict is caught,
+      the score is not published, and the director can resolve it**
+
+## [ ] 23. Schedule feasibility assistant for directors
+
+**Differentiator, not a blocker. Park until items 1–22 are done.**
+
+Let a director ask plain-language questions about their own tournament and get a
+grounded answer with the arithmetic shown.
+
+### The two moments it earns its place
+
+**Setup.** "I have 14 teams, six fields, Saturday 8 to 6, 90 minutes finish the
+inning. Can everyone get two pool games and still finish a bracket Sunday?"
+
+Today a director works this out on paper, gets it wrong, and finds out at 4pm
+Saturday when they are two hours behind.
+
+**Mid-tournament.** "It's raining, I lose Field 4 until noon. What are my
+options?"
+
+This is the one that matters. It is exactly the situation at Keystone Clash when
+Sunday moved indoors, and it is the moment a director has the least time to think
+and the most people waiting on an answer.
+
+### It must show the math, not assert
+
+The answer is worthless if a director cannot check it:
+
+> Six fields × 10 hours ÷ 105 minutes per slot = 34 game slots Saturday.
+> 14 teams × 2 pool games = 14 games. Fits with room to spare.
+> Bracket: 14 teams single elim = 13 games, needs 4 rounds. Sunday 8 to 6 on
+> six fields = 34 slots. Fits.
+> Tightest point: round 1 needs 7 fields for a clean sweep; with 6 you get one
+> pair waiting a slot.
+
+Numbers first, prose second. A director who can follow the arithmetic will trust
+it and catch it when it is wrong.
+
+### Grounded in their tournament, not general knowledge
+
+Feed it the event's own data — teams, divisions, fields, availability windows,
+game length, buffer, format, existing schedule. It answers about *this*
+tournament. A general chatbot that gives plausible softball advice is worse than
+nothing.
+
+### Hard boundaries
+
+**It advises. It never writes.** No changing the schedule, no deleting games, no
+touching the database. It can say "this would work" and the director presses the
+existing button. The moment it can act, a wrong answer becomes a wrecked
+tournament.
+
+**It does not invent rules.** Time limits, tiebreakers, pitching rules and age
+cutoffs come from the event configuration or a sanctioning body. If it does not
+know, it says so.
+
+**Label the output.** Directors should know an assistant produced it.
+
+### Cost
+
+Negligible. Haiku 4.5 at $1 per million input tokens and $5 per million output;
+a question with the event's data attached is a few thousand tokens. Pennies per
+tournament. Cache the system prompt.
+
+### Start narrow
+
+Do not build a general chat box. Start with three buttons that answer the three
+questions directors actually ask:
+
+1. **Will this schedule fit?** — run before building
+2. **What happens if I lose a field?** — pick a field and a time, get options
+3. **How far behind am I?** — mid-day, compare actual finishes to the grid
+
+Each returns numbers and a short explanation. Add free-form questions later, once
+the grounded-answer pattern is proven.
+
+### Acceptance criteria
+
+- [ ] Answers are computed from the event's own teams, fields and windows
+- [ ] Arithmetic shown, not just conclusions
+- [ ] No write access of any kind
+- [ ] Says "I don't know" rather than inventing a rule
+- [ ] Output labeled as assistant-generated
+- [ ] The three fixed questions work before any free-form input is added
+- [ ] **Test against Keystone Clash: given 8 teams, 2 fields and the real hours,
+      does it reproduce the format that actually worked?**
+
+
