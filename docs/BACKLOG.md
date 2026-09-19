@@ -544,10 +544,12 @@ event record.
       list anything found
 
 Leftovers that stay on purpose: Keystone parking / raffle / popup links are
-gated on `slug === "keystone-clash-2026"`. Create-form placeholders still say
-East End 1 / Meadow St. `keystone.js` dates belong to that event.
-`lib/standings.py` still has `"name order"` for the season book — do not change
-metric formulas.
+gated on `slug === "keystone-clash-2026"`. The info-page image uses
+`parkingMapView` / `mapHref` — East End Park alt text and Meadow St directions
+are Keystone-only fallbacks, never a hardcoded `<img src="/popup/parking-map.png">`.
+Create-form placeholders still say East End 1 / Meadow St. `keystone.js` dates
+belong to that event. `lib/standings.py` still has `"name order"` for the
+season book — do not change metric formulas.
 
 
 ## [x] 13. Scheduler page: purpose and button labels are unclear, and one silently deletes games

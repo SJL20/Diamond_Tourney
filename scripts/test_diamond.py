@@ -2660,7 +2660,10 @@ class BacklogOpenTests(unittest.TestCase):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
         self.assertIn("function formatWeekendDates", src)
         self.assertNotIn('packet?.dates || "September 11', src)
-        self.assertIn("ownMap", src)
+        self.assertIn("function parkingMapView", src)
+        self.assertIn("isKeystoneParkingAsset", src)
+        self.assertIn('src="${escapeHtml(mapHref)}"', src)
+        self.assertNotIn('<img src="/popup/parking-map.png"', src)
         self.assertIn("Check back closer to the weekend", src)
         self.assertNotIn("Build pool play on Admin, then draw the bracket.", src)
 
@@ -2759,6 +2762,26 @@ class BacklogOpenTests(unittest.TestCase):
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertEqual(board["event"]["format"], "pool-double-elim")
         self.assertEqual(board["event"].get("bracket_flights"), "gold-silver")
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertEqual(plan["event"].get("bracket_flights"), "gold-silver")
+        flights_only = "flights-only-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Flights Only Classic",
+            "slug": flights_only,
+            "venue": "Ambridge Middle School",
+            "ages": "10U",
+            "format": "pool-to-bracket",
+        })
+        saved = request(BASE, "POST", f"/api/events/{flights_only}/settings", td, {
+            "bracket_flights": "gold-silver",
+        })
+        self.assertEqual(saved["event"].get("bracket_flights"), "gold-silver")
+        self.assertEqual(saved["event"]["format"], "pool-to-bracket")
+        again = request(BASE, "GET", f"/api/events/{flights_only}/plan", td)
+        self.assertEqual(again["event"].get("bracket_flights"), "gold-silver")
+        board2 = request(BASE, "GET", f"/api/event/{flights_only}/board")
+        self.assertEqual(board2["event"].get("bracket_flights"), "gold-silver")
         sched = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertFalse(sched["schedule"])
 
