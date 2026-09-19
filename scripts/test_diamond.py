@@ -218,6 +218,16 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("boxHelpPage", app)
         self.assertIn("box-score-ask", (ROOT / "pb/pb_hooks/main.pb.js").read_text())
         self.assertIn("box_submissions", (ROOT / "pb/pb_migrations/1700000029_box_submissions.js").read_text())
+        # Chrome rejects an extra backtick between these two paragraphs ("Missing } in template expression").
+        self.assertNotRegex(
+            event,
+            r"</p>`\n\s*<p class=\"muted\">\$\{eventPb\.authStore",
+        )
+        self.assertIn(
+            "</form>` : `<p>${scoreCell(g)} · ${escapeHtml(g.status)}</p>\n"
+            "        <p class=\"muted\">${eventPb.authStore.record",
+            event,
+        )
 
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()

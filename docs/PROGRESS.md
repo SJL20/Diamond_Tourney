@@ -197,6 +197,9 @@ forwardable team card; names on standings, schedule, games, bracket, and stats
 link there. Public team JSON was checked logged-out — no coach email or phone.
 SMTP still needs Fly Admin + SPF/DKIM (item 1). GameChanger menu names are not
 invented. Item 26 is untouched. Covered by `BoxScoreTeamPageTests`.
+A stray backtick in the game-page score ternary (`eventGame`) left the SPA
+on “Loading…” in Chrome (`Missing } in template expression`); the false
+branch is one template again.
 
 ### 2026-09-19 — open backlog 10–19 and scheduler format save
 

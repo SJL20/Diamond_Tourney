@@ -1275,7 +1275,7 @@ export async function eventGame(slug, id) {
         <button class="btn" type="submit">Save score</button>
         <p class="error" id="score-err" hidden></p>
         <p class="muted" id="score-note"></p>
-      </form>` : `<p>${scoreCell(g)} · ${escapeHtml(g.status)}</p>`
+      </form>` : `<p>${scoreCell(g)} · ${escapeHtml(g.status)}</p>
         <p class="muted">${eventPb.authStore.record ? "This is not your game to score." : "Log in as the director or a team manager to post a result."}</p>`}
     </section>
     <section class="card">
