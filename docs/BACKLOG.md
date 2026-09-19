@@ -1661,4 +1661,62 @@ rounds). A fix that makes one work and breaks the other is not a fix.
 This applies to the AI assistant in item 23 as well. It must reason from the
 event's own configuration, never from a remembered example.
 
+## [ ] 27. Human-readable times and dates everywhere; rename "Global hours"
 
+**Medium. Affects every public page. Owner-flagged.**
+
+### 27a. "Global hours" is engineer language
+
+It means "the default window that applies to all fields unless a field overrides
+it." Nobody calls that global hours.
+
+Rename to **"Park hours"** — it sits directly under the Park label and matches
+how a director thinks about it. If a clarifier helps, a muted line underneath:
+"Applies to every diamond unless a diamond sets its own."
+
+Same sweep for other internal vocabulary showing publicly: "flights," "slot,"
+"seed reason," "Replace unplayed pool games," "Import a grid."
+
+### 27b. 24-hour time everywhere
+
+`08:00–18:00` should read `8:00 AM – 6:00 PM`. This is US youth softball; nobody
+says eighteen hundred.
+
+There is **no time formatting function in the codebase**. Times are printed raw
+from storage — `event.js` line 367 for park hours, and the same pattern across
+18 references to `hours_start` / `hours_end`, plus every game time on the
+schedule, games, and bracket tabs.
+
+**Fix:** one formatter, applied everywhere a time is displayed.
+
+- Store 24-hour. Display 12-hour with AM/PM. Never change storage.
+- Drop `:00` where it reads better — "8 AM – 6 PM" beats "8:00 AM – 6:00 PM" for
+  a range, though keep minutes on game times: "12:30 PM."
+- Inputs stay as native time pickers, which handle locale themselves.
+
+### 27c. ISO dates
+
+`2026-09-26` should read `Sat, Sep 26`. Including the weekday matters more than
+the year — a coach checking a schedule knows what year it is and does not
+instantly know that the 26th is a Saturday.
+
+For a range spanning days: "Sat, Sep 26 – Sun, Sep 27." For a multi-day event in
+one line: "September 26–28, 2026."
+
+Same fix shape: one date formatter, applied everywhere.
+
+### 27d. Field ordering
+
+The screenshot lists Field 1, 2, 4, 6 — correct here, since those are the actual
+field names. But see item 19b: numeric ordering must be real, not string-based,
+or Field 10 lands before Field 2.
+
+### Acceptance criteria
+
+- [ ] "Global hours" renamed to "Park hours" wherever it appears
+- [ ] A single time formatter exists and is used for every displayed time
+- [ ] No 24-hour time visible on any public page
+- [ ] A single date formatter exists and is used for every displayed date
+- [ ] Dates show the weekday
+- [ ] Storage format unchanged — display layer only
+- [ ] Sweep public pages for other internal vocabulary and list what's found
