@@ -889,6 +889,17 @@ routerAdd("POST", "/api/events/{slug}/boxes/resolve", (e) => {
   return e.json(200, require(__hooks + "/boxmail.js").resolveConflict(e.app, event, e.requestInfo().body || {}));
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/boxes/{id}/review", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const score = require(__hooks + "/score.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  if (e.auth && e.auth.get("role") === "bot") {
+    throw new ForbiddenError("bot cannot approve or reject event boxes");
+  }
+  sb.requireEventAdmin(e, event);
+  return e.json(200, score.reviewBox(e.app, event, e.request.pathValue("id"), e.requestInfo().body || {}, e.auth));
+}, $apis.requireAuth());
+
 cronAdd("box-score-ask", "*/15 * * * *", () => {
   try { require(__hooks + "/boxmail.js").runBoxMail($app); } catch (err) {}
 });

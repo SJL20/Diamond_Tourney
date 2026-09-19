@@ -180,6 +180,44 @@ function pendingFilter(status) {
   return status === "queued" || status === "submitted" || status === "needs_review";
 }
 
+function reviewBox(app, event, id, body, auth) {
+  const sb = require(__hooks + "/softball.js");
+  if (auth && auth.get("role") === "bot") {
+    throw new ForbiddenError("bot cannot approve or reject event boxes");
+  }
+  if (!sb.isEventAdmin(event, auth, app)) {
+    throw new ForbiddenError("Only the director who created this tournament, a listed co-owner, or a site admin can do that.");
+  }
+  const status = String((body && body.status) || "").trim();
+  if (status !== "approved" && status !== "rejected") {
+    throw new BadRequestError("status must be approved or rejected");
+  }
+  const box = app.findRecordById("event_boxes", id);
+  if ((box.get("event") || "") !== event.id) {
+    throw new BadRequestError("Box is not on this tournament");
+  }
+  const current = box.get("status") || "";
+  if (current === status) {
+    return { box: boxJson(app, box), already: true };
+  }
+  if (!pendingFilter(current)) {
+    throw new BadRequestError("Box is not waiting on review");
+  }
+  if (status === "approved") {
+    const hitting = asList(box.get("hitting"));
+    const pitching = asList(box.get("pitching"));
+    if (hitting.length || pitching.length) {
+      const game = app.findRecordById("event_schedule", box.get("schedule_row"));
+      applyBoxLines(app, event, game, hitting, pitching);
+    }
+  }
+  // Reject only flips status. Live event_hitting / event_pitching rows stay —
+  // botApply may already have upserted them, and there is no reject-wipe pattern.
+  box.set("status", status);
+  app.save(box);
+  return { box: boxJson(app, box) };
+}
+
 function boxWithGame(app, rec) {
   const row = boxJson(app, rec);
   try {
@@ -383,6 +421,8 @@ module.exports = {
   postScore: postScore,
   saveBox: saveBox,
   botApply: botApply,
+  reviewBox: reviewBox,
+  pendingFilter: pendingFilter,
   listPendingBoxes: listPendingBoxes,
   gameDetail: gameDetail,
   postBracketScore: postBracketScore,

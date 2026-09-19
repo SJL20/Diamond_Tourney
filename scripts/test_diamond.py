@@ -224,6 +224,15 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("WEEKEND_MIN_AB", (ROOT / "pb/pb_hooks/diamond.js").read_text())
         self.assertNotIn("r.ip_outs > board.event.pitch_limit_ip * 3", event)
         self.assertNotIn("Qualifying minimums are 8 at-bats and 5 innings", event)
+        inbox = event.split("<h2>Stats inbox</h2>", 1)[1].split('data-admin-pane="boxes"', 1)[0]
+        self.assertIn("data-box-review", inbox)
+        self.assertIn(">Approve<", inbox)
+        self.assertIn(">Reject<", inbox)
+        self.assertIn("/boxes/", event)
+        self.assertIn("Box approved", event)
+        self.assertIn("function reviewBox", (ROOT / "pb/pb_hooks/score.js").read_text())
+        self.assertIn("/boxes/{id}/review", (ROOT / "pb/pb_hooks/main.pb.js").read_text())
+        self.assertIn("/api/coach/staging/${id}/decision", app)
         # Chrome rejects an extra backtick between these two paragraphs ("Missing } in template expression").
         self.assertNotRegex(
             event,
@@ -3315,6 +3324,7 @@ class BoxScoreTeamPageTests(unittest.TestCase):
         self.assertIn("/t/${eventSlug}/team/${teamSlug}", src)
 
 
+
 class LeaderQualifyTests(unittest.TestCase):
     """Live leader gates scale with games played; no 'over' without an IP cap."""
 
@@ -3454,6 +3464,149 @@ class LeaderQualifyTests(unittest.TestCase):
         self.assertEqual(board["leaders"]["qualify_source"], "packet")
         self.assertEqual(board["event"]["pitch_limit_mode"], "ip")
         self.assertTrue(board["leaders"]["has_pitch_ip_cap"])
+
+
+class EventBoxReviewTests(unittest.TestCase):
+    """Director Approve/Reject for pending event_boxes. Bot cannot call review."""
+
+    def _weekend_with_game(self, td):
+        slug = "box-review-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Box Review",
+            "slug": slug,
+            "format": "pool-only",
+            "fields": [{"name": "Main"}],
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Review Hawks",
+            "pool": "A",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Review Heat",
+            "pool": "A",
+            "as_director": True,
+        })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-only",
+        })
+        return slug, auto["schedule"][0]["id"]
+
+    def _bot_review_box(self, bot, slug, game_id, note="needs a look"):
+        return request(BASE, "POST", "/api/bot/event-box", bot, {
+            "event_slug": slug,
+            "schedule_id": game_id,
+            "status": "needs_review",
+            "hitting": [{"side": "home", "jersey": "4", "name": "Maeve D", "ab": 3, "r": 1, "h": 2, "rbi": 1, "bb": 0, "so": 0}],
+            "pitching": [{"side": "home", "jersey": "7", "name": "Sam P", "ip": "4.0", "h": 2, "r": 1, "er": 1, "bb": 0, "so": 4}],
+            "parser_notes": note,
+        })
+
+    def _hitting_count(self, token, game_id):
+        return request(
+            BASE,
+            "GET",
+            f'/api/collections/event_hitting/records?perPage=50&filter=schedule_row="{game_id}"',
+            token,
+        )["totalItems"]
+
+    def test_director_approves_and_rejects_pending_event_box(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        slug, game_id = self._weekend_with_game(td)
+        posted = self._bot_review_box(bot, slug, game_id)
+        self.assertEqual(posted["box"]["status"], "needs_review")
+        box_id = posted["box"]["id"]
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertTrue(any(b["id"] == box_id for b in plan.get("pending_boxes", [])))
+        hits_before = self._hitting_count(td, game_id)
+        self.assertGreaterEqual(hits_before, 1)
+
+        approved = request(BASE, "POST", f"/api/events/{slug}/boxes/{box_id}/review", td, {
+            "status": "approved",
+        })
+        self.assertEqual(approved["box"]["status"], "approved")
+        self.assertEqual(self._hitting_count(td, game_id), hits_before)
+        plan2 = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertFalse(any(b["id"] == box_id for b in plan2.get("pending_boxes", [])))
+
+        again = request(BASE, "POST", f"/api/events/{slug}/boxes/{box_id}/review", td, {
+            "status": "approved",
+        })
+        self.assertTrue(again.get("already"))
+
+        slug2, game2 = self._weekend_with_game(td)
+        posted2 = self._bot_review_box(bot, slug2, game2, "alignment messy")
+        reject_id = posted2["box"]["id"]
+        hits2 = self._hitting_count(td, game2)
+        rejected = request(BASE, "POST", f"/api/events/{slug2}/boxes/{reject_id}/review", td, {
+            "status": "rejected",
+        })
+        self.assertEqual(rejected["box"]["status"], "rejected")
+        self.assertEqual(self._hitting_count(td, game2), hits2)
+        plan3 = request(BASE, "GET", f"/api/events/{slug2}/plan", td)
+        self.assertFalse(any(b["id"] == reject_id for b in plan3.get("pending_boxes", [])))
+
+        slug3, game3 = self._weekend_with_game(td)
+        queued = request(BASE, "POST", f"/api/events/{slug3}/schedule/{game3}/box", td, {
+            "source": "gc_url",
+            "gc_url": (
+                "https://web.gc.com/teams/Qgojbuf369Eu/"
+                "2027-spring-lady-dukes-wpa-2033/schedule/"
+                "d1ed080a-d4da-42a2-9dfb-1813c9272d5f/box-score"
+            ),
+            "status": "queued",
+        })
+        self.assertEqual(queued["box"]["status"], "queued")
+        qok = request(BASE, "POST", f"/api/events/{slug3}/boxes/{queued['box']['id']}/review", td, {
+            "status": "approved",
+        })
+        self.assertEqual(qok["box"]["status"], "approved")
+
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        slug4, game4 = self._weekend_with_game(td)
+        posted4 = self._bot_review_box(bot, slug4, game4)
+        site = request(BASE, "POST", f"/api/events/{slug4}/boxes/{posted4['box']['id']}/review", owner, {
+            "status": "approved",
+        })
+        self.assertEqual(site["box"]["status"], "approved")
+
+    def test_bot_and_stranger_cannot_review_event_box(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        slug, game_id = self._weekend_with_game(td)
+        posted = self._bot_review_box(bot, slug, game_id)
+        box_id = posted["box"]["id"]
+        path = f"/api/events/{slug}/boxes/{box_id}/review"
+        with self.assertRaises(RuntimeError) as caught:
+            request(BASE, "POST", path, bot, {"status": "approved"})
+        self.assertIn("403", str(caught.exception))
+        self.assertIn("bot cannot", str(caught.exception).lower())
+
+        email = f"stranger.{uuid.uuid4().hex[:8]}@nowhere.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "Stranger99!",
+            "display_name": "Stranger",
+            "intent": "director",
+        })
+        stranger = auth(BASE, email, "Stranger99!")
+        with self.assertRaises(RuntimeError) as caught2:
+            request(BASE, "POST", path, stranger, {"status": "rejected"})
+        self.assertIn("403", str(caught2.exception))
+
+        still = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertTrue(any(
+            b["id"] == box_id and b["status"] == "needs_review"
+            for b in still.get("pending_boxes", [])
+        ))
+
+        main = (ROOT / "pb/pb_hooks/main.pb.js").read_text()
+        self.assertIn('routerAdd("POST", "/api/coach/staging/{id}/decision"', main)
 
 
 if __name__ == "__main__":

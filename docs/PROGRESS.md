@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 95 unit/integration cases + 13 acceptance checks |
+| Tests | 101 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -138,6 +138,14 @@ direct unit tests for the hook modules.
 
 ### Closed
 
+- ~~**Stats inbox had no Approve/Reject for pending event boxes.**~~ Bots post
+  `needs_review` to `POST /api/bot/event-box`, but Admin → Stats inbox only
+  showed Open. Directors now Approve or Reject via
+  `POST /api/events/{slug}/boxes/{id}/review`. Bot role is refused. Reject
+  flips status only and does not delete `event_hitting` / `event_pitching`.
+  Season-team staging Approve is unchanged. Covered by
+  `EventBoxReviewTests`.
+
 - ~~**Anyone with `event_td` could administer any tournament.**~~ Registration
   still assigns that role so a new account can create a weekend. Director
   writes now require `events.created_by`, a listed co-owner, or site admin.
@@ -198,6 +206,21 @@ Live qualifying mins scale with finals played: 2 AB / 1.0 IP after the first
 game, 4 AB / 2.0 IP after two, up to the Sunday awards line (8 AB / 3.0 IP).
 Keystone packet mins stay as published. Awards still use 8 / 3.0. Covered by
 `LeaderQualifyTests`.
+
+### 2026-09-19 — director Approve/Reject for pending event boxes
+
+Stats inbox (`/t/{slug}/admin` → Stats inbox) only had Open for queued /
+submitted / `needs_review` boxes. Directors now have Approve and Reject,
+wired to `POST /api/events/{slug}/boxes/{id}/review`. `requireEventAdmin`
+plus an explicit bot-role refuse — never Bot A/C self-approve.
+Approve sets `event_boxes.status` to `approved` and re-applies stored
+hitting/pitching through `applyBoxLines` (upsert, no invented cells).
+Reject sets `rejected` and leaves live hitting/pitching rows; there was no
+existing reject-wipe pattern. `1700000030` adds the `rejected` select
+value. Season `/teams/{slug}/admin/review` is unchanged.
+
+Covered by `EventBoxReviewTests` and the Stats inbox markup check in
+`TournamentUiTests`.
 
 ### 2026-09-19 — Claude 8:33: parking map href + flights persist
 
