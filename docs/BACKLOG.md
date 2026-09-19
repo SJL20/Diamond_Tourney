@@ -1540,3 +1540,125 @@ change that breaks the structure; do not block it. The director is the authority
 - [ ] **Reproduce Scarecrow Slugfest: 14 teams, 8/6 Gold/Silver, byes as above**
 
 
+## [ ] 26i. Reference implementation — Scarecrow Slugfest bracket
+
+**Attach the original schedule.xlsx to this issue.**
+
+The director's own bracket, built by hand. This is the target output. Anything
+that cannot reproduce it exactly is not finished.
+
+### Gold — 8 teams, single elimination, Fields 6 and 1
+
+    9:30   F6  G1   2nd v 7th
+    9:30   F1  G2   3rd v 6th
+    11:00  F6  G3   1st v 8th
+    11:00  F1  G4   4th v 5th
+    12:30  F6       WG1 v WG2
+    12:30  F1       WG3 v WG4
+    2:00   F6       Championship
+
+Standard high-low (1v8, 2v7, 3v6, 4v5), with 1 and 2 drawn into opposite halves.
+
+### Silver — 6 teams, single elimination, Fields 2 and 4
+
+    9:30   F2  G1   3rd v 6th
+    9:30   F4  G2   4th v 5th
+    11:00  F2       1st v WG2
+    11:00  F4       2nd v WG1
+    12:30  F2       Championship
+
+Seeds 1 and 2 have byes. Seed 1 meets the winner of the 4v5 game; seed 2 meets
+the winner of 3v6.
+
+### Requirements this reveals
+
+**Fields are allocated per flight.** Gold runs on 6 and 1, Silver on 2 and 4,
+simultaneously. A director assigns fields to a flight, and the scheduler places
+that flight's games only on those fields.
+
+**A bracket round may span multiple time slots.** Gold's round one is four games
+on two fields, so it takes two slots. The scheduler must split a round across
+slots rather than assuming a round fits in one.
+
+**Top seeds get the later slot when a round is staggered.** G3 (1v8) plays at
+11:00 while G1 (2v7) plays at 9:30. This is deliberate — the higher seed gets the
+later start. Make it a configurable preference, defaulted on.
+
+**Flights can target different finish times.** Silver ends at 12:30, Gold at
+2:00. Lower flights are built to get families home earlier. A director should be
+able to set a target finish per flight.
+
+**Slot labels are scoped to the flight.** Both brackets contain G1 and G2.
+Uniqueness is per flight, not per event. Display must show the flight.
+
+**Placeholder text is the native format.** "2nd v 7th", "1st v WG2", "WG3 v WG4".
+Ordinal seeds before pool ends, winner-of references for later rounds. This is
+what gets posted Friday and printed for the fence, and names fill in as results
+land. It is not a degraded view of a real bracket — it is the bracket.
+
+### Pool play, for completeness
+
+21 games, four fields, six slots Saturday 8:00 to 3:30. **Three pool games per
+team**, not two. Slots at 8:00, 9:30, 11:00, 12:30, 2:00, 3:30 — 90-minute
+spacing.
+
+### Acceptance criteria
+
+- [ ] Reproduces the Gold bracket above exactly: pairings, slots, fields, times
+- [ ] Reproduces the Silver bracket above exactly, byes included
+- [ ] Both flights scheduled concurrently on their own fields
+- [ ] Gold round one staggered across 9:30 and 11:00, with 1v8 in the later slot
+- [ ] Silver finishes at 12:30, Gold at 2:00
+- [ ] Slot labels scoped per flight; both may contain G1
+- [ ] Renders in placeholder form before pool play, with names filling in after
+- [ ] Prints legibly on one page per flight
+
+## Standing principle — every tournament is different
+
+Read this before implementing anything in the scheduling or bracket sections.
+
+The Scarecrow Slugfest reference in item 26i is a worked example, not a
+specification. It is there so there is one concrete, verifiable target. It is not
+the shape of tournaments in general.
+
+Real variation across events the owner runs or has scheduled:
+
+- **8 teams, one flight, 4GG double elimination** (Keystone Clash)
+- **14 teams, 8 Gold and 6 Silver, both single elimination, run concurrently**
+  (Scarecrow Slugfest)
+- **12 teams, 3 fields, pool play into single elimination** (Peters varsity)
+- **6 teams, one field, full round robin, no bracket at all**
+- **Multi-day events on turf where the field count changes between days**
+- **Events where a division is 11U and 12U combined, and events where it is not**
+
+Pool games per team varies — two at Keystone, three at Scarecrow. Field counts
+vary from one to six. Time limits, tiebreak order, bye placement, flight sizes,
+and which flight finishes first are all director decisions and all differ.
+
+### What this means for implementation
+
+**Do not hardcode a tournament shape.** No assumed team count, no assumed round
+count, no assumption that a bracket round fits in one time slot, no assumption
+that flights are equal, no assumption that every event has a bracket.
+
+**Derive from configuration, never from the example.** If the code contains the
+number 8, or 14, or an assumption that there are exactly two flights, it is
+wrong.
+
+**Every generated decision needs a manual override.** Seeding, pairing, byes,
+field assignment, times. The director knows things the software cannot — a team
+driving two hours, a field that floods, an umpire who leaves at four. Generation
+is a starting point; the director is the authority.
+
+**Prefer asking over assuming.** When the format is ambiguous, a short question
+with a sensible default beats a confident wrong answer that has to be undone.
+
+**Test against more than one shape.** Any change to scheduling or bracket code
+must be verified against at least Keystone Clash (8 teams, one flight, double
+elim) and Scarecrow Slugfest (14 teams, two flights, single elim, staggered
+rounds). A fix that makes one work and breaks the other is not a fix.
+
+This applies to the AI assistant in item 23 as well. It must reason from the
+event's own configuration, never from a remembered example.
+
+
