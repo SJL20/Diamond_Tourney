@@ -722,3 +722,67 @@ needs different affordances from a parent.
 - [ ] A team manager sees their own scoring actions but not director-only ones
 - [ ] Every public tab audited against both questions above
 
+
+## [ ] 16. "Draw bracket from standings" populates a bracket before any game is played
+
+**Blocker. Owner-reproduced on scarecrow-slugfest. Same root cause as item 14.**
+
+Pool play has not started. Every team is 0-0-0. Pressing "Draw bracket from
+standings" produced a full bracket with real team names in the slots.
+
+### Cause
+
+`buildBracket` in `pb/pb_hooks/schedule.js` calls `seedList(app, event)` and
+draws from whatever comes back. With no results, the seed order is the
+alphabetical fallback described in item 14 — so the bracket is populated by team
+name, presented as seeding.
+
+The only guard is team count:
+
+    if (n < 2) return { games: 0, seeds: n, note: "Need two teams to draw a bracket." };
+
+Nothing checks whether any pool game is final.
+
+### Why this is a blocker
+
+A director doing setup presses the button to see what it does, and the public
+bracket now shows matchups that look official and are alphabetical. Coaches will
+screenshot it. Undoing it means a redraw, and a redraw only removes games that
+are not marked final.
+
+It also compounds item 14: a wrong seed on a standings page is embarrassing, a
+wrong bracket is the thing families plan their Sunday around.
+
+### Expected behavior
+
+**Refuse to draw from standings when no pool game is final.** Return a clear
+message: "No pool results yet. Enter scores, or use 'Draw empty bracket slots' to
+post a blank bracket."
+
+**Partial results should warn, not silently proceed.** If some pool games are
+final and some are not, say how many remain and require confirmation. Drawing
+mid-pool is legitimate — a director may want to preview — but it must be a
+deliberate act, not a side effect.
+
+**The empty-bracket path already exists** — the "Also draw empty bracket slots
+now" checkbox produces TBD placeholders. That is the correct output before pool
+play, and it is what a director pressing the button early almost certainly wants.
+Offer it in the refusal message.
+
+### Related
+
+- Depends on item 14: while `seedList` returns alphabetical order with confident
+  reasons, any consumer of it can produce wrong output. Fixing 14 at the source
+  is what makes this safe.
+- Check every other caller of `seedList` for the same assumption.
+
+### Acceptance criteria
+
+- [ ] Drawing from standings with zero final pool games is refused, with a message
+      naming the empty-bracket alternative
+- [ ] Drawing with partial results warns and requires confirmation
+- [ ] The empty-bracket path still works and produces TBD placeholders
+- [ ] A bracket drawn after pool play completes seeds correctly
+- [ ] Any bracket currently drawn on scarecrow-slugfest from empty standings is
+      cleared
+
