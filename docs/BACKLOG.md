@@ -1041,3 +1041,87 @@ uses — the blank bracket should become the real bracket, not be replaced by on
 - [ ] Slots fill in as pool results land, without redrawing
 - [ ] Non-admin viewers see the blank bracket, not an empty state
 
+
+## [ ] 21. Email both coaches a box score upload link when a game should be over
+
+**High. Owner request. This is what makes the stats pipeline self-service.**
+
+Depends on item 1 (SMTP) and item 2 (coach email addresses).
+
+When a game's scheduled end time passes, email both coaches a link to upload
+their box score. The director does nothing.
+
+### Why this is the whole point
+
+Stats are the differentiator — bracket generation is a commodity, tournament
+leaderboards are not. But they only work if box scores actually arrive, and
+chasing sixteen coaches on Sunday night is not a plan. An email at the moment the
+game ends, while the book is still in someone's hand, is the difference between
+getting most of them and getting three.
+
+### Trigger
+
+A cron job, every 15 minutes. `cronAdd` is already in use at
+`pb/pb_hooks/main.pb.js:788` — follow that pattern.
+
+For each game where `start + game_length + buffer` has passed and no box score has
+been received from that team, send once. Do not wait for the score to be marked
+final: the point is that the director is not in the loop.
+
+Send to **both** teams — each keeps its own book.
+
+### The link
+
+A signed, tokenized URL scoped to one game and one team, so a coach can upload
+without an account. The reset-token pattern in `pb/pb_hooks/host.js:1091` is the
+model.
+
+- Expires — 7 days is reasonable
+- Scoped to that game and team only; must not expose other teams' data or the
+  director view
+- Single game per link. Do not hand a coach a general upload page.
+
+### The email
+
+Subject names the game plainly: "Scarecrow Slugfest — upload your book for Game 4
+vs Roadrunners."
+
+Body: the matchup, time, field, the upload link, and **step-by-step directions for
+exporting from GameChanger**, since that is where most books live. Accept a PDF
+upload, a GameChanger link, or a photo of a paper scorebook — all three paths
+already exist in the stats ingest.
+
+**The GameChanger export steps must be written by someone who has done it**, with
+current menu names, and checked on both iOS and Android. Wrong instructions are
+worse than none — the coach gives up and the box score never arrives. Do not
+guess at them.
+
+### Follow-up and restraint
+
+- One reminder if nothing arrives by the next morning. Then stop.
+- Never more than one email per game per team.
+- An unsubscribe or "stop asking about this tournament" link.
+- Director can see which games are outstanding and resend individually.
+- Suppress entirely for forfeits and cancelled games.
+
+### Director visibility
+
+A simple view: games played, box scores received, outstanding. That list is what
+a director actually wants Sunday morning, and it tells them who to find in person.
+
+### Acceptance criteria
+
+- [ ] Cron fires within 15 minutes of a game's expected end
+- [ ] Both coaches emailed, once each
+- [ ] Token link works with no login, scoped to that game and team, and expires
+- [ ] A coach cannot reach any other game or team through it
+- [ ] Email includes verified GameChanger export steps
+- [ ] PDF, GC link, and photo upload all work from the link
+- [ ] One reminder maximum, then silence
+- [ ] Unsubscribe honored
+- [ ] No email for forfeits or cancelled games
+- [ ] Director sees outstanding box scores and can resend
+- [ ] **End-to-end: schedule a game in the past, confirm both coaches receive the
+      email, upload a real GameChanger PDF from the link, confirm stats appear on
+      the tournament leaderboard**
+
