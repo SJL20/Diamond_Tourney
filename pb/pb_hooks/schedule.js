@@ -50,6 +50,9 @@ function parseScheduler(raw) {
   }
   if (!Array.isArray(days)) days = [];
   const origin = data.origin === "imported" || data.origin === "generated" ? data.origin : "";
+  const feeds = data.bracket_feeds && typeof data.bracket_feeds === "object" && data.bracket_feeds.length === undefined
+    ? data.bracket_feeds
+    : {};
   return {
     games_per_team: Number(data.games_per_team || 2) || 2,
     consolation: data.consolation !== false && data.consolation !== "false" && data.consolation !== "0",
@@ -57,6 +60,7 @@ function parseScheduler(raw) {
     draw_bracket: flag(data.draw_bracket),
     origin: origin,
     days: days.map(function (d) { return dateOnly(d); }).filter(Boolean),
+    bracket_feeds: feeds,
   };
 }
 
@@ -83,6 +87,7 @@ function saveScheduler(app, event, body) {
     draw_bracket: current.draw_bracket,
     origin: current.origin || "",
     days: current.days.slice(),
+    bracket_feeds: current.bracket_feeds || {},
   };
   if (hasOwn(body, "scheduler") && body.scheduler && typeof body.scheduler === "object") {
     const nested = parseScheduler(body.scheduler);
@@ -92,6 +97,7 @@ function saveScheduler(app, event, body) {
     next.draw_bracket = nested.draw_bracket;
     if (nested.origin) next.origin = nested.origin;
     if (nested.days.length) next.days = nested.days;
+    if (nested.bracket_feeds && Object.keys(nested.bracket_feeds).length) next.bracket_feeds = nested.bracket_feeds;
   }
   if (hasOwn(body, "games_per_team") && body.games_per_team !== "") {
     next.games_per_team = Number(body.games_per_team) || 2;
@@ -261,9 +267,6 @@ function fieldRowFromBody(body, i) {
     id: id,
     name: name,
     address: body["field_address_" + i] || "",
-    lat: body["field_lat_" + i],
-    lng: body["field_lng_" + i],
-    pin_set: body["field_pin_set_" + i],
     surface: body["field_surface_" + i] || "",
     lights: body["field_lights_" + i],
     availability: availability,
@@ -317,15 +320,9 @@ function saveField(app, event, data) {
   try {
     require(__hooks + "/geo.js").applyGeocode(rec, {
       address: data.address || rec.get("address") || event.get("address") || "",
-      lat: data.lat,
-      lng: data.lng,
-      pin_set: data.pin_set,
       geocode: data.geocode,
     });
-  } catch (err) {
-    if (data.lat != null && data.lat !== "") rec.set("lat", Number(data.lat));
-    if (data.lng != null && data.lng !== "") rec.set("lng", Number(data.lng));
-  }
+  } catch (err) {}
   if (data.surface != null) rec.set("surface", data.surface);
   if (data.lights != null) rec.set("lights", data.lights === true || data.lights === "true" || data.lights === "on");
   if (data.notes != null) rec.set("notes", data.notes);
@@ -341,17 +338,14 @@ function applyLocation(rec, body) {
   if (body.venue != null) rec.set("venue", body.venue);
   try {
     require(__hooks + "/geo.js").applyGeocode(rec, body);
-  } catch (err) {
-    if (body.lat != null && body.lat !== "") rec.set("lat", Number(body.lat));
-    if (body.lng != null && body.lng !== "") rec.set("lng", Number(body.lng));
-  }
+  } catch (err) {}
   if (body.format) {
-    if (rec.get("format") === "imported" && body.format !== "imported") {
-      const prefs = parseScheduler(rec.get("scheduler"));
+    const prefs = parseScheduler(rec.get("scheduler"));
+    if (rec.get("format") === "imported" || body.format === "imported" || prefs.origin === "imported") {
       prefs.origin = "imported";
       rec.set("scheduler", prefs);
     }
-    rec.set("format", body.format);
+    rec.set("format", body.format === "imported" ? "pool-to-bracket" : body.format);
   }
   if (body.rain_note != null) rec.set("rain_note", body.rain_note);
   if (body.rain_status) rec.set("rain_status", body.rain_status);
@@ -505,12 +499,14 @@ function listSchedule(app, eventId, auth) {
   }
   const boxes = boxesForEvent(app, eventId);
   const score = require(__hooks + "/score.js");
-  return app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time,field_name", 400, 0, { e: eventId }).map(function (r) {
+  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time,field_name", 400, 0, { e: eventId }).map(function (r) {
     return scheduleRow(app, r, {
       can_score: !!(auth && event && score.canScore(app, event, r, auth)),
       has_box: !!boxes[r.id],
     });
   });
+  rows.sort(require(__hooks + "/diamond.js").compareWeekendGames);
+  return rows;
 }
 
 function roundRobinPairs(teams) {
@@ -565,7 +561,7 @@ function poolGames(teams, gamesPerTeam) {
 }
 
 function formatWantsPool(format) {
-  return format !== "single-elim" && format !== "double-elim" && format !== "imported";
+  return format !== "single-elim" && format !== "double-elim";
 }
 
 function importedGrid(event, prefs) {
@@ -583,7 +579,7 @@ function markSchedulerOrigin(app, event, origin) {
 }
 
 function formatWantsBracket(format) {
-  return format === "pool-to-bracket" || format === "single-elim" || format === "double-elim" || format === "pool-double-elim";
+  return format === "pool-to-bracket" || format === "single-elim" || format === "double-elim" || format === "pool-double-elim" || format === "imported";
 }
 
 function formatIsDoubleElim(format) {
@@ -738,10 +734,11 @@ function autoSchedule(app, event, body) {
   let bracket = null;
   const wantBracket = prefs.draw_bracket && (formatWantsBracket(format) || keepImported);
   if (wantBracket) {
-    const bracketFormat = formatWantsBracket(format) ? format : "pool-to-bracket";
+    const bracketFormat = formatWantsBracket(format) && format !== "imported" ? format : "pool-to-bracket";
     bracket = buildBracket(app, event, {
       consolation: prefs.consolation,
       replace: true,
+      empty: true,
       format: bracketFormat,
       bracket_flights: body.bracket_flights || event.get("bracket_flights") || "none",
     });
@@ -862,24 +859,43 @@ function deleteGame(app, event, id) {
   return { deleted: id };
 }
 
+function poolResultCount(app, event) {
+  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+  let finals = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].get("status") === "final") finals++;
+  }
+  return { finals: finals, total: rows.length };
+}
+
 function seedList(app, event) {
   const diamond = require(__hooks + "/diamond.js");
   const standings = diamond.poolStandings(app, event.id);
   const ranked = [];
   for (const pool of standings) {
-    for (const t of pool.teams) ranked.push(t);
+    for (const t of pool.teams) {
+      if (t.seed != null) ranked.push(t);
+    }
   }
   ranked.sort(function (a, b) {
+    const sa = Number(a.seed || 0);
+    const sb = Number(b.seed || 0);
+    if (sa && sb && sa !== sb) return sa - sb;
     if (a.w !== b.w) return b.w - a.w;
     if (a.l !== b.l) return a.l - b.l;
     if ((a.ra || 0) !== (b.ra || 0)) return (a.ra || 0) - (b.ra || 0);
     if ((a.diff || 0) !== (b.diff || 0)) return (b.diff || 0) - (a.diff || 0);
     return (b.rs || 0) - (a.rs || 0);
   });
-  if (ranked.length) return ranked;
-  return app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id }).map(function (t) {
-    return { id: t.id, name: t.get("name") };
-  });
+  return ranked;
+}
+
+function emptySeeds(app, event) {
+  const n = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id }).length;
+  const size = n < 2 ? 0 : n <= 2 ? 2 : n <= 4 ? 4 : 8;
+  const out = [];
+  for (let i = 0; i < size; i++) out.push({ id: "", name: "" });
+  return out;
 }
 
 function normalizeFlights(raw) {
@@ -1038,13 +1054,22 @@ function drawDoubleElim(app, event, seeds, flight) {
 
 function buildBracket(app, event, opts) {
   opts = opts || {};
-  const seeds = seedList(app, event);
-  const format = opts.format || event.get("format") || "pool-to-bracket";
+  const empty = opts.empty === true || opts.empty === "true" || opts.draw_empty === true;
+  const counts = poolResultCount(app, event);
+  if (!empty && counts.finals === 0) {
+    throw new BadRequestError("No pool results yet. Enter scores, or use Draw empty bracket slots to post a blank bracket.");
+  }
+  if (!empty && counts.total > counts.finals && opts.confirm !== true && opts.confirm !== "true") {
+    throw new BadRequestError("Pool play is not finished (" + (counts.total - counts.finals) + " games still open). Send confirm=true to draw from the current standings anyway.");
+  }
+  const seeds = empty ? emptySeeds(app, event) : seedList(app, event);
+  const format = opts.format === "imported" ? "pool-to-bracket" : (opts.format || (event.get("format") === "imported" ? "pool-to-bracket" : event.get("format")) || "pool-to-bracket");
   const flightsKey = opts.bracket_flights != null ? opts.bracket_flights : (event.get("bracket_flights") || "none");
   const consolation = opts.consolation !== false && !formatIsDoubleElim(format);
   if (opts.bracket_flights != null) event.set("bracket_flights", flightsKey || "none");
-  event.set("bracket_mode", opts.bracket_mode || "standings");
-  if (opts.format) event.set("format", opts.format);
+  event.set("bracket_mode", empty ? "empty" : (opts.bracket_mode || "standings"));
+  if (opts.format && opts.format !== "imported") event.set("format", opts.format);
+  else if (event.get("format") === "imported") event.set("format", "pool-to-bracket");
   app.save(event);
   if (opts.replace) {
     const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
@@ -1067,6 +1092,40 @@ function buildBracket(app, event, opts) {
     drawn.push({ flight: fl.flight || "", seeds: fl.seeds.length, games: added });
   }
   return { games: games, seeds: n, flights: drawn, format: format, bracket_flights: flightsKey || "none" };
+}
+
+function clearCollectionGames(app, event, collection) {
+  const rows = app.findRecordsByFilter(collection, "event = {:e}", "", 400, 0, { e: event.id });
+  if (!rows.length) return { deleted: 0, kept: 0, note: "Nothing to clear." };
+  let finals = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].get("status") === "final") finals++;
+  }
+  if (finals === rows.length) {
+    throw new BadRequestError("Every game is already final. Completed results are kept.");
+  }
+  let deleted = 0;
+  let kept = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].get("status") === "final") {
+      kept++;
+      continue;
+    }
+    app.delete(rows[i]);
+    deleted++;
+  }
+  return { deleted: deleted, kept: kept, note: kept ? (kept + " games kept because they are already final.") : "" };
+}
+
+function clearBracket(app, event) {
+  const out = clearCollectionGames(app, event, "bracket_games");
+  event.set("bracket_mode", "standings");
+  app.save(event);
+  return out;
+}
+
+function clearSchedule(app, event) {
+  return clearCollectionGames(app, event, "event_schedule");
 }
 
 function listBracket(app, event) {
@@ -1358,6 +1417,9 @@ module.exports = {
   updateGame: updateGame,
   deleteGame: deleteGame,
   buildBracket: buildBracket,
+  clearBracket: clearBracket,
+  clearSchedule: clearSchedule,
+  poolResultCount: poolResultCount,
   saveCustomBracket: saveCustomBracket,
   listBracket: listBracket,
   splitFlights: splitFlights,

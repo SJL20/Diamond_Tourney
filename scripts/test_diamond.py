@@ -115,7 +115,22 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn(".tiebreak-order", css)
         self.assertIn("setupAgeFields", event)
         self.assertIn('pitch_limit_mode || "none"', event)
-        self.assertIn("Nudge the map pin", event)
+        self.assertNotIn("Nudge the map pin", event)
+        self.assertNotIn("Nudge this diamond", event)
+        self.assertNotIn('name="field_lat_', event)
+        self.assertNotIn('name="lat"', event)
+        self.assertIn("Import schedule", event)
+        self.assertIn("Clear bracket", event)
+        self.assertIn("Save weekend settings", event)
+        self.assertIn("Check back closer to the weekend", event)
+        self.assertIn("No pool results yet", event)
+        self.assertIn("function formatWeekendDates", event)
+        self.assertIn("function tabEmpty", event)
+        self.assertIn("function compareGames", event)
+        self.assertIn("Import a bracket CSV", event)
+        self.assertIn("/import-bracket", event)
+        self.assertNotIn("September 11–13, 2026", event)
+        self.assertNotIn("a.date + a.time + a.field + a.home", event)
         self.assertIn("tb-remove", event)
         self.assertIn("Head to head first", event)
         self.assertIn("Fields and facilities only", event)
@@ -1097,6 +1112,7 @@ class ScheduleTests(unittest.TestCase):
         built = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
             "consolation": True,
             "replace": True,
+            "empty": True,
         })
         self.assertGreaterEqual(built["games"], 1)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
@@ -1324,6 +1340,7 @@ class ScheduleTests(unittest.TestCase):
         built = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
             "consolation": True,
             "replace": True,
+            "empty": True,
         })
         self.assertGreaterEqual(built["games"], 1)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
@@ -1486,6 +1503,7 @@ class ScheduleTests(unittest.TestCase):
             "consolation": ev["scheduler"]["consolation"],
             "replace": True,
             "format": "pool-to-bracket",
+            "empty": True,
         })
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         sides = {g["side"] for g in board["bracket"]}
@@ -1687,8 +1705,7 @@ class LiveReviewTests(unittest.TestCase):
         })
         ev = created["event"]
         self.assertEqual(ev["pitch_limit_mode"], "none")
-        self.assertEqual(ev["lat"], 40.3668)
-        self.assertEqual(ev["lng"], -80.2345)
+        self.assertNotEqual((ev.get("lat"), ev.get("lng")), (40.3668, -80.2345))
         self.assertEqual(ev["tiebreak"]["order"], ["record", "ra"])
         self.assertIn("11U", ev["ages"])
         self.assertIn("12U", ev["ages"])
@@ -2170,6 +2187,7 @@ class AdminTeamsBracketsTests(unittest.TestCase):
             "format": "pool-to-bracket",
             "bracket_flights": "gold-silver",
             "consolation": False,
+            "confirm": True,
         })
         self.assertGreaterEqual(drawn["games"], 2)
         flights = {row["flight"]: row["seeds"] for row in drawn.get("flights") or []}
@@ -2236,6 +2254,7 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
             "replace": True,
             "format": "pool-double-elim",
+            "empty": True,
         })
         self.assertGreaterEqual(drawn["games"], 5)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
@@ -2546,6 +2565,7 @@ class ImportedScheduleBracketTests(unittest.TestCase):
             "replace": True,
             "format": "pool-to-bracket",
             "consolation": True,
+            "confirm": True,
         })
         self.assertGreaterEqual(drawn["games"], 2)
         board, after = self._snap(slug)
@@ -2589,6 +2609,338 @@ class ImportedScheduleBracketTests(unittest.TestCase):
         self.assertEqual(auto["games"], 0)
         _, after = self._snap(slug)
         self.assertEqual(after, before)
+
+
+class BacklogOpenTests(unittest.TestCase):
+    """Items 10–17 and GitHub #19: pins, provenance, info dates, empty seeds, clear, format save."""
+
+    def test_director_form_ignores_typed_coordinates(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "no-pin-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "No Pin Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "lat": 1.23,
+            "lng": 4.56,
+            "ages": "10U",
+        })
+        ev = created["event"]
+        self.assertNotEqual(ev.get("lat"), 1.23)
+        self.assertNotEqual(ev.get("lng"), 4.56)
+        self.assertEqual(ev.get("format") or "pool-to-bracket", "pool-to-bracket")
+
+    def test_info_dates_come_from_event_not_keystone_literal(self):
+        src = (ROOT / "pb/pb_public/js/event.js").read_text()
+        self.assertIn("function formatWeekendDates", src)
+        self.assertNotIn('packet?.dates || "September 11', src)
+        self.assertIn("ownMap", src)
+        self.assertIn("Check back closer to the weekend", src)
+        self.assertNotIn("Build pool play on Admin, then draw the bracket.", src)
+
+    def test_standings_have_no_seeds_before_a_final(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "no-seed-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "No Seed Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "format": "pool-to-bracket",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Zebra Hawks",
+            "pool": "A",
+            "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Alpha Heat",
+            "pool": "A",
+            "as_director": True,
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        teams = [t for p in board["standings"] for t in p["teams"]]
+        self.assertEqual(len(teams), 2)
+        self.assertTrue(all(t.get("seed") in (None, 0, "") for t in teams))
+        self.assertTrue(all(not t.get("seed_reason") for t in teams))
+        blob = json.dumps(board)
+        self.assertNotIn("name order", blob)
+        self.assertNotIn("better record", blob)
+
+    def test_draw_from_standings_refuses_before_finals(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "early-draw-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Early Draw Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Draw Hawks", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Draw Heat", "pool": "A", "as_director": True,
+        })
+        with self.assertRaises(RuntimeError) as err:
+            request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+                "format": "pool-to-bracket",
+                "replace": True,
+            })
+        self.assertIn("400", str(err.exception))
+        self.assertIn("No pool results yet", str(err.exception))
+        empty = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "empty": True,
+            "format": "pool-to-bracket",
+            "replace": True,
+        })
+        self.assertGreaterEqual(empty["games"], 1)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertTrue(board["bracket"])
+        seeded = [g for g in board["bracket"] if g.get("home") and g.get("away")]
+        self.assertEqual(seeded, [])
+        cleared = request(BASE, "POST", f"/api/events/{slug}/bracket/clear", td, {})
+        self.assertGreaterEqual(cleared["deleted"], 1)
+        after = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertFalse(after["bracket"])
+        with self.assertRaises(RuntimeError) as anon:
+            request(BASE, "POST", f"/api/events/{slug}/bracket/clear", None, {})
+        self.assertTrue("401" in str(anon.exception) or "403" in str(anon.exception))
+
+    def test_scheduler_settings_save_format_without_building(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "fmt-save-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Format Save Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "format": "pool-to-bracket",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Fmt Hawks", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Fmt Heat", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "format": "pool-double-elim",
+            "bracket_flights": "gold-silver",
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(board["event"]["format"], "pool-double-elim")
+        self.assertEqual(board["event"].get("bracket_flights"), "gold-silver")
+        sched = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertFalse(sched["schedule"])
+
+    def test_csv_create_uses_pool_to_bracket_not_imported_format(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "prov-" + uuid.uuid4().hex[:8]
+        csv = (
+            "date,time,home,away,pool,field,home_runs,away_runs,status\n"
+            "2026-09-20,09:00,Northside,West End,A,Harbor 1,5,3,final\n"
+        )
+        out = request(BASE, "POST", "/api/event/import-schedule", td, {
+            "event_slug": slug,
+            "event_name": "Provenance Classic",
+            "csv": csv,
+            "create": True,
+        })
+        self.assertTrue(out["created"])
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(board["event"]["format"], "pool-to-bracket")
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "format": "pool-to-bracket",
+            "replace": True,
+        })
+        self.assertGreaterEqual(drawn["games"], 1)
+
+    def test_clear_schedule_keeps_finals(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "clr-sked-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Clear Schedule Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Clear Hawks", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Clear Heat", "pool": "A", "as_director": True,
+        })
+        added = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Clear Hawks",
+            "away": "Clear Heat",
+            "date": "2026-10-11",
+            "time": "09:00",
+            "field": "Field 1",
+            "pool": "A",
+        })
+        gid = added["game"]["id"]
+        request(BASE, "POST", f"/api/events/{slug}/schedule/{gid}/score", td, {
+            "home_runs": 4, "away_runs": 1, "status": "final", "confirm": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Clear Hawks",
+            "away": "Clear Heat",
+            "date": "2026-10-11",
+            "time": "11:00",
+            "field": "Field 1",
+            "pool": "A",
+        })
+        out = request(BASE, "POST", f"/api/events/{slug}/schedule/clear", td, {})
+        self.assertEqual(out["kept"], 1)
+        self.assertGreaterEqual(out["deleted"], 1)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(len(board["schedule"]), 1)
+        self.assertEqual(board["schedule"][0]["status"], "final")
+        self.assertEqual(board["standings"][0]["teams"][0]["seed"], 1)
+
+    def test_schedule_orders_by_game_number_then_field(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "sort-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Sort Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Sort Hawks", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Sort Heat", "pool": "A", "as_director": True,
+        })
+        for num, field in ((2, "Field 6"), (3, "Field 1"), (4, "Field 2"), (1, "Field 4")):
+            request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+                "home": "Sort Hawks",
+                "away": "Sort Heat",
+                "date": "2026-09-20",
+                "time": "08:00",
+                "field": field,
+                "pool": "A",
+                "game_number": num,
+            })
+        request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Sort Hawks",
+            "away": "Sort Heat",
+            "date": "2026-09-20",
+            "time": "11:00",
+            "field": "Field 10",
+            "pool": "A",
+            "game_number": 50,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Sort Hawks",
+            "away": "Sort Heat",
+            "date": "2026-09-20",
+            "time": "11:00",
+            "field": "Field 2",
+            "pool": "A",
+            "game_number": 50,
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        morning = [g for g in board["overall"] if g.get("time") == "08:00"]
+        self.assertEqual([g.get("game_number") for g in morning], [1, 2, 3, 4])
+        later = [g for g in board["overall"] if g.get("time") == "11:00"]
+        self.assertEqual([g.get("field") for g in later], ["Field 2", "Field 10"])
+
+    def test_bracket_csv_preview_and_import(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "bk-imp-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Bracket Import Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        for name in (
+            "Oaks", "River", "Maple", "Lake", "Iron", "Pine", "Cedar", "West",
+        ):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": f"{name} 10U (FAKE)", "pool": "A", "as_director": True,
+            })
+        csv = (ROOT / "pb/pb_public/templates/diamond-tourney-bracket.csv").read_text()
+        preview = request(BASE, "POST", f"/api/events/{slug}/import-bracket/preview", td, {"csv": csv})
+        self.assertEqual(preview["counts"]["total"], 14)
+        self.assertEqual(preview["counts"]["problems"], 0)
+        labels = [r["game"] for r in preview["rows"]]
+        self.assertIn("B1", labels)
+        self.assertIn("IF", labels)
+        self.assertTrue(any(r.get("winner_to") == "B5" for r in preview["rows"]))
+        committed = request(BASE, "POST", f"/api/events/{slug}/import-bracket", td, {"csv": csv})
+        self.assertEqual(committed["counts"]["new"], 14)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(len(board["bracket"]), 14)
+        self.assertEqual(board["event"].get("bracket_mode"), "imported")
+        by_id = {g.get("game_id"): g for g in board["bracket"]}
+        self.assertEqual(by_id["B1"]["winner_to"], "B5")
+        self.assertEqual(by_id["B1"]["loser_to"], "L1")
+        self.assertIn("Seed", by_id["B1"]["home"])
+        self.assertIn("Winner of", by_id["B5"]["home"])
+        bad = request(BASE, "POST", f"/api/events/{slug}/import-bracket/preview", td, {
+            "csv": (
+                "game,round,home,away,winner_to\n"
+                "B1,QF,Ghost Club,Oaks 10U (FAKE),B9\n"
+            ),
+        })
+        self.assertGreaterEqual(bad["counts"]["problems"], 1)
+        self.assertTrue(any("unmatched" in " ".join(r.get("problems") or []) for r in bad["rows"]))
+        cycle = request(BASE, "POST", f"/api/events/{slug}/import-bracket/preview", td, {
+            "csv": (
+                "game,round,home,away,winner_to\n"
+                "B1,QF,seed:1,seed:2,B2\n"
+                "B2,F,winner:B1,seed:3,B1\n"
+            ),
+        })
+        self.assertTrue(any("cycle" in " ".join(r.get("problems") or []).lower() for r in cycle["rows"]))
+        with self.assertRaises(RuntimeError) as anon:
+            request(BASE, "POST", f"/api/events/{slug}/import-bracket", None, {"csv": csv})
+        self.assertTrue("401" in str(anon.exception) or "403" in str(anon.exception))
+
+    def test_bracket_reimport_keeps_finals(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "bk-keep-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Bracket Keep Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Keep Hawks", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Keep Heat", "pool": "A", "as_director": True,
+        })
+        csv = (
+            "game,round,side,home,away,winner_to,status,home_runs,away_runs\n"
+            "B1,SF,championship,Keep Hawks,Keep Heat,B2,final,4,1\n"
+            "B2,F,championship,winner:B1,Keep Heat,,scheduled,,\n"
+        )
+        request(BASE, "POST", f"/api/events/{slug}/import-bracket", td, {"csv": csv})
+        again = (
+            "game,round,side,home,away,winner_to\n"
+            "B1,SF,championship,Keep Heat,Keep Hawks,B2\n"
+            "B2,F,championship,winner:B1,Keep Hawks,\n"
+        )
+        out = request(BASE, "POST", f"/api/events/{slug}/import-bracket", td, {"csv": again})
+        self.assertEqual(out["counts"]["kept"], 1)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        b1 = next(g for g in board["bracket"] if g.get("game_id") == "B1")
+        self.assertEqual(b1["status"], "final")
+        self.assertEqual(b1["home"], "Keep Hawks")
+        self.assertEqual(b1["home_runs"], 4)
 
 
 if __name__ == "__main__":

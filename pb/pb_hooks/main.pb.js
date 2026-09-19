@@ -329,6 +329,30 @@ routerAdd("POST", "/api/events/{slug}/import-teams/preview", (e) => {
   }
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/import-bracket/preview", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  try {
+    return e.json(200, require(__hooks + "/import_bracket.js").preview(e.app, event, body, e.auth));
+  } catch (err) {
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/import-bracket", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  try {
+    return e.json(200, require(__hooks + "/import_bracket.js").commit(e.app, event, body, e.auth));
+  } catch (err) {
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/import-teams", (e) => {
   const sb = require(__hooks + "/softball.js");
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
@@ -665,9 +689,27 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
   return e.json(200, schedule.buildBracket(e.app, event, {
     consolation: prefs.consolation,
     replace: body.replace !== false,
+    empty: body.empty || body.draw_empty,
+    confirm: body.confirm,
     format: body.format || event.get("format"),
     bracket_flights: body.bracket_flights != null ? body.bracket_flights : event.get("bracket_flights"),
   }));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/bracket/clear", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, schedule.clearBracket(e.app, event));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/schedule/clear", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, schedule.clearSchedule(e.app, event));
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/bracket/custom", (e) => {
@@ -735,7 +777,7 @@ routerAdd("POST", "/api/event/import-schedule", (e) => {
   event.set("slug", slug);
   event.set("public", true);
   event.set("status", "live");
-  event.set("format", "imported");
+  event.set("format", "pool-to-bracket");
   event.set("source", "native");
   event.set("signup_open", true);
   event.set("auto_sync", true);

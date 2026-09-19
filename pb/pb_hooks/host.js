@@ -585,7 +585,7 @@ function createEvent(app, body, auth) {
   rec.set("ages", body.ages || "10U");
   rec.set("public", true);
   rec.set("status", "live");
-  rec.set("format", body.format || "imported");
+  rec.set("format", body.format && body.format !== "imported" ? body.format : "pool-to-bracket");
   rec.set("bracket_flights", body.bracket_flights || "none");
   rec.set("bracket_mode", body.bracket_mode || "standings");
   rec.set("source", source);

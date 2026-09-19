@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 80 unit/integration cases + 13 acceptance checks |
+| Tests | 90 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -185,6 +185,20 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-19 — open backlog 10–19 and scheduler format save
+
+One PR for the remaining product items. Pin nudge lat/long is gone; `/directors/new`
+shows the field-map desk (PDF accepted). CSV create defaults to `pool-to-bracket`
+with `scheduler.origin = imported`. Info dates come from the event start/end;
+East End parking copy is Keystone-only. Standings print no seeds or “name order”
+before a final. Empty board tabs are role-aware. Draw-from-standings refuses with
+zero finals; empty TBD brackets and Clear bracket / Clear schedule are on the
+scheduler. Format on that tab saves through `/settings` (GitHub #19). Bracket
+CSV import (preview + confirm, seed/winner/loser refs, no overwrite of finals)
+is on the bracket page and the scheduler. Schedule/overall sort by date, time,
+game number, then natural field order. SMTP (item 1) is still Fly Admin +
+Cloudflare DNS. Covered by `BacklogOpenTests`.
 
 ### 2026-09-18 — CSV schedule upload no longer invents Clipboard Open
 
