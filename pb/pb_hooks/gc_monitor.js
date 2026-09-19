@@ -21,7 +21,7 @@ function eventSlug(app, eventId) {
 
 function listLiveEvents(app) {
   try {
-    return app.findRecordsByFilter("events", "status = 'live'", "start", 80, 0);
+    return app.findRecordsByFilter("events", "status = 'live'", "start", 400, 0);
   } catch (err) {
     return [];
   }

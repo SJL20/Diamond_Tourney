@@ -929,12 +929,37 @@ function verifyAccount(app, token) {
 }
 
 function searchEvents(app, q) {
-  const rows = app.findRecordsByFilter("events", "public = true && status != 'archived'", "-start", 80, 0);
   const needle = String(q || "").trim().toLowerCase();
-  return rows.map(function (rec) { return eventJson(rec, app); }).filter(function (ev) {
-    if (!needle) return true;
-    return (ev.name + " " + ev.venue + " " + ev.ages + " " + ev.slug).toLowerCase().indexOf(needle) !== -1;
-  });
+  const seen = {};
+  const out = [];
+  function pushRec(rec) {
+    if (!rec || seen[rec.id]) return;
+    if (!rec.get("public") || rec.get("status") === "archived") return;
+    seen[rec.id] = true;
+    out.push(eventJson(rec, app));
+  }
+  if (needle) {
+    try {
+      pushRec(app.findFirstRecordByData("events", "slug", needle));
+    } catch (err) {}
+    try {
+      const rows = app.findRecordsByFilter(
+        "events",
+        "public = true && status != 'archived' && (name ~ {:q} || venue ~ {:q} || ages ~ {:q} || slug ~ {:q})",
+        "-start",
+        80,
+        0,
+        { q: needle },
+      );
+      for (let i = 0; i < rows.length; i++) pushRec(rows[i]);
+    } catch (err) {}
+    return out;
+  }
+  try {
+    const rows = app.findRecordsByFilter("events", "public = true && status != 'archived'", "-start", 80, 0);
+    for (let i = 0; i < rows.length; i++) pushRec(rows[i]);
+  } catch (err) {}
+  return out;
 }
 
 function accountHome(app, auth) {

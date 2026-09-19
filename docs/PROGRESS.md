@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 91 unit/integration cases + 13 acceptance checks |
+| Tests | 92 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -199,7 +199,9 @@ CSV import (preview + confirm, seed/winner/loser refs, no overwrite of finals)
 is on the bracket page and the scheduler. A director can publish a blank
 bracket from that tab; first-round slots fill when a pool game is marked
 final. Schedule/overall sort by date, time, game number, then natural field
-order. SMTP (item 1) is still Fly Admin + Cloudflare DNS. Covered by
+order. Public Find looks up a slug exactly instead of scanning only the
+newest 80 weekends, so a new event still appears on a busy box. SMTP
+(item 1) is still Fly Admin + Cloudflare DNS. Covered by
 `BacklogOpenTests`.
 
 ### 2026-09-18 — CSV schedule upload no longer invents Clipboard Open
