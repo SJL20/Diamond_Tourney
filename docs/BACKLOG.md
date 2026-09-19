@@ -599,3 +599,63 @@ standings — would remove most of the confusion.
 - [ ] One line at the top stating the order of operations
 - [ ] **A director who has never used the product can tell what each button does
       without being told**
+
+## [ ] 14. Standings page publishes alphabetical seeds before any game is played
+
+**High. Public-facing and misleading. Owner-reproduced on /t/scarecrow-slugfest.**
+
+On a tournament with no results yet, the standings page renders all 14 teams with
+seeds 1 through 14 and a stated reason for each. Every row is 0-0-0 with zero runs.
+
+The reasons read:
+
+    Seed 1  Athletics    — better record (tie counts as half a win)
+    Seed 2  Devil Dogs   — name order
+    Seed 3  Dukes 11     — name order
+    ...
+    Seed 14 Venom        — name order
+
+That is alphabetical order presented as seeding. A coach opening this sees their
+team ranked 13th before a pitch has been thrown, with an official-looking reason
+attached.
+
+### Two separate defects
+
+**14a. Seed 1's reason is borrowed and false.** `pb/pb_hooks/diamond.js` line 332:
+
+    else if (i === 0) reason = reasons[ranked[1].id] || TIEBREAK_LABELS[criteria[0]];
+
+When no team has a reason, seed 1 takes the label of the first criterion —
+"better record" — even though every team is 0-0. It states something untrue.
+
+**14b. "name order" is surfaced as a tiebreaker.** Line 333 falls through to
+`"name order"` when nothing separates two teams. Alphabetical is a stable-sort
+fallback so the list does not shuffle between page loads. It is not a tiebreaking
+rule and must never be shown to the public as the reason for a seed.
+
+### Expected behavior
+
+**Before any game is final:** the standings tab should show an empty state — the
+team list with no seeds and no reasons, or a line saying standings appear once
+scores are entered. Not a ranked list.
+
+**Once results exist:** show seeds and reasons only for teams a criterion actually
+separated. Where teams remain genuinely tied on every configured criterion, show
+them as tied — same seed number or a "tied" marker — rather than inventing an
+order. If a stable order is needed for display, sort alphabetically silently and
+say nothing.
+
+The configured tiebreak chain printed at the bottom of the page is good and
+should stay.
+
+### Acceptance criteria
+
+- [ ] A tournament with no final games shows no seeds and no reasons
+- [ ] The string "name order" never appears in public output
+- [ ] Seed 1 never displays a reason belonging to another team
+- [ ] Teams tied on every configured criterion display as tied, not ordered
+- [ ] Once one game is final, standings and reasons appear and are correct
+- [ ] **Check the schedule, bracket and stats tabs for the same problem — an empty
+      tournament should not render authoritative-looking empty results anywhere**
+
+
