@@ -462,6 +462,24 @@ function importSchedule(app, event, csv) {
   return { imported: created.length, standings: poolStandings(app, event.id) };
 }
 
+function importIntoEvent(app, event, csv, replace) {
+  if (replace === true || replace === "true" || replace === "on" || replace === "1") {
+    const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    for (let i = 0; i < old.length; i++) app.delete(old[i]);
+  }
+  return importSchedule(app, event, csv);
+}
+
+function wantsCreateEvent(body) {
+  return body.create === true || body.create === "true" || body.create === "1" || body.create === 1;
+}
+
+function isPlaceholderWeekend(body) {
+  const slug = String(body.event_slug || "").trim().toLowerCase();
+  const name = String(body.event_name || "").trim().toLowerCase();
+  return slug === "clipboard-open" || name === "clipboard open";
+}
+
 function inferSide(round, side) {
   if (side === "losers" || side === "winners" || side === "championship" || side === "consolation") return side;
   if (side) return side;
@@ -749,6 +767,9 @@ module.exports = {
   parseCsv: parseCsv,
   poolStandings: poolStandings,
   importSchedule: importSchedule,
+  importIntoEvent: importIntoEvent,
+  wantsCreateEvent: wantsCreateEvent,
+  isPlaceholderWeekend: isPlaceholderWeekend,
   advanceBracket: advanceBracket,
   eventLeaders: eventLeaders,
   publicBoard: publicBoard,

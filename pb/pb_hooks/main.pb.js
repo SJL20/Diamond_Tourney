@@ -483,6 +483,17 @@ routerAdd("POST", "/api/events/{slug}/fields", (e) => {
   return e.json(200, { fields: saved.length ? saved : schedule.eventFields(e.app, event.id) });
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/schedule/import", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const diamond = require(__hooks + "/diamond.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  if (!body.csv) throw new BadRequestError("csv required");
+  const result = diamond.importIntoEvent(e.app, event, body.csv, body.replace);
+  return e.json(200, { event: event.get("slug"), imported: result.imported, standings: result.standings, created: false });
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/schedule/auto", (e) => {
   const sb = require(__hooks + "/softball.js");
   const schedule = require(__hooks + "/schedule.js");
@@ -697,37 +708,45 @@ routerAdd("POST", "/api/events/import-popup", (e) => {
 routerAdd("POST", "/api/event/import-schedule", (e) => {
   const sb = require(__hooks + "/softball.js");
   const diamond = require(__hooks + "/diamond.js");
+  const host = require(__hooks + "/host.js");
   sb.requireRole(e, ["region_admin", "event_td"]);
   const body = e.requestInfo().body || {};
-  if (!body.event_slug || !body.csv) throw new BadRequestError("event_slug and csv required");
-  let event;
-  let existed = false;
-  try {
-    event = e.app.findFirstRecordByData("events", "slug", body.event_slug);
-    existed = true;
-  } catch (err) {
-    event = new Record(e.app.findCollectionByNameOrId("events"));
-    event.set("name", body.event_name || body.event_slug);
-    event.set("slug", body.event_slug);
-    event.set("public", true);
-    event.set("status", "live");
-    event.set("format", "imported");
-    event.set("source", "native");
-    event.set("signup_open", true);
-    event.set("auto_sync", true);
-    event.set("venue", body.venue || "");
-    event.set("ages", body.ages || "10U");
-    event.set("pitch_limit_ip", 6);
-    if (e.auth) event.set("created_by", e.auth.id);
-    e.app.save(event);
+  if (!body.csv) throw new BadRequestError("csv required");
+  const into = String(body.into || body.event_slug || body.slug || "").trim();
+  let event = null;
+  if (into) {
+    try { event = e.app.findFirstRecordByData("events", "slug", into); } catch (err) { event = null; }
   }
-  if (existed) sb.requireEventAdmin(e, event);
-  if (body.replace) {
-    const old = e.app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
-    for (const row of old) e.app.delete(row);
+  if (event) {
+    sb.requireEventAdmin(e, event);
+    const result = diamond.importIntoEvent(e.app, event, body.csv, body.replace);
+    return e.json(200, { event: event.get("slug"), imported: result.imported, standings: result.standings, created: false });
   }
-  const result = diamond.importSchedule(e.app, event, body.csv);
-  return e.json(200, { event: event.get("slug"), imported: result.imported, standings: result.standings });
+  if (!diamond.wantsCreateEvent(body)) {
+    throw new BadRequestError("This tournament does not exist. Import from that weekend's Admin, or type a new name and choose Create a new tournament.");
+  }
+  const name = String(body.event_name || "").trim();
+  if (!name || diamond.isPlaceholderWeekend(body)) {
+    throw new BadRequestError("Name this weekend to create it. The sample Clipboard Open name is not used.");
+  }
+  const slug = host.uniqueSlug(e.app, host.slugify(body.event_slug || name));
+  event = new Record(e.app.findCollectionByNameOrId("events"));
+  event.set("name", name);
+  event.set("slug", slug);
+  event.set("public", true);
+  event.set("status", "live");
+  event.set("format", "imported");
+  event.set("source", "native");
+  event.set("signup_open", true);
+  event.set("auto_sync", true);
+  event.set("venue", body.venue || "");
+  event.set("ages", body.ages || "10U");
+  event.set("pitch_limit_ip", Number(body.pitch_limit_ip || 0));
+  event.set("pitch_limit_mode", body.pitch_limit_mode || "none");
+  if (e.auth) event.set("created_by", e.auth.id);
+  e.app.save(event);
+  const result = diamond.importIntoEvent(e.app, event, body.csv, body.replace);
+  return e.json(200, { event: event.get("slug"), imported: result.imported, standings: result.standings, created: true });
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/bot/event-update", (e) => {

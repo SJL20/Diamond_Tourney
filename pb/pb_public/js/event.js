@@ -1327,6 +1327,11 @@ export async function startTournament() {
         <h3>Link a public page</h3>
         <p>Paste the TM URL. Guidelines and uploads stay on this host.</p>
       </a>
+      <a class="choice" data-link href="/directors/import">
+        <p class="muted">CSV</p>
+        <h3>You already have a schedule</h3>
+        <p>Paste or upload the Excel / legal-pad grid. Name the weekend first — a CSV alone does not create a tournament.</p>
+      </a>
       <a class="choice" data-link href="/directors/import-popup">
         <p class="muted">Keystone Clash</p>
         <h3>Import the popup</h3>
@@ -1978,6 +1983,20 @@ function bindVenuePhotos(slug, photos, showErr) {
   });
 }
 
+function scheduleImportDesk() {
+  return `
+    <details class="setup-block" id="schedule-import">
+      <summary>Import a schedule CSV</summary>
+      <p class="muted">Paste or upload the grid you already have. Games land on this tournament only. This does not create a new weekend.</p>
+      <form class="form wide" id="import-schedule-form">
+        <label>Spreadsheet file <input name="file" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"></label>
+        <label>Or paste rows <textarea name="csv" rows="6" placeholder="date,time,home,away,pool,field"></textarea></label>
+        <label class="check"><input type="checkbox" name="replace"> Replace existing pool games on this weekend</label>
+        <button class="btn" type="submit">Import onto this tournament</button>
+      </form>
+    </details>`;
+}
+
 function teamImportDesk() {
   return `
     <details class="setup-block" id="team-import">
@@ -2175,6 +2194,26 @@ function currentImportMapping() {
   return mapping;
 }
 
+function bindScheduleImport(slug, showErr) {
+  const form = document.getElementById("import-schedule-form");
+  if (!form) return;
+  form.addEventListener("submit", async (evnt) => {
+    evnt.preventDefault();
+    try {
+      const csv = await readImportText(form);
+      if (!csv) throw new Error("Choose a CSV or paste rows.");
+      const out = await adminPost(slug, "/schedule/import", {
+        csv,
+        replace: form.replace?.checked === true,
+      });
+      flashSaved("Schedule imported · " + (out.imported || 0) + " games on this tournament");
+      eventAdmin(slug);
+    } catch (err) {
+      showErr(err);
+    }
+  });
+}
+
 function bindTeamImport(slug, showErr) {
   const form = document.getElementById("import-teams-form");
   if (!form) return;
@@ -2312,7 +2351,7 @@ export async function eventAdmin(slug) {
             <button class="btn" id="sync-now" type="button">Refresh links</button>
             <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
             <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
-            <a class="btn ghost" data-link href="/directors/import">Import a grid</a>
+            <a class="btn ghost" data-link href="/directors/import?into=${encodeURIComponent(ev.slug)}">Import a grid</a>
             <button class="btn ghost" id="duplicate-event" type="button">Duplicate this weekend</button>
             ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
           </div>
@@ -2361,6 +2400,7 @@ export async function eventAdmin(slug) {
           <p class="muted">${ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported")
             ? "This weekend has an imported pool grid. Draw a bracket from standings — that does not change pool play. Build pool schedule will not replace those games."
             : "Round-robin inside each pool. A diamond is only used while it is open that day. Drawing or selecting a bracket does not change imported pool games."}</p>
+          ${scheduleImportDesk()}
           <form class="form wide" id="auto-form">
             <div class="form-grid two">
               <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml((ev.scheduler && ev.scheduler.days && ev.scheduler.days.length ? ev.scheduler.days : [ev.start, ev.end].filter(Boolean)).join("\n") || "")}</textarea></label>
@@ -2518,6 +2558,7 @@ export async function eventAdmin(slug) {
   bindTiebreakOrder(eventRoot());
   bindVenuePhotos(slug, plan.photos || [], showErr);
   bindTeamImport(slug, showErr);
+  bindScheduleImport(slug, showErr);
   bindContactEdits(slug, showErr);
   bindCustomBracket(slug, showErr);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
@@ -2773,44 +2814,91 @@ export async function eventAdmin(slug) {
   }
 }
 
+function weekendSlug(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 export async function directorImport() {
   const u = eventPb.authStore.record;
   if (!recordIsDirector(u)) {
     eventRoot().innerHTML = eventChrome(null, "", `<section class="card"><p>Director login required.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
     return;
   }
+  const into = new URLSearchParams(location.search).get("into") || new URLSearchParams(location.search).get("from") || "";
+  let intoName = into;
+  if (into) {
+    try {
+      const board = await fetch("/api/event/" + encodeURIComponent(into) + "/board").then((r) => r.json());
+      intoName = board.event?.name || into;
+    } catch (err) {}
+  }
+  const sample = "date,time,home,away,pool,field,home_runs,away_runs,status\n2026-09-20,09:00,Northside,West End,A,Harbor 1,,,\n2026-09-20,09:00,Eastside,South Ridge,B,Harbor 2,,,";
   eventRoot().innerHTML = eventChrome(null, "create", `
     <section class="page-head">
-      <h1>You already have a schedule</h1>
-      <p class="muted">Bring the grid from Excel, Tourney Machine, or a legal pad.</p>
+      <h1>${into ? "Import a schedule onto this weekend" : "You already have a schedule"}</h1>
+      <p class="muted">${into
+        ? `Games go on ${escapeHtml(intoName)}. A CSV upload does not create a new tournament.`
+        : "Name the weekend first. Uploading a CSV without a name does not create a tournament."}</p>
     </section>
     <section class="card">
       <form class="form" id="import-form" style="max-width:none">
-        <label>Event slug <input name="event_slug" value="clipboard-open" required></label>
-        <label>Event name <input name="event_name" value="Clipboard Open"></label>
-        <label>CSV (header required)
-          <textarea name="csv" rows="10">date,time,home,away,pool,field,home_runs,away_runs,status
-2026-09-20,09:00,Northside,West End,A,Harbor 1,5,3,final
-2026-09-20,09:00,Eastside,South Ridge,B,Harbor 2,,,scheduled</textarea>
+        ${into ? `<input type="hidden" name="into" value="${escapeHtml(into)}">`
+          : `<label>Weekend name <input name="event_name" required placeholder="Harbor Classic" autocomplete="off"></label>
+             <label>Public slug <input name="event_slug" placeholder="harbor-classic"></label>
+             <label class="check"><input type="checkbox" name="create" required checked> Create a new tournament with this name</label>`}
+        <label>Spreadsheet file <input name="file" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"></label>
+        <label>Or paste CSV
+          <textarea name="csv" rows="10" placeholder="${escapeHtml(sample)}"></textarea>
         </label>
-        <button class="btn" type="submit">Publish the public link</button>
+        <label class="check"><input type="checkbox" name="replace"${into ? "" : " checked"}> Replace existing pool games${into ? " on this weekend" : ""}</label>
+        <button class="btn" type="submit">${into ? "Import onto this tournament" : "Publish the public link"}</button>
         <p class="error" id="import-err" hidden></p>
       </form>
     </section>`);
-  document.getElementById("import-form").addEventListener("submit", async (ev) => {
+  const form = document.getElementById("import-form");
+  form.querySelector("[name=event_name]")?.addEventListener("input", (evnt) => {
+    const slug = form.querySelector("[name=event_slug]");
+    if (slug && !slug.dataset.locked) slug.value = weekendSlug(evnt.target.value);
+  });
+  form.querySelector("[name=event_slug]")?.addEventListener("input", (evnt) => {
+    evnt.target.dataset.locked = evnt.target.value ? "1" : "";
+  });
+  form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const data = Object.fromEntries(new FormData(ev.target));
-    const res = await fetch("/api/event/import-schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: eventPb.authStore.token },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      document.getElementById("import-err").hidden = false;
-      document.getElementById("import-err").textContent = await res.text();
-      return;
+    const err = document.getElementById("import-err");
+    try {
+      const csv = await readImportText(form);
+      if (!csv) throw new Error("Choose a CSV or paste rows.");
+      const fd = new FormData(form);
+      const intoSlug = String(fd.get("into") || "").trim();
+      const body = {
+        csv,
+        replace: fd.get("replace") === "on",
+      };
+      let res;
+      if (intoSlug) {
+        res = await fetch("/api/events/" + encodeURIComponent(intoSlug) + "/schedule/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify(body),
+        });
+      } else {
+        body.event_name = String(fd.get("event_name") || "").trim();
+        body.event_slug = String(fd.get("event_slug") || "").trim();
+        body.create = fd.get("create") === "on";
+        res = await fetch("/api/event/import-schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify(body),
+        });
+      }
+      if (!res.ok) throw new Error(await res.text());
+      const out = await res.json();
+      flashSaved(out.created ? "Tournament created from the grid" : "Schedule imported onto this tournament");
+      goEvent("/t/" + (out.event || intoSlug));
+    } catch (ex) {
+      err.hidden = false;
+      err.textContent = ex.message || String(ex);
     }
-    flashSaved("Schedule published");
-    goEvent("/t/" + data.event_slug);
   });
 }

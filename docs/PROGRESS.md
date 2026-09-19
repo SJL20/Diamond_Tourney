@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 76 unit/integration cases + 13 acceptance checks |
+| Tests | 80 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -185,6 +185,16 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-18 — CSV schedule upload no longer invents Clipboard Open
+
+Uploading or pasting a schedule CSV without naming the weekend used to POST
+`event_slug=clipboard-open` and the API created that tournament. Admin → Import
+a grid now keeps `?into=` the current slug. Scheduler has an in-event CSV desk
+that posts to `/api/events/{slug}/schedule/import` (`created: false`). The
+global door-three route only opens a new weekend when `create` is true and the
+name is not the sample Clipboard Open. Pitching limits on that create path
+default to none. Covered by `ScheduleCsvImportTests`.
 
 ### 2026-09-18 — field rows stay 1, 2, 3
 

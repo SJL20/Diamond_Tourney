@@ -151,6 +151,17 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn('name="away_id"', event)
         self.assertIn("function flightSelect", event)
         self.assertIn("function roundSelect", event)
+        self.assertIn("/directors/import?into=", event)
+        self.assertIn("/schedule/import", event)
+        self.assertIn("does not create a new weekend", event)
+        self.assertIn("Name the weekend first", event)
+        self.assertIn("a CSV alone does not create a tournament", event)
+        self.assertIn('name="into"', event)
+        self.assertIn('name="create"', event)
+        self.assertIn("Import onto this tournament", event)
+        self.assertNotIn('value="clipboard-open"', event)
+        self.assertNotIn('value="Clipboard Open"', event)
+        self.assertNotIn('value="Hawks Classic"', event)
         self.assertIn("function rewriteFieldInputName", event)
         self.assertIn("function renumberFieldRows", event)
         self.assertIn("does not change imported pool games", event)
@@ -291,14 +302,18 @@ class BoardTests(unittest.TestCase):
     def test_import_door_three(self):
         admin = auth(BASE, "owner@local.test", "RegionAdmin1!")
         csv = (ROOT / "testdata" / "clipboard_open.csv").read_text()
+        slug = "door-three-" + uuid.uuid4().hex[:8]
         out = request(BASE, "POST", "/api/event/import-schedule", admin, {
-            "event_slug": "clipboard-open",
-            "event_name": "Clipboard Open",
+            "event_slug": slug,
+            "event_name": "Door Three Grid",
             "csv": csv,
             "replace": True,
+            "create": True,
         })
+        self.assertTrue(out["created"])
+        self.assertEqual(out["event"], slug)
         self.assertGreaterEqual(out["imported"], 3)
-        board = request(BASE, "GET", "/api/event/clipboard-open/board")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
         pool_a = next(p for p in board["standings"] if p["name"] == "A")
         self.assertEqual(pool_a["teams"][0]["name"], "Northside")
         self.assertEqual(pool_a["teams"][0]["w"], 2)
@@ -2356,6 +2371,108 @@ class SchedulerTeamDropdownTests(unittest.TestCase):
         self.assertEqual(ok["bracket"][0]["away"], "Drop Heat")
 
 
+class ScheduleCsvImportTests(unittest.TestCase):
+    """A schedule CSV without a real weekend name must not open Clipboard Open."""
+
+    def _csv(self):
+        return (ROOT / "testdata" / "clipboard_open.csv").read_text()
+
+    def _public_slugs(self):
+        page = request(BASE, "GET", "/api/collections/events/records?perPage=200")
+        return {row["slug"] for row in page.get("items") or []}
+
+    def test_mashless_clipboard_defaults_do_not_create_a_weekend(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        before = self._public_slugs()
+        ghost = "ghost-grid-" + uuid.uuid4().hex[:8]
+        with self.assertRaises(RuntimeError) as blank:
+            request(BASE, "POST", "/api/event/import-schedule", td, {
+                "csv": self._csv(),
+                "replace": True,
+            })
+        self.assertIn("400", str(blank.exception))
+        with self.assertRaises(RuntimeError) as unused:
+            request(BASE, "POST", "/api/event/import-schedule", td, {
+                "event_slug": ghost,
+                "event_name": "Ghost Grid",
+                "csv": self._csv(),
+                "replace": True,
+            })
+        self.assertIn("400", str(unused.exception))
+        self.assertIn("does not exist", str(unused.exception).lower())
+        after = self._public_slugs()
+        self.assertEqual(after, before)
+        self.assertNotIn(ghost, after)
+        self.assertNotIn("clipboard-open", after - before)
+
+    def test_placeholder_name_refused_even_with_create(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", "/api/event/import-schedule", td, {
+                "event_slug": "clipboard-open",
+                "event_name": "Clipboard Open",
+                "csv": self._csv(),
+                "create": True,
+            })
+        self.assertIn("400", str(bad.exception))
+        self.assertIn("clipboard open", str(bad.exception).lower())
+        slugs = self._public_slugs()
+        self.assertNotIn("clipboard-open", slugs)
+
+    def test_import_into_existing_stays_on_that_slug(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "keep-csv-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Keep CSV Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "format": "imported",
+        })
+        before = self._public_slugs()
+        out = request(BASE, "POST", f"/api/events/{slug}/schedule/import", td, {
+            "csv": self._csv(),
+            "replace": False,
+        })
+        self.assertEqual(out["event"], slug)
+        self.assertFalse(out["created"])
+        self.assertGreaterEqual(out["imported"], 3)
+        again = request(BASE, "POST", "/api/event/import-schedule", td, {
+            "event_slug": slug,
+            "event_name": "Clipboard Open",
+            "csv": self._csv(),
+            "replace": True,
+        })
+        self.assertEqual(again["event"], slug)
+        self.assertFalse(again["created"])
+        self.assertGreaterEqual(again["imported"], 3)
+        self.assertEqual(self._public_slugs(), before)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(board["event"]["slug"], slug)
+        self.assertEqual(board["event"]["name"], "Keep CSV Classic")
+        pool_a = next(p for p in board["standings"] if p["name"] == "A")
+        self.assertEqual(pool_a["teams"][0]["name"], "Northside")
+        self.assertEqual(pool_a["teams"][0]["w"], 2)
+        self.assertNotIn("clipboard-open", self._public_slugs())
+
+    def test_create_true_with_real_name_opens_one_weekend(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "named-grid-" + uuid.uuid4().hex[:8]
+        out = request(BASE, "POST", "/api/event/import-schedule", td, {
+            "event_slug": slug,
+            "event_name": "Named Grid Classic",
+            "csv": self._csv(),
+            "create": True,
+        })
+        self.assertTrue(out["created"])
+        self.assertEqual(out["event"], slug)
+        self.assertGreaterEqual(out["imported"], 3)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(board["event"]["name"], "Named Grid Classic")
+        self.assertEqual((board["event"].get("pitch_limit_mode") or "none"), "none")
+
+
 class FieldRowNumberTests(unittest.TestCase):
     """Form field indexes stay dense so Add another field never skips a number."""
 
@@ -2405,6 +2522,7 @@ class ImportedScheduleBracketTests(unittest.TestCase):
             "event_name": "Imported Bracket Weekend",
             "csv": self.CSV,
             "replace": True,
+            "create": True,
         })
         return slug
 
