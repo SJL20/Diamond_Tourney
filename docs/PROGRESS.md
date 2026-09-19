@@ -200,7 +200,10 @@ is on the bracket page and the scheduler. A director can publish a blank
 bracket from that tab; first-round slots fill when a pool game is marked
 final. Schedule/overall sort by date, time, game number, then natural field
 order. Public Find looks up a slug exactly instead of scanning only the
-newest 80 weekends, so a new event still appears on a busy box. SMTP
+newest 80 weekends, so a new event still appears on a busy box. The
+`/year/{year}` board pages through every public weekend instead of the
+first 80 names, so Keystone Clash stays on 2026 after a long test run.
+SMTP
 (item 1) is still Fly Admin + Cloudflare DNS. Covered by
 `BacklogOpenTests`.
 

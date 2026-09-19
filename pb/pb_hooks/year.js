@@ -60,7 +60,20 @@ function clubKey(app, eventTeam) {
 }
 
 function yearEvents(app, year) {
-  const all = app.findRecordsByFilter("events", "public = true && status != 'archived'", "name", 80, 0);
+  const all = [];
+  const size = 200;
+  let page = 0;
+  while (page < 25) {
+    let rows = [];
+    try {
+      rows = app.findRecordsByFilter("events", "public = true && status != 'archived'", "name", size, page * size);
+    } catch (err) {
+      break;
+    }
+    for (let i = 0; i < rows.length; i++) all.push(rows[i]);
+    if (rows.length < size) break;
+    page += 1;
+  }
   return all.filter(function (ev) { return eventYear(ev, year) === String(year); });
 }
 
@@ -126,7 +139,7 @@ function yearBoard(app, year) {
       "bracket_games",
       "event = {:e} && status = 'final'",
       "",
-      80,
+      400,
       0,
       { e: ev.id },
     );
