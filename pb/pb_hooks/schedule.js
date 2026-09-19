@@ -447,10 +447,17 @@ function fieldLabel(app, rec) {
 }
 
 function scheduleRow(app, rec, extras) {
-  function teamName(id) {
-    if (!id) return "";
-    try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
+  function teamMeta(id) {
+    if (!id) return { name: "", slug: "" };
+    try {
+      const t = app.findRecordById("event_teams", id);
+      return { name: t.get("name") || "", slug: t.get("slug") || "" };
+    } catch (err) { return { name: "", slug: "" }; }
   }
+  const home = teamMeta(rec.get("home"));
+  const away = teamMeta(rec.get("away"));
+  const source = rec.get("score_source") || "";
+  const conflict = source === "conflict";
   const row = {
     id: rec.id,
     date: rec.get("date") || "",
@@ -459,13 +466,17 @@ function scheduleRow(app, rec, extras) {
     field: fieldLabel(app, rec),
     field_id: rec.get("field") || "",
     pool: rec.get("pool") || "",
-    home: teamName(rec.get("home")),
-    away: teamName(rec.get("away")),
+    home: home.name,
+    away: away.name,
     home_id: rec.get("home") || "",
     away_id: rec.get("away") || "",
-    home_runs: rec.get("home_runs"),
-    away_runs: rec.get("away_runs"),
+    home_slug: home.slug,
+    away_slug: away.slug,
+    home_runs: conflict ? null : rec.get("home_runs"),
+    away_runs: conflict ? null : rec.get("away_runs"),
     status: rec.get("status") || "scheduled",
+    score_source: source,
+    book_state: source || "",
     notes: rec.get("notes") || "",
     delayed_from: rec.get("delayed_from") || "",
     can_score: false,

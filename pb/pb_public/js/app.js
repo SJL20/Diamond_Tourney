@@ -2,7 +2,8 @@ import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.
 import {
   directorDuplicate, directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
   eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
-  eventSchedule, eventSignup, eventStandings, eventStats, startTournament,
+  eventSchedule, eventSignup, eventStandings, eventStats, eventTeamPage, boxUploadPage, boxStopPage, boxHelpPage,
+  startTournament,
 } from "./event.js";
 import { accountHome, adminEvents, adminTeams, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
 import { flashSaved, isSiteAdmin, pageShell } from "./chrome.js";
@@ -41,7 +42,11 @@ const ROUTES = [
   [/^\/t\/([^/]+)\/signup\/?$/, "esignup"],
   [/^\/t\/([^/]+)\/info\/?$/, "einfo"],
   [/^\/t\/([^/]+)\/admin\/?$/, "eadmin"],
+  [/^\/t\/([^/]+)\/team\/([^/]+)\/?$/, "eteam"],
   [/^\/t\/([^/]+)\/?$/, "ehome"],
+  [/^\/box\/([^/]+)\/stop\/?$/, "boxstop"],
+  [/^\/box\/([^/]+)\/?$/, "boxupload"],
+  [/^\/help\/box-score\/?$/, "boxhelp"],
   [/^\/teams\/?$/, "teams"],
   [/^\/teams\/([^/]+)\/home\/?$/, "home"],
   [/^\/teams\/([^/]+)\/roster\/?$/, "roster"],
@@ -400,6 +405,10 @@ async function render() {
     if (name === "esignup") return eventSignup(params[0]);
     if (name === "einfo") return eventInfo(params[0]);
     if (name === "eadmin") return eventAdmin(params[0]);
+    if (name === "eteam") return eventTeamPage(params[0], params[1]);
+    if (name === "boxupload") return boxUploadPage(params[0]);
+    if (name === "boxstop") return boxStopPage(params[0]);
+    if (name === "boxhelp") return boxHelpPage();
     if (name === "publicTeam") return publicTeam(params[0]);
     if (name === "home") return home(params[0]);
     if (name === "roster") return roster(params[0]);

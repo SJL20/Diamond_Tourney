@@ -1072,7 +1072,7 @@ function deleteEvent(app, event, body) {
     }
   } catch (err) {}
   const children = [
-    "event_hitting", "event_pitching", "event_boxes", "event_schedule",
+    "event_hitting", "event_pitching", "event_boxes", "box_submissions", "event_schedule",
     "bracket_games", "venue_photos", "sync_log", "team_contacts", "event_teams",
     "pools", "fields", "event_co_owners",
   ];

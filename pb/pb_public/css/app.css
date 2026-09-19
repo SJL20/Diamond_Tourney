@@ -831,10 +831,31 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   html { scroll-behavior: auto; }
 }
 
+.next-game {
+  background: var(--navy);
+  color: #fff;
+  padding: 22px 24px;
+  border-radius: var(--radius);
+  margin: 0 0 18px;
+}
+.next-game .kicker { color: #f0d4b8; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.78rem; margin: 0 0 6px; }
+.next-when { font-family: Oswald, sans-serif; font-size: 2rem; line-height: 1.1; margin: 0 0 6px; }
+.next-vs { font-size: 1.35rem; font-weight: 700; margin: 0 0 6px; }
+.next-game .muted { color: #d5c9b8; }
+.next-game a { color: #fff; text-decoration: underline; }
+.next-game.empty { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+.team-link { text-decoration: underline; text-underline-offset: 2px; }
+.assist-out { margin-top: 16px; padding: 12px 14px; background: #f7f1e6; border: 1px solid var(--line); border-radius: 8px; }
+.assist-label { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.assist-math { margin: 8px 0 0; padding-left: 1.2rem; }
+.team-sheet { max-width: 720px; }
+
 @media print {
   body { background: #fff; }
   .site-bar, .event-bar, .footer, .btn, .nav, .no-print, .bk-desk-box, #bracket-import { display: none !important; }
   .card, .hero, .page-head { box-shadow: none; border: 1px solid #ccc; }
   .bracket-print { display: block; }
   .bk-col, .bk-card { break-inside: avoid; page-break-inside: avoid; }
+  .team-sheet { max-width: none; }
+  .next-game { break-inside: avoid; page-break-inside: avoid; }
 }

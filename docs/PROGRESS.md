@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 92 unit/integration cases + 13 acceptance checks |
+| Tests | 95 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -203,6 +203,23 @@ is checked on both `/plan` and `/board`.
 
 Covered by `test_info_dates_come_from_event_not_keystone_literal` and
 `test_scheduler_settings_save_format_without_building`.
+
+### 2026-09-19 — BACKLOG 21–24 box mail, two-book scores, assist, team pages
+
+Cron `box-score-ask` emails both coaches a one-game token after
+`start + game_length + 15`. Tokens work with no login. First book posts
+`score_source=one_book`; a mismatch hides public runs (`conflict`, not a fake
+0-0); agreement or a director pick marks `verified`. Assist is GET-only with
+three questions and shown arithmetic. `/t/{slug}/team/{team-slug}` is the
+forwardable team card; names on standings, schedule, games, bracket, and stats
+link there. Public team JSON was checked logged-out — no coach email or phone.
+SMTP still needs Fly Admin + SPF/DKIM (item 1). GameChanger menu names are not
+invented. Item 26 is untouched. Covered by `BoxScoreTeamPageTests`.
+A stray backtick in the game-page score ternary (`eventGame`) left the SPA
+on “Loading…” in Chrome (`Missing } in template expression`); the false
+branch is one template again. Browser-verified on isolated `:8112`
+(`box-card-classic`): first book 5–3 one-book, mismatch held as —, director
+picked the Dukes book to verified, assist stayed GET-only.
 
 ### 2026-09-19 — open backlog 10–19 and scheduler format save
 

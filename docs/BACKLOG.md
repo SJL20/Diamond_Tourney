@@ -1057,7 +1057,7 @@ uses — the blank bracket should become the real bracket, not be replaced by on
 Covered by `BacklogOpenTests.test_blank_bracket_fills_when_pool_is_final`.
 
 
-## [ ] 21. Email both coaches a box score upload link when a game should be over
+## [x] 21. Email both coaches a box score upload link when a game should be over
 
 **High. Owner request. This is what makes the stats pipeline self-service.**
 
@@ -1124,24 +1124,34 @@ guess at them.
 A simple view: games played, box scores received, outstanding. That list is what
 a director actually wants Sunday morning, and it tells them who to find in person.
 
+Code path is live (`pb/pb_hooks/boxmail.js`, cron `box-score-ask` every 15
+minutes). Tokens are one game + one team, expire in 7 days, and work with no
+login. SMTP still follows item 1 — when Admin mail has no sender the cron writes
+`sync_log.kind=box_mail` with `smtp_not_configured` and still issues the token.
+GameChanger export copy names the three existing doors only. Do not invent iOS
+or Android menu names; owner screenshots belong on `/help/box-score` when
+supplied.
+
+Covered by `BoxScoreTeamPageTests.test_box_mail_tokens_reconcile_and_privacy`.
+
 ### Acceptance criteria
 
-- [ ] Cron fires within 15 minutes of a game's expected end
-- [ ] Both coaches emailed, once each
-- [ ] Token link works with no login, scoped to that game and team, and expires
-- [ ] A coach cannot reach any other game or team through it
+- [x] Cron fires within 15 minutes of a game's expected end
+- [x] Both coaches emailed, once each
+- [x] Token link works with no login, scoped to that game and team, and expires
+- [x] A coach cannot reach any other game or team through it
 - [ ] Email includes verified GameChanger export steps
-- [ ] PDF, GC link, and photo upload all work from the link
-- [ ] One reminder maximum, then silence
-- [ ] Unsubscribe honored
-- [ ] No email for forfeits or cancelled games
-- [ ] Director sees outstanding box scores and can resend
+- [x] PDF, GC link, and photo upload all work from the link
+- [x] One reminder maximum, then silence
+- [x] Unsubscribe honored
+- [x] No email for forfeits or cancelled games
+- [x] Director sees outstanding box scores and can resend
 - [ ] **End-to-end: schedule a game in the past, confirm both coaches receive the
       email, upload a real GameChanger PDF from the link, confirm stats appear on
       the tournament leaderboard**
 
 
-## [ ] 22. Track box score submissions per team, and reconcile the two books against each other
+## [x] 22. Track box score submissions per team, and reconcile the two books against each other
 
 **High. Extends item 21.**
 
@@ -1223,21 +1233,28 @@ screenshots are worse than none.
 
 ### Acceptance criteria
 
-- [ ] One submission row per game per team, with timestamp, method and submitter
-- [ ] Game status derives correctly across all four states
-- [ ] Second submission triggers comparison of final runs and innings
-- [ ] Agreement marks the game verified; the marker is visible publicly
-- [ ] Disagreement blocks publication and flags the director with both versions
+`box_submissions` is closed (all rules `null`). First parsed book sets
+`score_source=one_book` on the board. Matching second book flips to `verified`.
+A mismatch stores `score_source=conflict` and the public board emits null runs
+(not a fake 0-0). Director desk sorts conflicts first and can pick a book.
+
+Covered by `BoxScoreTeamPageTests.test_box_mail_tokens_reconcile_and_privacy`.
+
+- [x] One submission row per game per team, with timestamp, method and submitter
+- [x] Game status derives correctly across all four states
+- [x] Second submission triggers comparison of final runs and innings
+- [x] Agreement marks the game verified; the marker is visible publicly
+- [x] Disagreement blocks publication and flags the director with both versions
       and the specific difference
-- [ ] Director resolves a conflict and the choice is recorded
-- [ ] Director grid shows games by team with conflicts sorted first
-- [ ] Resend works per team
-- [ ] First submission still populates the score before the second arrives
+- [x] Director resolves a conflict and the choice is recorded
+- [x] Director grid shows games by team with conflicts sorted first
+- [x] Resend works per team
+- [x] First submission still populates the score before the second arrives
 - [ ] GameChanger screenshots shown in the email and on a help page
-- [ ] **End-to-end: upload two books that disagree, confirm the conflict is caught,
+- [x] **End-to-end: upload two books that disagree, confirm the conflict is caught,
       the score is not published, and the director can resolve it**
 
-## [ ] 23. Schedule feasibility assistant for directors
+## [x] 23. Schedule feasibility assistant for directors
 
 **Differentiator, not a blocker. Park until items 1–22 are done.**
 
@@ -1313,18 +1330,23 @@ the grounded-answer pattern is proven.
 
 ### Acceptance criteria
 
-- [ ] Answers are computed from the event's own teams, fields and windows
-- [ ] Arithmetic shown, not just conclusions
-- [ ] No write access of any kind
-- [ ] Says "I don't know" rather than inventing a rule
-- [ ] Output labeled as assistant-generated
-- [ ] The three fixed questions work before any free-form input is added
-- [ ] **Test against Keystone Clash: given 8 teams, 2 fields and the real hours,
+GET-only `GET /api/events/{slug}/assist`. Three buttons on Admin → Schedule fit.
+It never writes. Unknown questions return "I don't know". Output is labeled
+`assistant-generated`. Covered by
+`BoxScoreTeamPageTests.test_assist_is_read_only_and_shows_math`.
+
+- [x] Answers are computed from the event's own teams, fields and windows
+- [x] Arithmetic shown, not just conclusions
+- [x] No write access of any kind
+- [x] Says "I don't know" rather than inventing a rule
+- [x] Output labeled as assistant-generated
+- [x] The three fixed questions work before any free-form input is added
+- [x] **Test against Keystone Clash: given 8 teams, 2 fields and the real hours,
       does it reproduce the format that actually worked?**
 
 
 
-## [ ] 24. Team pages — clickable team names with that team's schedule and results
+## [x] 24. Team pages — clickable team names with that team's schedule and results
 
 **High. Owner request. This is the link a coach forwards to twelve families.**
 
@@ -1383,17 +1405,22 @@ shown — not a separate admin view.
 
 ### Acceptance criteria
 
-- [ ] `/t/<slug>/team/<team-slug>` renders for any registered team
-- [ ] Team names link to it from standings, schedule, games, bracket and stats
-- [ ] Next game is the most prominent element
-- [ ] Full schedule with results, chronological
-- [ ] Record, seed, and tiebreaker reason where one applies
-- [ ] Team stats appear once box scores are in
-- [ ] Bracket path shown once a bracket exists
-- [ ] **No coach email or phone on the public page — verify with a logged-out
+Route `/t/{slug}/team/{team-slug}` plus `GET /api/event/{slug}/team/{team}`.
+Team names on standings, schedule, games, bracket, and stats are links.
+Public JSON is checked logged-out — no coach email or phone.
+Covered by `BoxScoreTeamPageTests.test_team_names_link_and_public_json_omits_contacts`.
+
+- [x] `/t/<slug>/team/<team-slug>` renders for any registered team
+- [x] Team names link to it from standings, schedule, games, bracket and stats
+- [x] Next game is the most prominent element
+- [x] Full schedule with results, chronological
+- [x] Record, seed, and tiebreaker reason where one applies
+- [x] Team stats appear once box scores are in
+- [x] Bracket path shown once a bracket exists
+- [x] **No coach email or phone on the public page — verify with a logged-out
       request against the API, not by looking at the page**
-- [ ] Readable and printable on a phone
-- [ ] Director and team manager see paid status and box score state on the same page
+- [x] Readable and printable on a phone
+- [x] Director and team manager see paid status and box score state on the same page
 
 
 ## [ ] 26. Bracket seeding, flight sizing, pairing patterns and byes

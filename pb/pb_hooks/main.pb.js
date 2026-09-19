@@ -827,6 +827,72 @@ routerAdd("POST", "/api/bot/event-update", (e) => {
 
 // Reachability ping for linked GC / Tourney Machine pages. Live score and box
 // numbers come from Grok bots polling GET /api/bot/gc-monitor (~5 min when live).
+routerAdd("GET", "/api/box/{token}", (e) => {
+  const boxmail = require(__hooks + "/boxmail.js");
+  const rec = boxmail.findByToken(e.app, e.request.pathValue("token"));
+  return e.json(200, boxmail.publicInvite(e.app, rec));
+});
+
+routerAdd("POST", "/api/box/{token}", (e) => {
+  const host = require(__hooks + "/host.js");
+  const boxmail = require(__hooks + "/boxmail.js");
+  const files = host.uploaded(e, "file") || host.uploaded(e, "box");
+  return e.json(200, boxmail.submitToken(e.app, e.request.pathValue("token"), e.requestInfo().body || {}, files));
+});
+
+routerAdd("POST", "/api/box/{token}/unsubscribe", (e) => {
+  const boxmail = require(__hooks + "/boxmail.js");
+  return e.json(200, boxmail.unsubscribeToken(e.app, e.request.pathValue("token")));
+});
+
+routerAdd("GET", "/api/event/{slug}/team/{team}", (e) => {
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  if (!event.get("public") && !e.auth) throw new ForbiddenError("event is not public");
+  const page = require(__hooks + "/teampage.js");
+  return e.json(200, page.publicTeam(e.app, event, e.request.pathValue("team"), e.auth));
+});
+
+routerAdd("GET", "/api/events/{slug}/assist", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const q = e.requestInfo().query || {};
+  return e.json(200, require(__hooks + "/assist.js").answer(e.app, event, q));
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/events/{slug}/boxes/desk", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, require(__hooks + "/boxmail.js").directorDesk(e.app, event));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/boxes/run", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  return e.json(200, require(__hooks + "/boxmail.js").runBoxMail(e.app, { event: event, now: body.now }));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/boxes/resend", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, require(__hooks + "/boxmail.js").resendOne(e.app, event, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/boxes/resolve", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, require(__hooks + "/boxmail.js").resolveConflict(e.app, event, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+cronAdd("box-score-ask", "*/15 * * * *", () => {
+  try { require(__hooks + "/boxmail.js").runBoxMail($app); } catch (err) {}
+});
+
 cronAdd("hosted-gc-tm-sync", "15 */2 * * *", () => {
   const host = require(__hooks + "/host.js");
   const events = $app.findRecordsByFilter("events", "auto_sync = true && status = 'live'", "", 80, 0);
