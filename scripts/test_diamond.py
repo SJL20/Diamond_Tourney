@@ -814,6 +814,7 @@ class AccountAndYearTests(unittest.TestCase):
         self.assertNotIn("can_manage_owners", board["event"])
         self.assertNotIn(helper_email, str(board))
         found = request(BASE, "GET", f"/api/events/search?q={slug}")
+        self.assertTrue(found.get("events"), f"public search missed {slug}: {found}")
         self.assertNotIn("co_owners", found["events"][0])
         self.assertNotIn(helper_email, str(found))
 
@@ -1042,8 +1043,8 @@ class ScheduleTests(unittest.TestCase):
             "slug": slug,
             "venue": "Harbor Complex",
             "address": "100 Harbor Rd, Pittsburgh, PA",
-            "lat": 40.44,
-            "lng": -80.0,
+            "lat": 1.2345,
+            "lng": 9.8765,
             "format": "pool-to-bracket",
             "start": "2026-09-19",
             "end": "2026-09-20",
@@ -1055,7 +1056,7 @@ class ScheduleTests(unittest.TestCase):
         })
         self.assertEqual(created["event"]["address"], "100 Harbor Rd, Pittsburgh, PA")
         self.assertEqual(created["event"]["format"], "pool-to-bracket")
-        self.assertAlmostEqual(float(created["event"]["lat"]), 40.44, places=2)
+        self.assertNotAlmostEqual(float(created["event"].get("lat") or 0), 1.2345, places=3)
         names = [f["name"] for f in created["event"]["fields"]]
         self.assertIn("Harbor 1", names)
         self.assertIn("Harbor 2", names)
@@ -1333,17 +1334,21 @@ class ScheduleTests(unittest.TestCase):
                 "pool": pool,
                 "as_director": True,
             })
-        request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
             "days": ["2026-09-19"],
             "start_time": "08:00",
             "games_per_team": 1,
             "replace": True,
             "format": "pool-to-bracket",
         })
+        for game in auto["schedule"]:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                "home_runs": 4, "away_runs": 1, "status": "final", "confirm": True,
+            })
         built = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
             "consolation": True,
             "replace": True,
-            "empty": True,
+            "confirm": True,
         })
         self.assertGreaterEqual(built["games"], 1)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
@@ -2178,13 +2183,13 @@ class AdminTeamsBracketsTests(unittest.TestCase):
             "format": "pool-to-bracket",
         })
         for game in auto["schedule"]:
-            if "Ace" in (game["home"], game["away"]) or "Bay" in (game["home"], game["away"]):
-                home_win = game["home"] in ("Flight Ace", "Flight Bay")
-                request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
-                    "home_runs": 8 if home_win else 1,
-                    "away_runs": 1 if home_win else 8,
-                    "status": "final",
-                })
+            home_win = game["home"] in ("Flight Ace", "Flight Bay")
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                "home_runs": 8 if home_win else 1,
+                "away_runs": 1 if home_win else 8,
+                "status": "final",
+                "confirm": True,
+            })
         drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
             "replace": True,
             "format": "pool-to-bracket",
@@ -2615,7 +2620,7 @@ class ImportedScheduleBracketTests(unittest.TestCase):
 
 
 class BacklogOpenTests(unittest.TestCase):
-    """Items 10–17 and GitHub #19: pins, provenance, info dates, empty seeds, clear, format save."""
+    """Items 10–20 and GitHub #19: pins, provenance, info dates, empty seeds, clear, format save."""
 
     def test_director_form_ignores_typed_coordinates(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
@@ -2633,6 +2638,21 @@ class BacklogOpenTests(unittest.TestCase):
         self.assertNotEqual(ev.get("lat"), 1.23)
         self.assertNotEqual(ev.get("lng"), 4.56)
         self.assertEqual(ev.get("format") or "pool-to-bracket", "pool-to-bracket")
+
+    def test_search_finds_new_event_by_slug(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "find-me-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Find Me Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        found = request(BASE, "GET", f"/api/events/search?q={slug}")
+        slugs = [e["slug"] for e in found.get("events") or []]
+        self.assertIn(slug, slugs)
+        self.assertNotIn("co_owners", found["events"][0])
 
     def test_info_dates_come_from_event_not_keystone_literal(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
