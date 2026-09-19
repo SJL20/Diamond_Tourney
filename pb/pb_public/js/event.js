@@ -1636,16 +1636,39 @@ export async function eventStats(slug) {
   paint();
 }
 
+function isKeystoneParkingAsset(url) {
+  const href = String(url || "");
+  if (!/parking-map\.png/i.test(href)) return false;
+  return /\/popup\//.test(href) || /keystoneclash/i.test(href);
+}
+
+function parkingMapView(event, photos, info) {
+  const keystone = !!(event && event.slug === "keystone-clash-2026");
+  const own = (photos || []).find((p) => p.public && p.url && (p.kind === "parking" || p.kind === "layout" || p.kind === "entrance"));
+  const packetMap = (info && info.parking_map) || "";
+  let href = "";
+  if (keystone) href = "/popup/parking-map.png";
+  else if (own && own.url) href = own.url;
+  else if (packetMap && !isKeystoneParkingAsset(packetMap)) href = packetMap;
+  const alt = (own && own.caption)
+    || (info && info.parking_map_alt)
+    || (keystone ? "Aerial map of East End Park showing the main lot off Meadow St and the Field 2 lot." : "Parking and field map");
+  const note = keystone
+    ? "Both lots are marked in orange. Enter off Meadow St. Overflow parking is on East O’Hara St."
+    : ((own && own.caption) || "");
+  return { href, alt, note, keystone };
+}
+
 export async function eventInfo(slug) {
   const board = await fetchBoard(slug);
   const packet = board.packet || board.event.packet;
   const info = packet?.info || {};
   const raffle = packet?.raffle;
   const local = board.event.slug === "keystone-clash-2026";
-  const ownMap = (board.photos || []).find((p) => p.public && p.url && (p.kind === "parking" || p.kind === "layout" || p.kind === "entrance"));
+  const map = parkingMapView(board.event, board.photos || [], info);
   const rulesHref = local ? "/popup/full-rules.html" : info.full_rules;
   const packetHref = local ? "/popup/coaches-packet.pdf" : info.coaches_packet;
-  const mapHref = local ? "/popup/parking-map.png" : (ownMap && ownMap.url) || info.parking_map;
+  const mapHref = map.href;
   eventRoot().innerHTML = eventChrome(board.event, "info", `
     <section class="page-head">
       <h1>Tournament info</h1>
@@ -1661,15 +1684,11 @@ export async function eventInfo(slug) {
     ${fieldsBlock(board.event, board.fields)}
     ${photoGallery(board.photos || [])}
     ${guidelinesBlock(board.event)}
-    ${local ? `<section class="card infomap">
-      <h2>Parking</h2>
-      <img src="/popup/parking-map.png" alt="Aerial map of East End Park showing the main lot off Meadow St and the Field 2 lot.">
-      <p class="muted">Both lots are marked in orange. Enter off Meadow St. Overflow parking is on East O’Hara St.</p>
-    </section>` : (ownMap ? `<section class="card infomap">
-      <h2>Parking and field map</h2>
-      <img src="${escapeHtml(ownMap.url)}" alt="${escapeHtml(ownMap.caption || "Field map")}">
-      ${ownMap.caption ? `<p class="muted">${escapeHtml(ownMap.caption)}</p>` : ""}
-    </section>` : "")}
+    ${mapHref ? `<section class="card infomap">
+      <h2>${map.keystone ? "Parking" : "Parking and field map"}</h2>
+      <img src="${escapeHtml(mapHref)}" alt="${escapeHtml(map.alt)}">
+      ${map.note ? `<p class="muted">${escapeHtml(map.note)}</p>` : ""}
+    </section>` : ""}
     <section class="card facts">
       ${[
         ["Dates", formatWeekendDates(board.event.start, board.event.end) || packet?.dates || ""],

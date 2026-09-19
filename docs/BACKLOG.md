@@ -544,10 +544,12 @@ event record.
       list anything found
 
 Leftovers that stay on purpose: Keystone parking / raffle / popup links are
-gated on `slug === "keystone-clash-2026"`. Create-form placeholders still say
-East End 1 / Meadow St. `keystone.js` dates belong to that event.
-`lib/standings.py` still has `"name order"` for the season book — do not change
-metric formulas.
+gated on `slug === "keystone-clash-2026"`. The info-page image uses
+`parkingMapView` / `mapHref` — East End Park alt text and Meadow St directions
+are Keystone-only fallbacks, never a hardcoded `<img src="/popup/parking-map.png">`.
+Create-form placeholders still say East End 1 / Meadow St. `keystone.js` dates
+belong to that event. `lib/standings.py` still has `"name order"` for the
+season book — do not change metric formulas.
 
 
 ## [x] 13. Scheduler page: purpose and button labels are unclear, and one silently deletes games
@@ -1688,4 +1690,310 @@ rounds). A fix that makes one work and breaks the other is not a fix.
 This applies to the AI assistant in item 23 as well. It must reason from the
 event's own configuration, never from a remembered example.
 
+## [ ] 27. Human-readable times and dates everywhere; rename "Global hours"
 
+**Medium. Affects every public page. Owner-flagged.**
+
+### 27a. "Global hours" is engineer language
+
+It means "the default window that applies to all fields unless a field overrides
+it." Nobody calls that global hours.
+
+Rename to **"Park hours"** — it sits directly under the Park label and matches
+how a director thinks about it. If a clarifier helps, a muted line underneath:
+"Applies to every diamond unless a diamond sets its own."
+
+Same sweep for other internal vocabulary showing publicly: "flights," "slot,"
+"seed reason," "Replace unplayed pool games," "Import a grid."
+
+### 27b. 24-hour time everywhere
+
+`08:00–18:00` should read `8:00 AM – 6:00 PM`. This is US youth softball; nobody
+says eighteen hundred.
+
+There is **no time formatting function in the codebase**. Times are printed raw
+from storage — `event.js` line 367 for park hours, and the same pattern across
+18 references to `hours_start` / `hours_end`, plus every game time on the
+schedule, games, and bracket tabs.
+
+**Fix:** one formatter, applied everywhere a time is displayed.
+
+- Store 24-hour. Display 12-hour with AM/PM. Never change storage.
+- Drop `:00` where it reads better — "8 AM – 6 PM" beats "8:00 AM – 6:00 PM" for
+  a range, though keep minutes on game times: "12:30 PM."
+- Inputs stay as native time pickers, which handle locale themselves.
+
+### 27c. ISO dates
+
+`2026-09-26` should read `Sat, Sep 26`. Including the weekday matters more than
+the year — a coach checking a schedule knows what year it is and does not
+instantly know that the 26th is a Saturday.
+
+For a range spanning days: "Sat, Sep 26 – Sun, Sep 27." For a multi-day event in
+one line: "September 26–28, 2026."
+
+Same fix shape: one date formatter, applied everywhere.
+
+### 27d. Field ordering
+
+The screenshot lists Field 1, 2, 4, 6 — correct here, since those are the actual
+field names. But see item 19b: numeric ordering must be real, not string-based,
+or Field 10 lands before Field 2.
+
+### Acceptance criteria
+
+- [ ] "Global hours" renamed to "Park hours" wherever it appears
+- [ ] A single time formatter exists and is used for every displayed time
+- [ ] No 24-hour time visible on any public page
+- [ ] A single date formatter exists and is used for every displayed date
+- [ ] Dates show the weekday
+- [ ] Storage format unchanged — display layer only
+- [ ] Sweep public pages for other internal vocabulary and list what's found
+
+
+## [ ] 28. Redesign the tournament home page
+
+**High. Owner-flagged: "plain and boring." The most-visited page in the product.**
+
+Do not treat this as a styling pass. The page is dull because the hierarchy is
+wrong — it opens with field hours, which almost nobody came for.
+
+### Who opens this page, and why
+
+Overwhelmingly a parent or coach on a phone, often standing outside. They want
+one of four things:
+
+1. **When and where do we play next?** (most common by far)
+2. What time do we need to leave on Saturday?
+3. Did we make the bracket, and when is that game?
+4. Where do I park and what's the gate situation?
+
+A director checking setup is a rare visitor. The current page is built for them.
+
+### The page should change by phase
+
+This is the main idea. One layout cannot serve all three states.
+
+**Before the tournament** — countdown to first pitch, the team list, schedule
+once posted, and the practical stuff: park hours, parking, time limits, what to
+bring. If no schedule exists yet, say when it will be posted.
+
+**During** — live board. What is playing right now on each diamond, what is next,
+recently final scores, current standings. This is the Saturday view and it should
+feel alive. Auto-refresh.
+
+**After** — champions first, by flight. Final standings, all-tournament team,
+stat leaders, a link to every team's page. This is what gets shared Sunday night
+and it is the best advertisement the product has.
+
+### Hierarchy, top to bottom
+
+1. **Tournament name, dates, venue** — compact, one or two lines
+2. **Status strip** — the phase-dependent block above. Largest element on screen.
+3. **Teams** — as linked chips, not a paragraph. Ties to item 24; tapping a team
+   goes straight to their schedule, which answers question 1 in two taps.
+4. **Schedule and bracket** — prominent links, or the next few games inline
+5. **Getting there** — address, map link, and the uploaded parking and entrance
+   photos from item 10. The owner tried a map and found it unhelpful; a photo of
+   the actual entrance beats a map pin at a school with three lots.
+6. **Rules and format** — time limit, tiebreakers, sanctioning body
+7. **Field hours** — demote. This is director detail. Collapse it, or move it to
+   the Info tab entirely.
+
+### Visual direction
+
+Keep the existing palette and type — the site already looks clean and the
+identity is fine. What it needs is contrast and weight, not new colors.
+
+- **One thing should dominate each screen.** Right now everything is the same
+  visual weight, which is why it reads flat.
+- **Scores and times want to be big.** This is a scoreboard product. Live scores
+  and next-game times should be the largest type on the page, not body text in a
+  table row.
+- **Use the venue photo as a header image** once uploads exist (item 10). A
+  photo of the actual field does more for the page than any layout change.
+- **Champion callout after the event** — a real banner, not a table row. Teams
+  screenshot this.
+- **Live state should be visible at a glance** — a game in progress should be
+  obviously different from a scheduled one, and not by color alone.
+
+### Constraints
+
+- Phone first. Most traffic is a phone outdoors, in sunlight, on bad wifi.
+- Loads fast and readable without images if they fail.
+- Prints cleanly — some directors print the home page for the fence.
+- No fabricated content. An empty tournament shows honest empty states, not a
+  ranked list of zeros (item 14).
+
+### Acceptance criteria
+
+- [ ] The page leads with what a parent came for, not field hours
+- [ ] Three distinct phases render correctly: before, during, after
+- [ ] The most prominent element answers "when and where do we play next"
+- [ ] Teams are tappable links to team pages
+- [ ] Live games are visually distinct from scheduled ones
+- [ ] Venue photos used where available; field hours demoted
+- [ ] Champion display after completion
+- [ ] Usable on a phone in sunlight, one-handed
+- [ ] **Open it on a phone and find your team's next game in under five seconds
+      without scrolling past anything irrelevant**
+
+
+      ## [ ] 28b. Live scores on the tournament home page
+
+**Coordinate with Steve before building — he has live score work in progress.
+This item describes what the home page needs from it, not how to build it.**
+
+Live scores are the reason to open the page twice on a Saturday instead of once.
+They should be the dominant element while the tournament is running.
+
+What the home page needs:
+
+- **Games in progress**, by diamond, with the current score and how long they
+  have been playing. Under a 90-minute finish-the-inning limit, elapsed time is
+  nearly as useful as the score — it tells a coach whether the field will turn
+  over on schedule.
+- **Recently final**, last hour or so, so someone arriving mid-afternoon can see
+  what just happened without opening the schedule.
+- **Up next per diamond**, which already exists in concept and should sit
+  directly beneath.
+
+Requirements:
+
+- **Auto-refresh** while the page is open. A live score that needs a manual
+  reload is not live.
+- **Degrade honestly.** If no game is in progress, show the next games rather
+  than an empty "live" panel.
+- **Big type.** This is a scoreboard. Scores should be the largest thing on the
+  screen while games are running.
+- **Cheap to poll.** Hundreds of phones on park wifi hitting this at once — a
+  small dedicated endpoint, not the full board payload.
+
+Check with Steve on what he has built before implementing any of this. The point
+is that the home page surfaces it, not that a second version gets written.
+
+---
+
+## [ ] 29. Team logos
+
+**Medium. Owner request. Large visual payoff for modest work.**
+
+Logos are what make a bracket look like a real bracket instead of a table of text.
+Every club already has one and is proud of it.
+
+### Where they come from
+
+- **Coach uploads at registration** — one square image, part of the signup form
+- **Director uploads or replaces** from the team edit screen
+- **Never scraped.** Do not pull from GameChanger or anywhere else. A club's logo
+  is the club's property; they upload it or it is not used.
+
+### The fallback matters more than the logo
+
+Most teams will not upload one, especially early. A page where four teams have
+logos and ten have empty boxes looks worse than a page with none.
+
+**Generate a fallback for every team without an upload:** the team's initials on
+a solid background, with the color derived deterministically from the team name
+so it is stable across pages and sessions. Same team, same color, always.
+
+The fallback must look deliberate, not like a missing image. Get this right
+before shipping uploads — it is the state most teams will be in.
+
+### Where they appear
+
+- Standings rows
+- Schedule and game rows
+- **Bracket slots** — the biggest payoff
+- Team pages (item 24), larger
+- Team chips on the tournament home page
+- Printed brackets and schedules, if they reproduce cleanly in black and white
+
+### Constraints
+
+- **Team name always stays visible.** The logo supplements, never replaces. On a
+  phone, a coach scanning for their team reads the name.
+- Square, served at a small fixed size, resized server-side on upload. Accept
+  png, jpg, webp, svg.
+- Same EXIF stripping and storage rules as item 10; uploads land on the Fly
+  volume.
+- **No logos of people or players.** Club marks only.
+- Small enough not to slow the page on park wifi. Many logos per page, so size
+  discipline matters.
+
+### Acceptance criteria
+
+- [ ] Coach can upload a logo at registration; director can upload or replace
+- [ ] Every team without an upload gets a deterministic initials fallback
+- [ ] Fallback color is stable for a given team name across pages and sessions
+- [ ] Logos appear in standings, schedule, bracket, team pages and home chips
+- [ ] Team name remains visible everywhere a logo appears
+- [ ] Resized server-side; page weight stays reasonable with 14+ logos
+- [ ] Printed bracket still readable in black and white
+- [ ] Nothing pulled from GameChanger or any third party
+
+
+## [ ] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
+
+**High. Blocks building a bracket before pool play. Corrects a recent change.**
+
+The custom bracket builder restricts Home and Away to registered teams
+(`pb/pb_public/js/event.js` line 2230, tightened by the commit "Require
+registered-team dropdowns on the scheduler and custom bracket").
+
+That is backwards for the moment brackets are actually built. A director designs
+the bracket **before pool play ends**, when nobody knows which team is the 2
+seed. The bracket is defined in seeds and advancement, and teams resolve into it
+as results land.
+
+The director's own Scarecrow Slugfest sheet is written exactly this way:
+
+    Gold:    2nd v 7th (G1)    3rd v 6th (G2)    1st v 8th (G3)    4th v 5th (G4)
+             WG1 v WG2         WG3 v WG4         Championship
+    Silver:  3rd v 6th (G1)    4th v 5th (G2)    1st v WG2    2nd v WG1
+
+Not one team name anywhere. That is the native format, not a placeholder for a
+real bracket.
+
+### The CSV importer already gets this right
+
+Line 2179: "Home and away may be a registered team, seed:3, winner:B1, or
+loser:B5."
+
+The builder and the importer must accept the same things. Two bracket paths
+disagreeing about what a slot can hold is worse than either restriction alone.
+
+### What a slot must accept
+
+- **A seed within the flight** — `seed:3`, displayed as "3rd". The common case.
+- **The winner of another game** — `winner:G1`, displayed as "WG1"
+- **The loser of another game** — `loser:G3`, for double elim and consolation
+- **A registered team** — for a fixed matchup the director sets deliberately
+- **Empty / TBD** — for a slot not yet decided
+
+Dropdown grouped by kind, with seeds listed first since that is what directors
+reach for.
+
+### Seeds are scoped to the flight
+
+`seed:3` in Silver means Silver's third seed, not the overall third. Per item
+26b, a director may reseed within a flight or keep overall seeds — the display
+should make clear which is in effect: "3rd (Silver)" versus "3rd overall".
+
+### Resolution
+
+When pool play produces final standings, seed references resolve to teams
+automatically. The bracket does not get rebuilt — the same games fill in.
+
+A director can still override any resolved slot by hand afterward (item 26g).
+
+### Acceptance criteria
+
+- [ ] Home and Away accept seed, winner-of, loser-of, registered team, or empty
+- [ ] Builder and CSV importer accept the same set of values
+- [ ] Seed references scoped to the flight, with the scope shown
+- [ ] A full bracket can be built with zero teams registered
+- [ ] Seeds resolve to teams when standings are final, without a rebuild
+- [ ] Manual override still available after resolution
+- [ ] **Build the Scarecrow Slugfest Gold and Silver brackets above entirely in
+      seed and winner references, before any pool game is played**

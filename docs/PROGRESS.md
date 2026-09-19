@@ -186,6 +186,24 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-19 — Claude 8:33: parking map href + flights persist
+
+Derek’s 8:33 mail (Claude, on his behalf) said PR #26 left two items half-done.
+
+Item 12b: `mapHref` was computed, but the info-page `<img>` still hardcoded
+`/popup/parking-map.png` plus East End alt/directions. The image now uses
+`parkingMapView` / `mapHref`. A copied Keystone `parking-map.png` packet URL
+does not render on any other slug. Keystone still shows its own popup map.
+
+Item 25 (Claude’s number, not a BACKLOG heading): board/plan already returned
+`bracket_flights` via `eventJson`, and `/settings` already saved it. Auto-schedule
+only persisted flights inside `if (format)`. Flights now save on that path
+even when format is unchanged. A settings POST with only `bracket_flights`
+is checked on both `/plan` and `/board`.
+
+Covered by `test_info_dates_come_from_event_not_keystone_literal` and
+`test_scheduler_settings_save_format_without_building`.
+
 ### 2026-09-19 — BACKLOG 21–24 box mail, two-book scores, assist, team pages
 
 Cron `box-score-ask` emails both coaches a one-game token after

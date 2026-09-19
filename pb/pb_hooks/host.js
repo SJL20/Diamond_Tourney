@@ -1392,6 +1392,7 @@ function applySettings(app, event, body, auth) {
   applyAgeGroups(event, body);
   if (body.start) event.set("start", body.start);
   if (body.end) event.set("end", body.end);
+  if (body.format && body.format !== "imported") event.set("format", body.format);
   if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
   if (body.bracket_mode != null) event.set("bracket_mode", body.bracket_mode || "standings");
   applyGuidelines(event, body);
