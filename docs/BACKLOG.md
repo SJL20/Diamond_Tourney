@@ -659,3 +659,66 @@ should stay.
       tournament should not render authoritative-looking empty results anywhere**
 
 
+
+## [ ] 15. Board empty states ignore the viewer's role — no director actions, and admin copy shown publicly
+
+**Medium. Public-facing. Principle applies beyond this one string.**
+
+### The principle
+
+The board already knows who is viewing. `pb/pb_public/js/event.js` imports
+`canAdminEvent` and uses `isDirector()` throughout — a game edit desk at line
+706, different bracket copy at line 985, score posting gated at line 1080.
+
+The empty states skip it. Line 1021:
+
+    <p class="empty">No games on the weekend board yet.
+    Build pool play on Admin, then draw the bracket.</p>
+
+Rendered identically to everyone. Two consequences.
+
+### 15a. The director is told to go elsewhere instead of being given the action
+
+A logged-in director looking at an empty Schedule tab should be able to act from
+where they are. The screen knows they can administer the event; sending them to
+find Admin is a step that does not need to exist.
+
+Put the three routes on the screen as working controls, import first:
+
+- **Import a schedule** — the path the product leads with, and what a director
+  arriving from Tourney Machine, a spreadsheet, or paper will want
+- **Build pool play**
+- **Draw bracket from standings**
+
+Same principle for the other tabs — an empty Standings should offer score entry,
+an empty Bracket should offer the draw.
+
+### 15b. A coach or parent is shown instructions they cannot act on
+
+The same string tells a logged-out viewer to "Build pool play on Admin," a screen
+they cannot reach. Anyone without admin rights should see something plain:
+"The schedule isn't posted yet. Check back closer to the weekend."
+
+### Broader pass
+
+This is a consistency problem, not a missing feature. Every public tab should be
+checked against two questions:
+
+1. Does a logged-in director get the action inline, rather than directions to
+   another screen?
+2. Does everyone else see something true, understandable, and free of admin
+   instructions?
+
+Roles to consider now that they exist: site admin, event director, team manager
+or scorekeeper, logged-out public. A team manager who can post their own score
+needs different affordances from a parent.
+
+### Acceptance criteria
+
+- [ ] No admin instruction text renders for viewers without admin rights, anywhere
+- [ ] A director sees working controls on empty Schedule, Standings, Bracket and Stats
+- [ ] Import is offered first among the schedule routes
+- [ ] Non-admin empty states say when to check back, not what to go build
+- [ ] A team manager sees their own scoring actions but not director-only ones
+- [ ] Every public tab audited against both questions above
+
