@@ -21,8 +21,69 @@ function goEvent(href) {
 
 let currentEvent = null;
 
-function isDirector() {
-  return canAdminEvent(eventPb.authStore.record, currentEvent);
+function isDirector(ev) {
+  return canAdminEvent(eventPb.authStore.record, ev || currentEvent);
+}
+
+function isTeamScorer() {
+  const rec = eventPb.authStore.record;
+  return !!(rec && (rec.role === "team_coach" || rec.role === "team_manager"));
+}
+
+function formatWeekendDates(start, end) {
+  const parse = (raw) => {
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(+d) ? null : d;
+  };
+  const a = parse(start);
+  const b = parse(end);
+  if (!a) return "";
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const day = (d) => months[d.getUTCMonth()] + " " + d.getUTCDate();
+  if (!b || a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10)) {
+    return day(a) + ", " + a.getUTCFullYear();
+  }
+  if (a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth()) {
+    return months[a.getUTCMonth()] + " " + a.getUTCDate() + "–" + b.getUTCDate() + ", " + a.getUTCFullYear();
+  }
+  if (a.getUTCFullYear() === b.getUTCFullYear()) {
+    return day(a) + " – " + day(b) + ", " + a.getUTCFullYear();
+  }
+  return day(a) + ", " + a.getUTCFullYear() + " – " + day(b) + ", " + b.getUTCFullYear();
+}
+
+function directorBoardActions(slug) {
+  return `<div class="actions board-director-actions">
+    <a class="btn" data-link href="/directors/import?into=${encodeURIComponent(slug)}">Import a schedule</a>
+    <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/admin#admin-scheduler">Build pool play</a>
+    <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/admin#admin-scheduler">Draw bracket from standings</a>
+  </div>`;
+}
+
+function tabEmpty(ev, slug, kind) {
+  const admin = canAdminEvent(eventPb.authStore.record, ev);
+  if (admin) {
+    const lead = {
+      schedule: "No games on the weekend board yet.",
+      standings: "Standings appear after scores are entered.",
+      bracket: "No bracket games yet. Publish a blank bracket for the fence, import a CSV, or draw from standings after a pool result.",
+      stats: "No published box lines yet.",
+      games: "No pool games on the board yet.",
+    }[kind] || "Nothing posted yet.";
+    return `<div class="empty"><p>${lead}</p>${directorBoardActions(slug)}</div>`;
+  }
+  if (isTeamScorer() && (kind === "schedule" || kind === "games")) {
+    return `<p class="empty">No games to score yet. Check back when the director posts the schedule.</p>`;
+  }
+  const back = {
+    schedule: "The schedule isn't posted yet. Check back closer to the weekend.",
+    standings: "Standings appear once scores are entered. Check back after pool play starts.",
+    bracket: "The bracket isn't posted yet. Check back after pool play.",
+    stats: "Stats appear after coaches confirm box scores. Check back during the weekend.",
+    games: "The schedule isn't posted yet. Check back closer to the weekend.",
+  };
+  return `<p class="empty">${back[kind] || "Check back closer to the weekend."}</p>`;
 }
 
 function authHeader() {
@@ -50,6 +111,11 @@ function eventChrome(event, page, body) {
   currentEvent = event || null;
   const site = event ? "" : (page === "create" ? "create" : page);
   return pageShell({ pb: eventPb, site, event, page, body });
+}
+
+function rememberEvent(event) {
+  currentEvent = event || null;
+  return event;
 }
 
 function dateInput(v) {
@@ -103,15 +169,7 @@ function fieldRow(f = {}, i = 0, dates = [], globalStart = "08:00", globalEnd = 
       <label>Surface <input name="field_surface_${i}" value="${escapeHtml(f.surface || "")}" placeholder="grass"></label>
     </div>
     <label>Field address <input name="field_address_${i}" value="${escapeHtml(f.address || "")}" placeholder="Same as the park if blank"></label>
-    <p class="muted">${f.lat && f.lng ? `Pin ${f.lat}, ${f.lng}` : "Pin is set from this address, or from the park, when you save."}</p>
-    <details class="pin-nudge">
-      <summary>Nudge this diamond’s pin</summary>
-      <label class="check"><input type="checkbox" name="field_pin_set_${i}"> Use these coordinates instead of geocoding</label>
-      <div class="form-grid two">
-        <label>Latitude <input name="field_lat_${i}" value="${f.lat || ""}" inputmode="decimal"></label>
-        <label>Longitude <input name="field_lng_${i}" value="${f.lng || ""}" inputmode="decimal"></label>
-      </div>
-    </details>
+    <p class="muted">The map pin is geocoded from this address, or from the park, when you save.</p>
     <label class="check"><input type="checkbox" name="field_lights_${i}" ${f.lights ? "checked" : ""}> Lights</label>
     <p class="muted">This diamond’s hours. Uncheck a day if it is dark or rented out. Times narrower than the global window are allowed; times outside it are not used.</p>
     <div class="field-avail">${fieldAvailDays(f, i, dates, globalStart, globalEnd)}</div>
@@ -201,7 +259,7 @@ function bindFieldRows(root, startCount, ev = {}) {
 }
 
 function setupFormatFields(ev = {}) {
-  const fmt = ev.format || "pool-to-bracket";
+  const fmt = !ev.format || ev.format === "imported" ? "pool-to-bracket" : ev.format;
   const flights = ev.bracket_flights || "none";
   return `
     <label>Format
@@ -212,7 +270,6 @@ function setupFormatFields(ev = {}) {
         <option value="pool-only" ${fmt === "pool-only" ? "selected" : ""}>Pool play only</option>
         <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
         <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
-        <option value="imported" ${fmt === "imported" ? "selected" : ""}>Imported / already drawn</option>
       </select>
     </label>
     <label>Bracket levels
@@ -234,16 +291,7 @@ function setupVenueFields(ev = {}, fields = []) {
   return `
     <label>Complex / park name <input name="venue" value="${escapeHtml(ev.venue || "")}" placeholder="East End Park"></label>
     <label>Street address <input name="address" value="${escapeHtml(ev.address || "")}" placeholder="51 Meadow St, McDonald, PA 15057"></label>
-    <p class="muted">${ev.lat && ev.lng ? `Map pin ${ev.lat}, ${ev.lng}.` : "The pin is geocoded from the street address. You do not type latitude and longitude."}</p>
-    <details class="pin-nudge">
-      <summary>Nudge the map pin</summary>
-      <p class="muted">Only if the geocoder dropped the pin on the wrong diamond.</p>
-      <label class="check"><input type="checkbox" name="pin_set"> Use these coordinates instead of geocoding</label>
-      <div class="form-grid two">
-        <label>Latitude <input name="lat" value="${ev.lat || ""}" inputmode="decimal"></label>
-        <label>Longitude <input name="lng" value="${ev.lng || ""}" inputmode="decimal"></label>
-      </div>
-    </details>
+    <p class="muted">The map pin is geocoded from the street address when you save. You never type latitude or longitude.</p>
     <div class="form-grid two">
       <label>First day <input name="start" type="date" value="${dateInput(ev.start)}"></label>
       <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
@@ -261,11 +309,15 @@ function setupVenueFields(ev = {}, fields = []) {
   `;
 }
 
-function setupLocationFields(ev = {}, fields = []) {
+function setupLocationFields(ev = {}, fields = [], photos = []) {
   return `
     <details class="setup-block" open>
       <summary>Venue, address, and fields</summary>
       ${setupVenueFields(ev, fields)}
+      ${ev.slug ? venuePhotoDesk(ev.slug, photos) : `<div class="venue-photo-desk" id="create-photo-desk">
+        <h3>Field map and parking photos</h3>
+        <p class="muted">Fields and facilities only, please — no photos of players. After you open signup, this same page lets you upload a complex map, entrance, or parking photo (JPG, PNG, WebP, HEIC, or PDF). GPS / EXIF is stripped.</p>
+      </div>`}
     </details>
     <details class="setup-block" open>
       <summary>Bracket type and pool play</summary>
@@ -341,23 +393,55 @@ function gameNoCell(g) {
   return label ? `<span class="game-no">${escapeHtml(label)}</span>` : "—";
 }
 
+function fieldSortParts(name) {
+  const text = String(name || "");
+  const m = text.match(/(\d+)/);
+  return { n: m ? Number(m[1]) : 1000000, text: text.toLowerCase() };
+}
+
+function compareGames(a, b) {
+  const dateA = String(a.date || "9999-99-99");
+  const dateB = String(b.date || "9999-99-99");
+  if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+  const timeA = String(a.time || "99:99");
+  const timeB = String(b.time || "99:99");
+  if (timeA !== timeB) return timeA < timeB ? -1 : 1;
+  const ga = Number(a.game_number || 0);
+  const gb = Number(b.game_number || 0);
+  if (ga && gb && ga !== gb) return ga - gb;
+  if (ga && !gb) return -1;
+  if (!ga && gb) return 1;
+  const fa = fieldSortParts(a.field);
+  const fb = fieldSortParts(b.field);
+  if (fa.n !== fb.n) return fa.n - fb.n;
+  if (fa.text !== fb.text) return fa.text.localeCompare(fb.text);
+  return String(a.home || "").localeCompare(String(b.home || ""));
+}
+
+function compareFieldNames(a, b) {
+  const fa = fieldSortParts(a);
+  const fb = fieldSortParts(b);
+  if (fa.n !== fb.n) return fa.n - fb.n;
+  return fa.text.localeCompare(fb.text);
+}
+
 function realPoolGames(games) {
   return (games || []).filter((g) => g.home && g.away && g.id);
 }
 
 function scheduleByField(games, slug) {
   const list = realPoolGames(games);
-  if (!list.length) return `<p class="empty">No pool games on the board yet. Empty bracket slots stay on the Bracket tab until those games are actually scheduled.</p>`;
+  if (!list.length) return tabEmpty(currentEvent, slug, "games");
   const groups = {};
   for (const g of list) {
     const key = g.field || "Unassigned";
     if (!groups[key]) groups[key] = [];
     groups[key].push(g);
   }
-  return Object.keys(groups).sort().map((name) => `
+  return Object.keys(groups).sort(compareFieldNames).map((name) => `
     <div class="sched-field">
       <h3>${escapeHtml(name)}</h3>
-      ${table(["Game", "When", "Pool", "Home", "Away", "Score", ""], groups[name].map((g) => `<tr>
+      ${table(["Game", "When", "Pool", "Home", "Away", "Score", ""], groups[name].slice().sort(compareGames).map((g) => `<tr>
         <td>${gameNoCell(g)}</td>
         <td>${escapeHtml(g.date || "")} ${escapeHtml(g.time || "")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
         <td>${escapeHtml(g.pool || "")}</td>
@@ -500,12 +584,12 @@ function standingsBlock(standings) {
       <h2>${pool.name === "All teams" ? "Pool standings" : "Pool " + escapeHtml(pool.name)}</h2>
       ${pool.note ? `<p class="muted">${escapeHtml(pool.note)}</p>` : ""}
       ${table(["#", "Team", "W", "L", "T", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
-        <td>${t.seed}</td>
+        <td>${t.seed != null ? t.seed : "—"}</td>
         <td>${t.gamechanger_url ? `<a href="${escapeHtml(t.gamechanger_url)}" target="_blank" rel="noopener">${escapeHtml(t.name)}</a>` : escapeHtml(t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
         <td>${t.w}</td><td>${t.l}</td><td>${t.t || 0}</td>
         <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
-      ${(pool.teams || []).some((t) => t.seed_reason) ? `<ul class="seed-why">${pool.teams.map((t) =>
+      ${(pool.teams || []).some((t) => t.seed_reason) ? `<ul class="seed-why">${pool.teams.filter((t) => t.seed_reason).map((t) =>
         `<li><b>Seed ${t.seed} ${escapeHtml(t.name)}</b> — ${escapeHtml(t.seed_reason)}</li>`).join("")}</ul>` : ""}
       <p class="muted">Tiebreak: ${escapeHtml(pool.tiebreak_label || "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored")}.</p>
     </div>`).join("");
@@ -986,7 +1070,9 @@ export async function eventStandings(slug) {
       <h1>Standings</h1>
       <p class="muted">Each pool prints the order the director saved. Default is record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Head-to-head stays group-aware.</p>
     </section>
-    <section class="grid two">${standingsBlock(board.standings) || `<section class="card empty">No teams signed up yet.</section>`}</section>
+    <section class="grid two">${(board.standings || []).some((p) => (p.teams || []).length)
+      ? standingsBlock(board.standings)
+      : `<section class="card">${tabEmpty(board.event, slug, "standings")}</section>`}</section>
   `);
 }
 
@@ -994,19 +1080,79 @@ export async function eventPools(slug) {
   return eventStandings(slug);
 }
 
+function bracketPageActions(board, slug) {
+  if (!isDirector(board.event)) return "";
+  const finals = (board.schedule || []).filter((g) => g.status === "final").length;
+  const empty = !(board.bracket || []).length;
+  return `<section class="card no-print">
+    ${empty ? `<p>No bracket games yet. Publish the Sunday shape now so families can see times and fields with TBD in every slot. Import a bracket you already have, or draw from standings after a pool result.</p>` : `<p class="muted">Print this page for the fence. Cards stay collapsed so the tree fits one page.</p>`}
+    <div class="actions">
+      ${empty ? `<button class="btn" type="button" id="publish-blank-bracket">Publish blank bracket</button>` : ""}
+      <button class="btn ghost" type="button" id="draw-standings-bracket"${finals ? "" : " disabled"}>Draw from standings</button>
+      ${empty ? "" : `<button class="btn ghost" type="button" id="print-bracket">Print</button>`}
+    </div>
+    ${finals ? "" : `<p class="muted">Draw from standings waits until a pool game is final.</p>`}
+    ${bracketImportDesk()}
+  </section>`;
+}
+
+function bindBracketPageActions(slug, board) {
+  document.getElementById("publish-blank-bracket")?.addEventListener("click", async () => {
+    try {
+      await adminPost(slug, "/bracket/build", {
+        empty: true,
+        replace: true,
+        format: board.event.format || "pool-to-bracket",
+        bracket_flights: board.event.bracket_flights || "none",
+      });
+      flashSaved("Blank bracket posted");
+      eventBracket(slug);
+    } catch (err) {
+      window.alert(err.message || String(err));
+    }
+  });
+  document.getElementById("draw-standings-bracket")?.addEventListener("click", async () => {
+    const open = (board.schedule || []).filter((g) => g.status !== "final").length;
+    const body = {
+      format: board.event.format || "pool-to-bracket",
+      bracket_flights: board.event.bracket_flights || "none",
+      replace: true,
+    };
+    if (open && (board.schedule || []).some((g) => g.status === "final")) {
+      if (!confirm("Pool play is not finished (" + open + " games still open). Draw from the current standings anyway?")) return;
+      body.confirm = true;
+    }
+    try {
+      await adminPost(slug, "/bracket/build", body);
+      flashSaved("Bracket drawn from standings");
+      eventBracket(slug);
+    } catch (err) {
+      window.alert(err.message || String(err));
+    }
+  });
+  document.getElementById("print-bracket")?.addEventListener("click", () => window.print());
+}
+
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
+  rememberEvent(board.event);
   const plan = buildDeskPlan(board);
+  const director = isDirector(board.event);
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head">
       <h1>Bracket</h1>
-      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${isDirector() ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
+      <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${director ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
     </section>
-    ${board.bracket.length ? bracketBoards(board.bracket, board.roster, plan) : `<section class="card empty">No bracket games yet. Draw the bracket from Admin after pool play.</section>`}
+    ${bracketPageActions(board, slug)}
+    ${board.bracket.length ? `<div class="bracket-print">${bracketBoards(board.bracket, board.roster, plan)}</div>` : (director ? "" : `<section class="card">${tabEmpty(board.event, slug, "bracket")}</section>`)}
     ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
   `);
   eventRoot()._deskPlan = plan;
   bindBracketDesk(slug, eventRoot());
+  if (isDirector()) {
+    bindBracketImport(slug, (err) => { window.alert(err.message || String(err)); });
+    bindBracketPageActions(slug, board);
+  }
 }
 
 export async function eventOverall(slug) {
@@ -1036,7 +1182,7 @@ export async function eventOverall(slug) {
             ${g.id ? ` · <a data-link href="${href}">${g.kind === "pool" ? (g.can_score ? "Post score" : "Open") : "Bracket"}</a>` : ""}
           </td>
         </tr>`;
-      })) : `<p class="empty">No games on the weekend board yet. Build pool play on Admin, then draw the bracket.</p>`}
+      })) : tabEmpty(board.event, slug, "schedule")}
     </section>
   `);
 }
@@ -1044,8 +1190,7 @@ export async function eventOverall(slug) {
 export async function eventSchedule(slug) {
   const board = await fetchBoard(slug);
   const packet = board.packet || board.event.packet;
-  const rows = realPoolGames(board.schedule).sort((a, b) =>
-    String(a.date + a.time + a.field + a.home).localeCompare(String(b.date + b.time + b.field + b.home)));
+  const rows = realPoolGames(board.schedule).sort(compareGames);
   eventRoot().innerHTML = eventChrome(board.event, "schedule", `
     <section class="page-head">
       <h1>Games</h1>
@@ -1416,6 +1561,10 @@ export async function eventStats(slug) {
       return true;
     });
     const box = document.getElementById("stats-table");
+    if (!hitting.length && !pitching.length) {
+      box.innerHTML = tabEmpty(board.event, slug, "stats");
+      return;
+    }
     if (state.tab === "hit") {
       box.innerHTML = table(["#", "Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
         <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${escapeHtml(r.team)}</td>
@@ -1457,9 +1606,10 @@ export async function eventInfo(slug) {
   const info = packet?.info || {};
   const raffle = packet?.raffle;
   const local = board.event.slug === "keystone-clash-2026";
+  const ownMap = (board.photos || []).find((p) => p.public && p.url && (p.kind === "parking" || p.kind === "layout" || p.kind === "entrance"));
   const rulesHref = local ? "/popup/full-rules.html" : info.full_rules;
   const packetHref = local ? "/popup/coaches-packet.pdf" : info.coaches_packet;
-  const mapHref = local ? "/popup/parking-map.png" : info.parking_map;
+  const mapHref = local ? "/popup/parking-map.png" : (ownMap && ownMap.url) || info.parking_map;
   eventRoot().innerHTML = eventChrome(board.event, "info", `
     <section class="page-head">
       <h1>Tournament info</h1>
@@ -1479,10 +1629,14 @@ export async function eventInfo(slug) {
       <h2>Parking</h2>
       <img src="/popup/parking-map.png" alt="Aerial map of East End Park showing the main lot off Meadow St and the Field 2 lot.">
       <p class="muted">Both lots are marked in orange. Enter off Meadow St. Overflow parking is on East O’Hara St.</p>
-    </section>` : ""}
+    </section>` : (ownMap ? `<section class="card infomap">
+      <h2>Parking and field map</h2>
+      <img src="${escapeHtml(ownMap.url)}" alt="${escapeHtml(ownMap.caption || "Field map")}">
+      ${ownMap.caption ? `<p class="muted">${escapeHtml(ownMap.caption)}</p>` : ""}
+    </section>` : "")}
     <section class="card facts">
       ${[
-        ["Dates", packet?.dates || "September 11–13, 2026"],
+        ["Dates", formatWeekendDates(board.event.start, board.event.end) || packet?.dates || ""],
         ["Where", info.where || [board.event.venue, board.event.address].filter(Boolean).join(" — ")],
         ["Format", info.format || board.event.format_label],
         ["Parking", info.parking],
@@ -1506,16 +1660,11 @@ export async function eventInfo(slug) {
 }
 
 function dropUnusedPins(fd) {
-  if (fd.get("pin_set") !== "on") {
-    fd.delete("lat");
-    fd.delete("lng");
-  }
+  fd.delete("lat");
+  fd.delete("lng");
+  fd.delete("pin_set");
   for (const key of [...fd.keys()]) {
-    if (!key.startsWith("field_pin_set_")) continue;
-    if (fd.get(key) === "on") continue;
-    const i = key.slice("field_pin_set_".length);
-    fd.delete("field_lat_" + i);
-    fd.delete("field_lng_" + i);
+    if (/^field_(lat|lng|pin_set)_/.test(key)) fd.delete(key);
   }
   return fd;
 }
@@ -1681,27 +1830,52 @@ function bindTiebreakOrder(root) {
 
 export async function directorNative() {
   if (!directorGate()) return;
-  eventRoot().innerHTML = eventChrome(null, "create", `
+  const existing = new URLSearchParams(location.search).get("event") || "";
+  let ev = { format: "pool-to-bracket", age_groups: { ages: ["10U"] } };
+  let fields = [{}];
+  let photos = [];
+  if (existing) {
+    try {
+      const plan = await fetch("/api/events/" + encodeURIComponent(existing) + "/plan", {
+        headers: authHeader(),
+      }).then((r) => { if (!r.ok) throw new Error("not found"); return r.json(); });
+      ev = plan.event;
+      fields = plan.fields && plan.fields.length ? plan.fields : [{}];
+      photos = plan.photos || [];
+    } catch (err) {}
+  }
+  eventRoot().innerHTML = eventChrome(ev.slug ? ev : null, "create", `
     <section class="page-head">
-      <h1>Run it on this site</h1>
-      <p class="muted">Name the weekend, then open the sections you need. Insurance and roster are on by default.</p>
+      <h1>${ev.slug ? "Add the field map" : "Run it on this site"}</h1>
+      <p class="muted">${ev.slug
+        ? "Upload the complex map, entrance, or parking photo here. Fields and facilities only, please — no photos of players."
+        : "Name the weekend, then open the sections you need. Insurance and roster are on by default. Field maps upload on this same page after you open signup."}</p>
     </section>
     <section class="card">
       <form class="form wide" id="native-form">
-        <label>Tournament name <input name="name" required placeholder="Labor Day Classic"></label>
-        ${setupAgeFields({ age_groups: { ages: ["10U"] } })}
-        <label>Slug (optional) <input name="slug" placeholder="labor-day-classic"></label>
-        ${setupLocationFields({ format: "pool-to-bracket" })}
-        ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
-        <button class="btn" type="submit">Open signup</button>
+        <label>Tournament name <input name="name" required placeholder="Labor Day Classic" value="${escapeHtml(ev.name || "")}"></label>
+        ${setupAgeFields(ev.age_groups ? ev : { age_groups: { ages: ["10U"] } })}
+        <label>Slug (optional) <input name="slug" placeholder="labor-day-classic" value="${escapeHtml(ev.slug || "")}"></label>
+        ${setupLocationFields(ev, fields, photos)}
+        ${setupGuidelinesFields(ev.slug ? ev : { require_insurance: true, require_roster: true })}
+        ${ev.slug
+          ? `<p class="actions"><a class="btn" data-link href="/t/${escapeHtml(ev.slug)}/admin">Continue to the admin desk</a></p>`
+          : `<button class="btn" type="submit">Open signup</button>`}
         <p class="error" id="native-err" hidden></p>
       </form>
     </section>`);
-  bindFieldRows(eventRoot(), 1, {});
+  bindFieldRows(eventRoot(), Math.max(fields.length, 1), ev);
   bindTiebreakOrder(eventRoot());
-  document.getElementById("native-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    const fd = packGuidelines(ev.target);
+  if (ev.slug) bindVenuePhotos(ev.slug, photos, (err) => {
+    const box = document.getElementById("native-err");
+    if (!box) return;
+    box.hidden = false;
+    box.textContent = err.message || String(err);
+  });
+  document.getElementById("native-form")?.addEventListener("submit", async (evnt) => {
+    evnt.preventDefault();
+    if (ev.slug) return;
+    const fd = packGuidelines(evnt.target);
     fd.set("source", "native");
     const res = await fetch("/api/events/create", {
       method: "POST",
@@ -1714,8 +1888,8 @@ export async function directorNative() {
       return;
     }
     const out = await res.json();
-    flashSaved("Tournament saved");
-    goEvent("/t/" + out.event.slug + "/admin");
+    flashSaved("Tournament saved — add the field map below");
+    goEvent("/directors/new?event=" + encodeURIComponent(out.event.slug));
   });
 }
 
@@ -1733,7 +1907,7 @@ export async function directorLinkTm() {
         </label>
         <label>Name override (optional) <input name="name" placeholder="Public page title if blank"></label>
         ${setupAgeFields({ age_groups: { ages: ["10U"] } })}
-        ${setupLocationFields({ format: "imported" })}
+        ${setupLocationFields({ format: "pool-to-bracket" })}
         ${setupGuidelinesFields({ require_insurance: true, require_roster: true })}
         <button class="btn" type="submit">Link and open signup</button>
         <p class="error" id="tm-err" hidden></p>
@@ -1819,7 +1993,8 @@ export async function eventSignup(slug) {
     return r.json();
   });
   const ev = roster.event;
-  const director = isDirector();
+  rememberEvent(ev);
+  const director = isDirector(ev);
   const req = ev.required_docs || [];
   const labels = {
     insurance: "Certificate of insurance",
@@ -1994,6 +2169,23 @@ function scheduleImportDesk() {
         <label class="check"><input type="checkbox" name="replace"> Replace existing pool games on this weekend</label>
         <button class="btn" type="submit">Import onto this tournament</button>
       </form>
+    </details>`;
+}
+
+function bracketImportDesk() {
+  return `
+    <details class="setup-block" id="bracket-import">
+      <summary>Import a bracket CSV</summary>
+      <p class="muted">Second route next to drawing from standings. Paste the tree you already have — round, slot, side, and winner_to / loser_to. Home and away may be a registered team, seed:3, winner:B1, or loser:B5. Unmatched names are flagged and never created. Final games stay on re-import. Nothing writes until you confirm the preview.</p>
+      <p><a href="/templates/diamond-tourney-bracket.csv" download>Download a bracket CSV template</a></p>
+      <form class="form wide" id="import-bracket-form">
+        <label>Spreadsheet file <input name="file" type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values"></label>
+        <label>Or paste rows <textarea name="csv" rows="6" placeholder="game,round,side,date,time,field,home,away,winner_to,loser_to"></textarea></label>
+        <label class="check"><input type="checkbox" name="replace"> Replace unplayed bracket games that are not in this file</label>
+        <button type="button" class="btn" id="import-bracket-preview-btn">Detect columns</button>
+      </form>
+      <div id="import-bk-map" hidden></div>
+      <div id="import-bk-preview" hidden></div>
     </details>`;
 }
 
@@ -2194,6 +2386,92 @@ function currentImportMapping() {
   return mapping;
 }
 
+function currentBracketMapping() {
+  const mapping = {};
+  document.querySelectorAll("[data-bk-map-header]").forEach((sel) => {
+    mapping[sel.dataset.bkMapHeader] = sel.value || "";
+  });
+  return mapping;
+}
+
+function renderBracketMap(data) {
+  const box = document.getElementById("import-bk-map");
+  if (!box) return;
+  box.hidden = false;
+  box.innerHTML = `
+    <h3>Match bracket columns</h3>
+    <p class="muted">${data.remembered ? "Using the mapping saved on this login." : "Guessed from the header names."}</p>
+    <div class="import-map">${data.headers.map((h) => `<label>${escapeHtml(h)}
+      <select data-bk-map-header="${escapeHtml(h)}">${importFieldOptions(data.fields, data.mapping[h] || "")}</select>
+    </label>`).join("")}</div>
+    <button type="button" class="btn" id="import-bk-apply-map">Preview what will be created</button>`;
+}
+
+function renderBracketPreview(data) {
+  const box = document.getElementById("import-bk-preview");
+  if (!box) return;
+  const c = data.counts || {};
+  box.hidden = false;
+  box.innerHTML = `
+    <h3>Preview</h3>
+    <p><b>${c.new || 0} new</b>, ${c.exists || 0} already present, ${c.kept || 0} finals kept, ${c.problems || 0} rows with problems. Nothing is written until you confirm.</p>
+    ${(data.warnings || []).map((w) => `<p class="muted">${escapeHtml(w)}</p>`).join("")}
+    <div class="table-wrap"><table><thead><tr><th>Game</th><th>Round</th><th>Home</th><th>Away</th><th>Winner to</th><th>Status</th></tr></thead>
+      <tbody>${(data.rows || []).map((r) => `<tr>
+        <td>${escapeHtml(r.game || "")}</td>
+        <td>${escapeHtml(r.round || "")}</td>
+        <td>${escapeHtml(r.home || r.home_ref || "TBD")}</td>
+        <td>${escapeHtml(r.away || r.away_ref || "TBD")}</td>
+        <td>${escapeHtml(r.winner_to || "—")}</td>
+        <td>${r.status === "problem" ? `<span class="badge l">${escapeHtml((r.problems || []).join("; ") || "problem")}</span>`
+          : r.status === "kept" ? `<span class="badge">final kept</span>`
+          : r.status === "exists" ? `<span class="badge">update slot</span>`
+          : `<span class="badge w">new</span>`}</td>
+      </tr>`).join("")}</tbody></table></div>
+    <button type="button" class="btn" id="import-bk-commit-btn" ${(c.problems || 0) ? "disabled" : ""}>Import ${c.new || 0} bracket game${(c.new || 0) === 1 ? "" : "s"}</button>`;
+}
+
+function bindBracketImport(slug, showErr) {
+  const form = document.getElementById("import-bracket-form");
+  if (!form) return;
+  const previewBtn = document.getElementById("import-bracket-preview-btn");
+  const runPreview = async (withMap) => {
+    try {
+      const csv = await readImportText(form);
+      if (!csv) throw new Error("Choose a CSV or paste rows.");
+      const body = { csv };
+      if (withMap) body.mapping = currentBracketMapping();
+      const data = await adminPost(slug, "/import-bracket/preview", body);
+      renderBracketMap(data);
+      if (withMap || (data.mapping && Object.values(data.mapping).includes("game"))) {
+        renderBracketPreview(data);
+      }
+      const apply = document.getElementById("import-bk-apply-map");
+      if (apply) apply.onclick = () => runPreview(true);
+      const commit = document.getElementById("import-bk-commit-btn");
+      if (commit) {
+        commit.onclick = async () => {
+          try {
+            const result = await adminPost(slug, "/import-bracket", {
+              csv,
+              mapping: currentBracketMapping(),
+              replace: form.replace?.checked === true,
+            });
+            const n = result.counts || {};
+            flashSaved(`${n.new || 0} imported, ${n.updated || 0} updated, ${n.kept || 0} finals kept`);
+            location.reload();
+          } catch (err) {
+            showErr(err);
+          }
+        };
+      }
+    } catch (err) {
+      showErr(err);
+    }
+  };
+  previewBtn?.addEventListener("click", () => runPreview(false));
+}
+
 function bindScheduleImport(slug, showErr) {
   const form = document.getElementById("import-schedule-form");
   if (!form) return;
@@ -2260,9 +2538,9 @@ function venuePhotoDesk(slug, photos) {
   return `
     <div class="venue-photo-desk">
       <h3>Field and parking photos</h3>
-      <p class="muted">Fields and facilities only, please — no photos of players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload. JPG, PNG, WebP, or HEIC. 5 MB cap — the volume on Fly keeps files across redeploys.</p>
+      <p class="muted">Fields and facilities only, please — no photos of players. Photos stay unpublished until you review and publish. The first published photo is the public header. GPS / EXIF is stripped on upload. JPG, PNG, WebP, HEIC, or PDF. 5 MB cap — the volume on Fly keeps files across redeploys.</p>
       <form class="form wide" id="photo-form">
-        <label>Photo <input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" required></label>
+        <label>Photo or map <input name="image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,application/pdf,.pdf" required></label>
         <label>Caption <input name="caption" maxlength="200" placeholder="East lot off Meadow St"></label>
         <label>Kind
           <select name="kind">
@@ -2307,7 +2585,7 @@ export async function eventAdmin(slug) {
     return;
   }
   const fields = plan.fields || ev.fields || [];
-  const games = plan.schedule || [];
+  const games = (plan.schedule || []).slice().sort(compareGames);
   const teams = plan.teams || [];
   const docToken = await fileToken();
   const showErr = async (err) => {
@@ -2351,7 +2629,7 @@ export async function eventAdmin(slug) {
             <button class="btn" id="sync-now" type="button">Refresh links</button>
             <button class="btn ghost" id="toggle-signup" type="button">${ev.signup_open ? "Close signup" : "Reopen signup"}</button>
             <a class="btn ghost" data-link href="/t/${ev.slug}/signup">Add a team</a>
-            <a class="btn ghost" data-link href="/directors/import?into=${encodeURIComponent(ev.slug)}">Import a grid</a>
+            <a class="btn ghost" data-link href="/directors/import?into=${encodeURIComponent(ev.slug)}">Import schedule</a>
             <button class="btn ghost" id="duplicate-event" type="button">Duplicate this weekend</button>
             ${ev.source === "popup" ? `<button class="btn ghost" id="refresh-popup" type="button">Refresh from popup</button>` : ""}
           </div>
@@ -2397,11 +2675,21 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="scheduler" hidden>
           <h2>Scheduler</h2>
-          <p class="muted">${ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported")
-            ? "This weekend has an imported pool grid. Draw a bracket from standings — that does not change pool play. Build pool schedule will not replace those games."
-            : "Round-robin inside each pool. A diamond is only used while it is open that day. Drawing or selecting a bracket does not change imported pool games."}</p>
+          <p class="muted">Order of operations: set fields and hours, import or build the pool, play the games, then draw the bracket from standings. ${ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported")
+            ? "This weekend has an imported pool grid. Drawing a bracket does not change imported pool games."
+            : "A diamond is only used while it is open that day."}</p>
           ${scheduleImportDesk()}
           <form class="form wide" id="auto-form">
+            <label>Format
+              <select name="format">
+                <option value="pool-to-bracket" ${!ev.format || ev.format === "pool-to-bracket" || ev.format === "imported" ? "selected" : ""}>Pool play, then single-elim bracket</option>
+                <option value="pool-double-elim" ${ev.format === "pool-double-elim" ? "selected" : ""}>Pool play, then double-elim bracket</option>
+                <option value="round-robin" ${ev.format === "round-robin" ? "selected" : ""}>Round robin</option>
+                <option value="pool-only" ${ev.format === "pool-only" ? "selected" : ""}>Pool play only</option>
+                <option value="single-elim" ${ev.format === "single-elim" ? "selected" : ""}>Single elimination</option>
+                <option value="double-elim" ${ev.format === "double-elim" ? "selected" : ""}>Double elimination</option>
+              </select>
+            </label>
             <div class="form-grid two">
               <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml((ev.scheduler && ev.scheduler.days && ev.scheduler.days.length ? ev.scheduler.days : [ev.start, ev.end].filter(Boolean)).join("\n") || "")}</textarea></label>
               <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="${escapeHtml(String((ev.scheduler && ev.scheduler.games_per_team) || 2))}"></label>
@@ -2415,14 +2703,32 @@ export async function eventAdmin(slug) {
                 <option value="platinum-gold-silver" ${ev.bracket_flights === "platinum-gold-silver" ? "selected" : ""}>Platinum / Gold / Silver</option>
               </select>
             </label>
-            <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> If you draw a bracket, include consolation games</label>
-            <label class="check"><input type="checkbox" name="replace"${ev.format !== "imported" && (!ev.scheduler || ev.scheduler.origin !== "imported") && (!ev.scheduler || ev.scheduler.replace !== false) ? " checked" : ""}> Replace unplayed pool games</label>
-            <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also draw empty bracket slots now</label>
+            <p class="muted">Save the format without building games if you only need to switch pool / bracket style.</p>
             <div class="actions">
-              <button class="btn" type="submit">Build pool schedule</button>
-              <button class="btn ghost" id="build-bracket" type="button">Draw bracket from standings</button>
+              <button class="btn ghost" id="save-scheduler-settings" type="button">Save weekend settings</button>
+            </div>
+            <div class="setup-block">
+              <h3>Pool play</h3>
+              <p class="muted">Setup-time action. Run once before the tournament. ${ev.scheduler && ev.scheduler.origin === "imported" ? "Imported games stay; this will not replace them." : ""}</p>
+              <label class="check"><input type="checkbox" name="replace"${games.length || ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported") ? "" : " checked"}> Clear and rebuild the schedule (keeps completed games). This deletes every unplayed weekend game, not only pool pairings.</label>
+              <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also post a blank bracket now (TBD placeholders you can print for the fence before seeds are known)</label>
+              <div class="actions">
+                <button class="btn" type="submit">Build pool schedule</button>
+                <button class="btn ghost" id="clear-schedule" type="button">Clear schedule</button>
+              </div>
+            </div>
+            <div class="setup-block">
+              <h3>Bracket</h3>
+              <p class="muted">After pool play. Seeds from standings. ${games.filter((g) => g.status === "final").length ? "" : "No pool results yet. Enter scores, or use Draw empty bracket slots to post a blank bracket."}</p>
+              <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> Include consolation / placement games</label>
+              <div class="actions">
+                <button class="btn" id="build-bracket" type="button"${games.filter((g) => g.status === "final").length ? "" : " disabled"}>Draw bracket from standings</button>
+                <button class="btn ghost" id="draw-empty-bracket" type="button">Draw empty bracket slots</button>
+                <button class="btn ghost" id="clear-bracket" type="button">Clear bracket</button>
+              </div>
             </div>
           </form>
+          ${bracketImportDesk()}
           <h3>Games by field</h3>
           ${games.length ? table(["Game", "When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
             <td>${gameNoCell(g)}</td>
@@ -2559,6 +2865,7 @@ export async function eventAdmin(slug) {
   bindVenuePhotos(slug, plan.photos || [], showErr);
   bindTeamImport(slug, showErr);
   bindScheduleImport(slug, showErr);
+  bindBracketImport(slug, showErr);
   bindContactEdits(slug, showErr);
   bindCustomBracket(slug, showErr);
   const note = (msg) => { document.getElementById("admin-note").textContent = msg; };
@@ -2586,13 +2893,24 @@ export async function eventAdmin(slug) {
       consolation: fd.get("consolation") === "on",
       replace: fd.get("replace") === "on",
       draw_bracket: fd.get("draw_bracket") === "on",
-      format: ev.format || "pool-to-bracket",
+      format: fd.get("format") || ev.format || "pool-to-bracket",
       bracket_flights: fd.get("bracket_flights") || ev.bracket_flights || "none",
     };
   }
+  document.getElementById("save-scheduler-settings")?.addEventListener("click", async () => {
+    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
+    delete body.replace;
+    delete body.draw_bracket;
+    try {
+      await adminPost(slug, "/settings", body);
+      flashSaved("Weekend settings saved");
+      eventAdmin(slug);
+    } catch (err) { showErr(err); }
+  });
   document.getElementById("auto-form").addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
     const body = schedulerBody(new FormData(evnt.target));
+    if (body.replace && games.length && !confirm("Clear and rebuild the schedule? Completed games stay. " + games.length + " current game(s) will be checked.")) return;
     try {
       await adminPost(slug, "/settings", body);
       const out = await adminPost(slug, "/schedule/auto", body);
@@ -2604,11 +2922,48 @@ export async function eventAdmin(slug) {
   document.getElementById("build-bracket").addEventListener("click", async () => {
     const body = schedulerBody(new FormData(document.getElementById("auto-form")));
     delete body.replace;
+    delete body.draw_bracket;
+    const open = games.filter((g) => g.status !== "final").length;
+    if (open && games.some((g) => g.status === "final") && !confirm("Pool play is not finished (" + open + " games still open). Draw from the current standings anyway?")) return;
+    if (open && games.some((g) => g.status === "final")) body.confirm = true;
     try {
       await adminPost(slug, "/settings", body);
       const out = await adminPost(slug, "/bracket/build", body);
       note("Bracket drawn · " + out.games + " games from " + out.seeds + " seeds");
       flashSaved("Bracket saved");
+      eventAdmin(slug);
+    } catch (err) { showErr(err); }
+  });
+  document.getElementById("draw-empty-bracket")?.addEventListener("click", async () => {
+    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
+    body.empty = true;
+    delete body.replace;
+    try {
+      await adminPost(slug, "/settings", body);
+      const out = await adminPost(slug, "/bracket/build", body);
+      note("Blank bracket posted · " + out.games + " TBD slots");
+      flashSaved("Empty bracket saved");
+      eventAdmin(slug);
+    } catch (err) { showErr(err); }
+  });
+  document.getElementById("clear-bracket")?.addEventListener("click", async () => {
+    const n = (plan.bracket || []).length;
+    if (!n) { note("No bracket games to clear."); return; }
+    if (!confirm("Delete all " + n + " bracket games? Games already marked final will be kept.")) return;
+    try {
+      const out = await adminPost(slug, "/bracket/clear", {});
+      note((out.note || "Bracket cleared") + (out.deleted != null ? " · removed " + out.deleted : ""));
+      flashSaved("Bracket cleared");
+      eventAdmin(slug);
+    } catch (err) { showErr(err); }
+  });
+  document.getElementById("clear-schedule")?.addEventListener("click", async () => {
+    if (!games.length) { note("No pool games to clear."); return; }
+    if (!confirm("Delete all " + games.length + " pool games? Games already marked final will be kept.")) return;
+    try {
+      const out = await adminPost(slug, "/schedule/clear", {});
+      note((out.note || "Schedule cleared") + (out.deleted != null ? " · removed " + out.deleted : ""));
+      flashSaved("Schedule cleared");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });

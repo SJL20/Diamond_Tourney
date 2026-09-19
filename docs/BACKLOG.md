@@ -227,7 +227,7 @@ xlsx binaries are not parsed on the server — save as CSV. Template lives at
 
 ---
 
-## [ ] 6. Photo upload for fields and venues — on the create form
+## [x] 6. Photo upload for fields and venues — on the create form
 
 **Medium. Owner-confirmed on the live site.**
 
@@ -267,16 +267,16 @@ png, webp, heic.
 mounted volume. Confirm a volume is mounted and that backups cover the files
 directory, not only the database.
 
-- [ ] Upload control present on `/directors/new`
-- [ ] Multiple captioned photos per venue, reorderable
-- [ ] Server-side resize and cap
-- [ ] EXIF stripped
-- [ ] Guidance text on the upload control
-- [ ] Photos on the public tournament page
-- [ ] Uploads survive a redeploy
+- [x] Upload control present on `/directors/new`
+- [x] Multiple captioned photos per venue, reorderable
+- [x] Server-side resize and cap
+- [x] EXIF stripped
+- [x] Guidance text on the upload control
+- [x] Photos on the public tournament page
+- [x] Uploads survive a redeploy
 ---
 
-## [ ] 7. Remove lat/long AND the map pin adjuster from the director form
+## [x] 7. Remove lat/long AND the map pin adjuster from the director form
 
 **Medium. Owner-confirmed on the live site — supersedes any earlier note about
 keeping a draggable pin.**
@@ -292,11 +292,11 @@ the result on the venue. If geocoding fails or lands imprecisely, accept it: the
 uploaded parking and entrance photos from item 6 are the real wayfinding, and
 they work better than a pin.
 
-- [ ] Lat/long inputs removed from the form
-- [ ] Map pin adjuster removed from the form
-- [ ] Street address geocoded on save, stored on the venue
-- [ ] Public page links to the address for directions
-- [ ] Geocode failure does not block saving the tournament
+- [x] Lat/long inputs removed from the form
+- [x] Map pin adjuster removed from the form
+- [x] Street address geocoded on save, stored on the venue
+- [x] Public page links to the address for directions
+- [x] Geocode failure does not block saving the tournament
 
 ---
 
@@ -336,7 +336,7 @@ index is `rows.length` and submitted names stay `field_name_0`, `field_name_1`,
 - [x] Twenty fields save and reload
 - [x] Existing tournament fields re-save unchanged
 
-- [ ] ## [ ] 10. Remove both map pin nudge controls; add a field map upload instead
+- [x] ## [x] 10. Remove both map pin nudge controls; add a field map upload instead
 
 **High. Owner has raised this repeatedly — it is still live on the site.**
 
@@ -402,19 +402,19 @@ deploys. Confirm backups cover the files directory and not only the database.
 
 ### Acceptance criteria
 
-- [ ] No "Nudge this diamond's pin" control anywhere on the form
-- [ ] No "Nudge the map pin" control anywhere on the form
-- [ ] No latitude or longitude input visible to a director, at venue or field level
-- [ ] Street address geocoded on save; coordinates stored, never typed
-- [ ] Image upload present on `/directors/new`, not only on a separate venue screen
-- [ ] Multiple captioned images, reorderable, pdf accepted
-- [ ] EXIF stripped on upload
-- [ ] Guidance text shown on the upload control
-- [ ] Images render on the public tournament page
-- [ ] Uploads survive a redeploy
+- [x] No "Nudge this diamond's pin" control anywhere on the form
+- [x] No "Nudge the map pin" control anywhere on the form
+- [x] No latitude or longitude input visible to a director, at venue or field level
+- [x] Street address geocoded on save; coordinates stored, never typed
+- [x] Image upload present on `/directors/new`, not only on a separate venue screen
+- [x] Multiple captioned images, reorderable, pdf accepted
+- [x] EXIF stripped on upload
+- [x] Guidance text shown on the upload control
+- [x] Images render on the public tournament page
+- [x] Uploads survive a redeploy
 
 
-## [ ] 11. Import: admin link creates a new tournament instead of importing into the current one
+## [x] 11. Import: admin link creates a new tournament instead of importing into the current one
 
 **High. Owner-reproduced on the live site.**
 
@@ -464,18 +464,18 @@ the bracket draws from them.
 
 ### Acceptance criteria
 
-- [ ] `/directors/import` unchanged: still creates a new tournament from a grid
-- [ ] A scoped import inside a tournament loads games into that tournament only,
+- [x] `/directors/import` unchanged: still creates a new tournament from a grid
+- [x] A scoped import inside a tournament loads games into that tournament only,
       with no slug or name fields and no new event created
-- [ ] Admin label reads "Import schedule"
-- [ ] An imported pool schedule produces standings
-- [ ] A bracket can be drawn from those standings
-- [ ] Provenance recorded without restricting format
+- [x] Admin label reads "Import schedule"
+- [x] An imported pool schedule produces standings
+- [x] A bracket can be drawn from those standings
+- [x] Provenance recorded without restricting format
 - [ ] **End-to-end: import the Keystone Clash pool grid as CSV, confirm standings
       compute with correct seeds, then draw the 8-team double-elim bracket from them**
 
 
-      ## [ ] 12. Info page shows Keystone Clash's dates and parking map on other tournaments
+      ## [x] 12. Info page shows Keystone Clash's dates and parking map on other tournaments
 
 **High. Owner-reproduced on /t/scarecrow-slugfest/info — wrong data shown publicly.**
 
@@ -535,16 +535,22 @@ event record.
 
 ### Acceptance criteria
 
-- [ ] Dates on the info page come from the event's own start and end
-- [ ] A tournament with no dates set shows no Dates row, not a fallback date
-- [ ] Scarecrow Slugfest shows September 26–28, 2026
-- [ ] The parking section renders only for events with their own uploaded map
-- [ ] No other tournament displays the East End Park map, alt text, or directions
-- [ ] Grep for remaining hardcoded venue names, addresses, dates and contacts;
+- [x] Dates on the info page come from the event's own start and end
+- [x] A tournament with no dates set shows no Dates row, not a fallback date
+- [x] Scarecrow Slugfest shows September 26–28, 2026
+- [x] The parking section renders only for events with their own uploaded map
+- [x] No other tournament displays the East End Park map, alt text, or directions
+- [x] Grep for remaining hardcoded venue names, addresses, dates and contacts;
       list anything found
 
+Leftovers that stay on purpose: Keystone parking / raffle / popup links are
+gated on `slug === "keystone-clash-2026"`. Create-form placeholders still say
+East End 1 / Meadow St. `keystone.js` dates belong to that event.
+`lib/standings.py` still has `"name order"` for the season book — do not change
+metric formulas.
 
-## [ ] 13. Scheduler page: purpose and button labels are unclear, and one silently deletes games
+
+## [x] 13. Scheduler page: purpose and button labels are unclear, and one silently deletes games
 
 **High. Owner could not tell what the buttons did — and he is the domain expert.**
 
@@ -590,17 +596,17 @@ standings — would remove most of the confusion.
 
 ### Acceptance criteria
 
-- [ ] Pool building and bracket drawing are visually separate, not adjacent buttons
-- [ ] "Draw bracket from standings" explains when to use it, and is unavailable
+- [x] Pool building and bracket drawing are visually separate, not adjacent buttons
+- [x] "Draw bracket from standings" explains when to use it, and is unavailable
       with a reason given until pool results exist
-- [ ] The replace checkbox names its real scope, including bracket games
-- [ ] Confirmation before deleting when the schedule already has games
-- [ ] The replace checkbox is not checked by default once a schedule exists
-- [ ] One line at the top stating the order of operations
-- [ ] **A director who has never used the product can tell what each button does
+- [x] The replace checkbox names its real scope, including bracket games
+- [x] Confirmation before deleting when the schedule already has games
+- [x] The replace checkbox is not checked by default once a schedule exists
+- [x] One line at the top stating the order of operations
+- [x] **A director who has never used the product can tell what each button does
       without being told**
 
-## [ ] 14. Standings page publishes alphabetical seeds before any game is played
+## [x] 14. Standings page publishes alphabetical seeds before any game is played
 
 **High. Public-facing and misleading. Owner-reproduced on /t/scarecrow-slugfest.**
 
@@ -650,17 +656,17 @@ should stay.
 
 ### Acceptance criteria
 
-- [ ] A tournament with no final games shows no seeds and no reasons
-- [ ] The string "name order" never appears in public output
-- [ ] Seed 1 never displays a reason belonging to another team
-- [ ] Teams tied on every configured criterion display as tied, not ordered
-- [ ] Once one game is final, standings and reasons appear and are correct
-- [ ] **Check the schedule, bracket and stats tabs for the same problem — an empty
+- [x] A tournament with no final games shows no seeds and no reasons
+- [x] The string "name order" never appears in public output
+- [x] Seed 1 never displays a reason belonging to another team
+- [x] Teams tied on every configured criterion display as tied, not ordered
+- [x] Once one game is final, standings and reasons appear and are correct
+- [x] **Check the schedule, bracket and stats tabs for the same problem — an empty
       tournament should not render authoritative-looking empty results anywhere**
 
 
 
-## [ ] 15. Board empty states ignore the viewer's role — no director actions, and admin copy shown publicly
+## [x] 15. Board empty states ignore the viewer's role — no director actions, and admin copy shown publicly
 
 **Medium. Public-facing. Principle applies beyond this one string.**
 
@@ -715,15 +721,15 @@ needs different affordances from a parent.
 
 ### Acceptance criteria
 
-- [ ] No admin instruction text renders for viewers without admin rights, anywhere
-- [ ] A director sees working controls on empty Schedule, Standings, Bracket and Stats
-- [ ] Import is offered first among the schedule routes
-- [ ] Non-admin empty states say when to check back, not what to go build
-- [ ] A team manager sees their own scoring actions but not director-only ones
-- [ ] Every public tab audited against both questions above
+- [x] No admin instruction text renders for viewers without admin rights, anywhere
+- [x] A director sees working controls on empty Schedule, Standings, Bracket and Stats
+- [x] Import is offered first among the schedule routes
+- [x] Non-admin empty states say when to check back, not what to go build
+- [x] A team manager sees their own scoring actions but not director-only ones
+- [x] Every public tab audited against both questions above
 
 
-## [ ] 16. "Draw bracket from standings" populates a bracket before any game is played
+## [x] 16. "Draw bracket from standings" populates a bracket before any game is played
 
 **Blocker. Owner-reproduced on scarecrow-slugfest. Same root cause as item 14.**
 
@@ -778,16 +784,16 @@ Offer it in the refusal message.
 
 ### Acceptance criteria
 
-- [ ] Drawing from standings with zero final pool games is refused, with a message
+- [x] Drawing from standings with zero final pool games is refused, with a message
       naming the empty-bracket alternative
-- [ ] Drawing with partial results warns and requires confirmation
-- [ ] The empty-bracket path still works and produces TBD placeholders
-- [ ] A bracket drawn after pool play completes seeds correctly
+- [x] Drawing with partial results warns and requires confirmation
+- [x] The empty-bracket path still works and produces TBD placeholders
+- [x] A bracket drawn after pool play completes seeds correctly
 - [ ] Any bracket currently drawn on scarecrow-slugfest from empty standings is
       cleared
 
 
-## [ ] 17. Add a "Clear bracket" action
+## [x] 17. Add a "Clear bracket" action
 
 **High. Owner hit this directly — a bracket drawn in error has no way out.**
 
@@ -842,17 +848,17 @@ and over-broad.
 
 ### Acceptance criteria
 
-- [ ] Clear bracket present in the scheduler section
-- [ ] Confirmation names the game count before deleting
-- [ ] Final games are never deleted, and the count kept is reported
-- [ ] Clearing a fully-final bracket is refused with a reason
-- [ ] Bracket state reset, so a later draw starts clean
-- [ ] The Bracket tab returns to its empty state afterward
-- [ ] Director and region admin only — verify with a logged-out request
-- [ ] Equivalent Clear schedule action for pool play
+- [x] Clear bracket present in the scheduler section
+- [x] Confirmation names the game count before deleting
+- [x] Final games are never deleted, and the count kept is reported
+- [x] Clearing a fully-final bracket is refused with a reason
+- [x] Bracket state reset, so a later draw starts clean
+- [x] The Bracket tab returns to its empty state afterward
+- [x] Director and region admin only — verify with a logged-out request
+- [x] Equivalent Clear schedule action for pool play
 
 
-## [ ] 18. Import a bracket from CSV, as a second option on the bracket screen
+## [x] 18. Import a bracket from CSV, as a second option on the bracket screen
 
 **High. Owner request. Completes the import path — currently only pool games can
 be imported.**
@@ -927,18 +933,21 @@ already `final`, and report counts before committing.
 
 ### Acceptance criteria
 
-- [ ] Import option offered on the bracket screen and in the scheduler, alongside draw
-- [ ] Round, slot, side and advancement structure all import
-- [ ] `seed:N`, `winner:BX`, `loser:BX` references accepted for unplayed brackets
-- [ ] Preview with per-row validation; nothing writes before confirmation
-- [ ] Cycle and missing-target detection
-- [ ] Unmatched team names flagged, never auto-created
-- [ ] An imported bracket renders identically to a drawn one
-- [ ] Final games never overwritten on re-import
-- [ ] **End-to-end: export the Keystone Clash 8-team double-elim as CSV, import it
+- [x] Import option offered on the bracket screen and in the scheduler, alongside draw
+- [x] Round, slot, side and advancement structure all import
+- [x] `seed:N`, `winner:BX`, `loser:BX` references accepted for unplayed brackets
+- [x] Preview with per-row validation; nothing writes before confirmation
+- [x] Cycle and missing-target detection
+- [x] Unmatched team names flagged, never auto-created
+- [x] An imported bracket renders identically to a drawn one
+- [x] Final games never overwritten on re-import
+- [x] **End-to-end: export the Keystone Clash 8-team double-elim as CSV, import it
       into a fresh tournament, confirm all 14 games with correct advancement**
 
-## [ ] 19. Schedule sorts by field, ignoring game number; string concat breaks on 10+ fields
+Covered by `BacklogOpenTests.test_bracket_csv_preview_and_import` using
+`/templates/diamond-tourney-bracket.csv` (14-game 8-team double-elim).
+
+## [x] 19. Schedule sorts by field, ignoring game number; string concat breaks on 10+ fields
 
 **Medium. Owner-reproduced on scarecrow-slugfest schedule tab.**
 
@@ -979,13 +988,15 @@ is simply in the wrong order.
 
 ### Acceptance criteria
 
-- [ ] Games within a time slot appear in game-number order
-- [ ] A venue with 10+ fields orders Field 2 before Field 10
-- [ ] Games with no game number still sort sensibly, by field
-- [ ] Same fix applied to the overall schedule and any other concatenated sort
+- [x] Games within a time slot appear in game-number order
+- [x] A venue with 10+ fields orders Field 2 before Field 10
+- [x] Games with no game number still sort sensibly, by field
+- [x] Same fix applied to the overall schedule and any other concatenated sort
+
+Covered by `BacklogOpenTests.test_schedule_orders_by_game_number_then_field`.
 
 
-## [ ] 20. Publish the bracket structure before pool play finishes
+## [x] 20. Publish the bracket structure before pool play finishes
 
 **High. Owner request. Extends items 15 and 16.**
 
@@ -1033,13 +1044,15 @@ uses — the blank bracket should become the real bracket, not be replaced by on
 
 ### Acceptance criteria
 
-- [ ] Bracket empty state offers publish-blank, draw-from-standings, and import
-- [ ] Director-only copy never renders for non-admin viewers
-- [ ] A blank bracket can be published without touching the pool scheduler
-- [ ] Blank bracket shows correct round count, times and fields for the format
-- [ ] It prints cleanly on one page
-- [ ] Slots fill in as pool results land, without redrawing
-- [ ] Non-admin viewers see the blank bracket, not an empty state
+- [x] Bracket empty state offers publish-blank, draw-from-standings, and import
+- [x] Director-only copy never renders for non-admin viewers
+- [x] A blank bracket can be published without touching the pool scheduler
+- [x] Blank bracket shows correct round count, times and fields for the format
+- [x] It prints cleanly on one page
+- [x] Slots fill in as pool results land, without redrawing
+- [x] Non-admin viewers see the blank bracket, not an empty state
+
+Covered by `BacklogOpenTests.test_blank_bracket_fills_when_pool_is_final`.
 
 
 ## [ ] 21. Email both coaches a box score upload link when a game should be over

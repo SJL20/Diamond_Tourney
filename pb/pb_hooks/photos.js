@@ -54,6 +54,7 @@ function stripSavedImage(app, rec) {
   const name = rec.get("image");
   if (!name) return false;
   const file = Array.isArray(name) ? name[0] : String(name);
+  if (/\.pdf$/i.test(file)) return false;
   try {
     const col = app.findCollectionByNameOrId("venue_photos");
     const path = [app.dataDir(), "storage", col.id, rec.id, file].join("/");

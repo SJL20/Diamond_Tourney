@@ -19,18 +19,14 @@ function geocodeAddress(address) {
 }
 
 function applyGeocode(rec, body) {
-  const hasCoords = body.lat != null && body.lat !== "" && body.lng != null && body.lng !== "";
-  if (hasCoords) {
-    rec.set("lat", Number(body.lat));
-    rec.set("lng", Number(body.lng));
-    return { source: "nudge", lat: Number(body.lat), lng: Number(body.lng) };
-  }
+  body = body || {};
   const address = String(body.address != null ? body.address : (rec.get("address") || "")).trim();
+  if (address) rec.set("address", address);
   if (!address) return null;
-  const same = rec.get("address") === address && rec.get("lat") && rec.get("lng") && !body.geocode;
-  if (same && body.geocode !== true && body.geocode !== "true") return { source: "kept", lat: rec.get("lat"), lng: rec.get("lng") };
+  const same = rec.get("address") === address && rec.get("lat") && rec.get("lng") && body.geocode !== true && body.geocode !== "true";
+  if (same) return { source: "kept", lat: rec.get("lat"), lng: rec.get("lng") };
   const hit = geocodeAddress(address);
-  if (!hit) return null;
+  if (!hit) return { source: "failed", address: address };
   rec.set("lat", hit.lat);
   rec.set("lng", hit.lng);
   return { source: "geocode", lat: hit.lat, lng: hit.lng, label: hit.label };

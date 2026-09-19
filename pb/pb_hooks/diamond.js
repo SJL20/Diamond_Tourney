@@ -315,24 +315,54 @@ function sortGroup(teams, games, order, reasons, suffix) {
   return ranked;
 }
 
+function gamesHaveFinals(games) {
+  if (!games || !games.length) return false;
+  for (let i = 0; i < games.length; i++) {
+    const g = games[i];
+    const status = g && g.get ? g.get("status") : (g && g.status);
+    if (status === "final") return true;
+  }
+  return false;
+}
+
 function sortPool(teams, games, order) {
   const criteria = (order && order.length !== undefined && typeof order !== "string" && !order.order)
     ? (order.length ? order.slice() : parseTiebreak(null))
     : parseTiebreak(order);
+  const listed = teams.slice();
+  if (!gamesHaveFinals(games)) {
+    listed.sort(function (a, b) {
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+    for (let i = 0; i < listed.length; i++) {
+      listed[i].seed = null;
+      listed[i].diff = Number(listed[i].rs || 0) - Number(listed[i].ra || 0);
+      listed[i].win_pct = Math.round(winPct(listed[i]) * 1000) / 1000;
+      listed[i].seed_reason = "";
+      listed[i].tied = true;
+    }
+    return listed;
+  }
   const reasons = {};
-  const ranked = sortGroup(teams.slice(), games, criteria, reasons, "");
+  const ranked = sortGroup(listed, games, criteria, reasons, "");
+  let prevKey = "";
   for (let i = 0; i < ranked.length; i++) {
     const row = ranked[i];
-    row.seed = i + 1;
     row.diff = Number(row.rs || 0) - Number(row.ra || 0);
     row.win_pct = Math.round(winPct(row) * 1000) / 1000;
-    let reason = reasons[row.id] || "";
-    if (!reason) {
-      if (ranked.length === 1) reason = "only team in the pool";
-      else if (i === 0) reason = reasons[ranked[1].id] || TIEBREAK_LABELS[criteria[0]];
-      else reason = "name order";
+    const reason = reasons[row.id] || "";
+    const tieKey = [winPct(row), Number(row.ra || 0), row.diff, Number(row.rs || 0)].join("|");
+    if (i > 0 && !reason && tieKey === prevKey) {
+      row.seed = ranked[i - 1].seed;
+      row.tied = true;
+      ranked[i - 1].tied = true;
+      row.seed_reason = "";
+    } else {
+      row.seed = i + 1;
+      row.seed_reason = reason;
+      if (ranked.length === 1 && !reason) row.seed_reason = "only team in the pool";
     }
-    row.seed_reason = reason;
+    prevKey = tieKey;
   }
   return ranked;
 }
@@ -457,7 +487,7 @@ function importSchedule(app, event, csv) {
   const prefs = schedule.parseScheduler(event.get("scheduler"));
   prefs.origin = "imported";
   event.set("scheduler", prefs);
-  if (!event.get("format")) event.set("format", "imported");
+  if (!event.get("format") || event.get("format") === "imported") event.set("format", "pool-to-bracket");
   app.save(event);
   return { imported: created.length, standings: poolStandings(app, event.id) };
 }
@@ -524,6 +554,52 @@ function advanceFlight(app, games) {
   }
 }
 
+function fillSeat(rec, teamId) {
+  if (!teamId) return false;
+  if (!rec.get("home_team")) {
+    rec.set("home_team", teamId);
+    return true;
+  }
+  if (!rec.get("away_team") && rec.get("home_team") !== teamId) {
+    rec.set("away_team", teamId);
+    return true;
+  }
+  return false;
+}
+
+function normGameLabel(raw) {
+  return String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function applyImportedFeeds(app, event, games) {
+  let feeds = {};
+  try {
+    feeds = require(__hooks + "/schedule.js").parseScheduler(event.get("scheduler")).bracket_feeds || {};
+  } catch (err) {
+    feeds = {};
+  }
+  const keys = Object.keys(feeds);
+  if (!keys.length) return;
+  const byLabel = {};
+  for (let i = 0; i < games.length; i++) {
+    const label = normGameLabel(games[i].get("game_id"));
+    if (label) byLabel[label] = games[i];
+  }
+  for (let i = 0; i < keys.length; i++) {
+    const from = byLabel[normGameLabel(keys[i])];
+    const feed = feeds[keys[i]] || {};
+    if (!from || from.get("status") !== "final") continue;
+    const winner = from.get("winner") || "";
+    const loser = loserId(from);
+    if (feed.winner_to && byLabel[normGameLabel(feed.winner_to)] && byLabel[normGameLabel(feed.winner_to)].get("status") !== "final") {
+      if (fillSeat(byLabel[normGameLabel(feed.winner_to)], winner)) app.save(byLabel[normGameLabel(feed.winner_to)]);
+    }
+    if (feed.loser_to && byLabel[normGameLabel(feed.loser_to)] && byLabel[normGameLabel(feed.loser_to)].get("status") !== "final") {
+      if (fillSeat(byLabel[normGameLabel(feed.loser_to)], loser)) app.save(byLabel[normGameLabel(feed.loser_to)]);
+    }
+  }
+}
+
 function advanceBracket(app, eventId) {
   const games = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 400, 0, { e: eventId });
   const byFlight = {};
@@ -534,6 +610,9 @@ function advanceBracket(app, eventId) {
   }
   const names = Object.keys(byFlight);
   for (let i = 0; i < names.length; i++) advanceFlight(app, byFlight[names[i]]);
+  let event = null;
+  try { event = app.findRecordById("events", eventId); } catch (err) { event = null; }
+  if (event) applyImportedFeeds(app, event, games);
 }
 
 function ba(h, ab) {
@@ -613,8 +692,32 @@ function eventLeaders(app, eventId) {
   };
 }
 
-function overallRowKey(row) {
-  return [row.date || "9999-99-99", row.time || "99:99", row.field || "zzz", row.kind || "", row.round || "", row.home || ""].join("|");
+function fieldSortParts(name) {
+  const text = String(name || "");
+  const m = text.match(/(\d+)/);
+  return {
+    n: m ? Number(m[1]) : 1000000,
+    text: text.toLowerCase(),
+  };
+}
+
+function compareWeekendGames(a, b) {
+  const dateA = String(a.date || "9999-99-99");
+  const dateB = String(b.date || "9999-99-99");
+  if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+  const timeA = String(a.time || "99:99");
+  const timeB = String(b.time || "99:99");
+  if (timeA !== timeB) return timeA < timeB ? -1 : 1;
+  const ga = Number(a.game_number || 0);
+  const gb = Number(b.game_number || 0);
+  if (ga && gb && ga !== gb) return ga - gb;
+  if (ga && !gb) return -1;
+  if (!ga && gb) return 1;
+  const fa = fieldSortParts(a.field || a.field_name);
+  const fb = fieldSortParts(b.field || b.field_name);
+  if (fa.n !== fb.n) return fa.n - fb.n;
+  if (fa.text !== fb.text) return fa.text < fb.text ? -1 : 1;
+  return String(a.home || "").localeCompare(String(b.home || ""));
 }
 
 function listOverall(schedule, bracket) {
@@ -658,13 +761,7 @@ function listOverall(schedule, bracket) {
       protest_note: g.protest_note || "",
     });
   }
-  rows.sort(function (a, b) {
-    const ka = overallRowKey(a);
-    const kb = overallRowKey(b);
-    if (ka < kb) return -1;
-    if (ka > kb) return 1;
-    return 0;
-  });
+  rows.sort(compareWeekendGames);
   return rows;
 }
 
@@ -679,10 +776,16 @@ function publicBoard(app, event, auth) {
   const scheduleMod = require(__hooks + "/schedule.js");
   const packet = host.parsePacket(event.get("packet"));
   const schedule = scheduleMod.listSchedule(app, eventId, auth);
+  let feeds = {};
+  try { feeds = scheduleMod.parseScheduler(event.get("scheduler")).bracket_feeds || {}; } catch (err) { feeds = {}; }
   const bracket = bracketRecs.map(function (g) {
       const round = g.get("round");
       const hr = Number(g.get("home_runs") || 0);
       const ar = Number(g.get("away_runs") || 0);
+      const label = normGameLabel(g.get("game_id"));
+      const feed = feeds[label] || feeds[g.get("game_id")] || {};
+      const homeName = teamName(g.get("home_team"));
+      const awayName = teamName(g.get("away_team"));
       return {
         id: g.id,
         game_id: g.get("game_id") || "",
@@ -692,14 +795,16 @@ function publicBoard(app, event, auth) {
         flight: g.get("flight") || "",
         bracket_kind: g.get("bracket_kind") || "",
         side: inferSide(round, g.get("side")),
-        home: teamName(g.get("home_team")),
-        away: teamName(g.get("away_team")),
+        home: homeName || feed.home_ref || "",
+        away: awayName || feed.away_ref || "",
         home_id: g.get("home_team") || "",
         away_id: g.get("away_team") || "",
         home_runs: g.get("home_runs"),
         away_runs: g.get("away_runs"),
         winner: teamName(g.get("winner")),
         winner_id: g.get("winner") || "",
+        winner_to: feed.winner_to || "",
+        loser_to: feed.loser_to || "",
         protest_note: g.get("protest_note") || "",
         status: g.get("status"),
         field: g.get("field_name") || "",
@@ -774,6 +879,8 @@ module.exports = {
   eventLeaders: eventLeaders,
   publicBoard: publicBoard,
   listOverall: listOverall,
+  compareWeekendGames: compareWeekendGames,
+  inferSide: inferSide,
   upsertEventTeam: upsertEventTeam,
   parseTiebreak: parseTiebreak,
   saveTiebreak: saveTiebreak,

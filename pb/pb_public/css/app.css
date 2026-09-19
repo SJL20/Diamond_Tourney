@@ -833,6 +833,8 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 
 @media print {
   body { background: #fff; }
-  .site-bar, .event-bar, .footer, .btn, .nav { display: none !important; }
+  .site-bar, .event-bar, .footer, .btn, .nav, .no-print, .bk-desk-box, #bracket-import { display: none !important; }
   .card, .hero, .page-head { box-shadow: none; border: 1px solid #ccc; }
+  .bracket-print { display: block; }
+  .bk-col, .bk-card { break-inside: avoid; page-break-inside: avoid; }
 }
