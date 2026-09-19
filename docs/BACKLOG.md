@@ -852,3 +852,90 @@ and over-broad.
 - [ ] Equivalent Clear schedule action for pool play
 
 
+## [ ] 18. Import a bracket from CSV, as a second option on the bracket screen
+
+**High. Owner request. Completes the import path — currently only pool games can
+be imported.**
+
+The CSV importer accepts `date,time,home,away,pool,field,home_runs,away_runs,status`
+and writes to `event_schedule` only. There is no round, slot, or feeds column, so
+a bracket a director already built elsewhere cannot come in. Their only option is
+"Draw bracket from standings," which generates a new one and discards whatever
+structure they had.
+
+Offer bracket import as a second route on `/t/<slug>/bracket` and in the
+scheduler section, beside drawing from standings.
+
+### Why it matters
+
+"Bring the grid you already have" is the product's lead pitch. A director
+arriving from Tourney Machine, a spreadsheet, or a printed sheet often has the
+bracket already decided — seeding agreed, byes placed, times set against field
+availability. Regenerating it from scratch throws away work and produces a
+different answer.
+
+It also covers the case where generated seeding is simply wrong for local
+reasons a director knows and the software does not.
+
+### The fields already exist
+
+`bracket_games` carries `round`, `slot`, `side`, `game_number`, `home`, `away`,
+`date`, `time`, `field`, `status`. No schema change needed — this is a parser and
+a mapping UI.
+
+### Suggested columns
+
+    game,round,side,date,time,field,home,away,winner_to,loser_to,home_runs,away_runs,status
+
+- `game` — the slot label a director already uses (B1, B2, ...), maps to `slot`
+- `round` — QF, SF, F, or free text
+- `side` — championship or consolation; without it, consolation games feed the
+  title game
+- `winner_to` / `loser_to` — the game each result advances to. This is the
+  structure, and it is what "draw from standings" currently encodes implicitly.
+  Import is worthless without it.
+- `home` / `away` — accept a team name, or a reference like `seed:3`,
+  `winner:B1`, `loser:B5` so an unplayed bracket can be imported before seeding
+  is known
+
+### Reuse the team import flow
+
+Item 5 describes upload, column detection, mapping with fuzzy-matched guesses,
+preview with per-row validation, then import on confirm. Same flow here, same
+code where possible.
+
+### Validation specific to brackets
+
+- Every `winner_to` and `loser_to` points at a `game` that exists in the file
+- No cycles — a game cannot feed itself directly or transitively
+- Team names resolve against registered teams; unmatched names flagged in the
+  preview with a picker, not silently created
+- Exactly one game has no `winner_to` — the final. Two means two finals.
+- Games fit inside the event's field and hour windows; warn rather than block
+- Slot labels are unique within the event
+
+Nothing writes until the director has seen the preview.
+
+### Behavior
+
+Importing a bracket sets the same event state that drawing does, so the Bracket
+tab renders it identically — a director should not be able to tell from the
+public page whether a bracket was drawn or imported.
+
+Re-importing follows item 17's rules: match on slot label, never overwrite a game
+already `final`, and report counts before committing.
+
+### Acceptance criteria
+
+- [ ] Import option offered on the bracket screen and in the scheduler, alongside draw
+- [ ] Round, slot, side and advancement structure all import
+- [ ] `seed:N`, `winner:BX`, `loser:BX` references accepted for unplayed brackets
+- [ ] Preview with per-row validation; nothing writes before confirmation
+- [ ] Cycle and missing-target detection
+- [ ] Unmatched team names flagged, never auto-created
+- [ ] An imported bracket renders identically to a drawn one
+- [ ] Final games never overwritten on re-import
+- [ ] **End-to-end: export the Keystone Clash 8-team double-elim as CSV, import it
+      into a fresh tournament, confirm all 14 games with correct advancement**
+
+
