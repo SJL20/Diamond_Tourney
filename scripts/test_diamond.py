@@ -129,6 +129,9 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("function compareGames", event)
         self.assertIn("Import a bracket CSV", event)
         self.assertIn("/import-bracket", event)
+        self.assertIn("Publish blank bracket", event)
+        self.assertIn("publish-blank-bracket", event)
+        self.assertIn("function bracketPageActions", event)
         self.assertNotIn("September 11–13, 2026", event)
         self.assertNotIn("a.date + a.time + a.field + a.home", event)
         self.assertIn("tb-remove", event)
@@ -2941,6 +2944,50 @@ class BacklogOpenTests(unittest.TestCase):
         self.assertEqual(b1["status"], "final")
         self.assertEqual(b1["home"], "Keep Hawks")
         self.assertEqual(b1["home_runs"], 4)
+
+    def test_blank_bracket_fills_when_pool_is_final(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "blank-bk-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Blank Bracket Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "end": "2026-09-21",
+            "hours_start": "09:00",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Blank Hawks", "pool": "A", "as_director": True,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Blank Heat", "pool": "A", "as_director": True,
+        })
+        empty = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "empty": True,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        self.assertGreaterEqual(empty["games"], 1)
+        before = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertTrue(before["bracket"])
+        self.assertTrue(all(not g.get("home_id") for g in before["bracket"]))
+        self.assertTrue(any(g.get("date") for g in before["bracket"]))
+        added = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Blank Hawks",
+            "away": "Blank Heat",
+            "date": "2026-09-20",
+            "time": "09:00",
+            "field": "Field 1",
+            "pool": "A",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/schedule/{added['game']['id']}/score", td, {
+            "home_runs": 5, "away_runs": 1, "status": "final", "confirm": True,
+        })
+        after = request(BASE, "GET", f"/api/event/{slug}/board")
+        filled = [g for g in after["bracket"] if g.get("home") and g.get("away")]
+        self.assertTrue(filled)
+        self.assertEqual(after["event"].get("bracket_mode"), "standings")
 
 
 if __name__ == "__main__":

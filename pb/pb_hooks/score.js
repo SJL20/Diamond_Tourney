@@ -230,6 +230,9 @@ function postScore(app, event, id, body, auth) {
   rec.set("scored_by", auth.id);
   app.save(rec);
   const schedule = require(__hooks + "/schedule.js");
+  if (rec.get("status") === "final") {
+    try { schedule.fillEmptyBracket(app, event); } catch (err) {}
+  }
   return schedule.scheduleRow(app, rec, { can_score: true });
 }
 
@@ -325,6 +328,9 @@ function botApply(app, body, auth) {
     rec.set("status", body.game_status || "final");
     rec.set("scored_by", auth.id);
     app.save(rec);
+    if (rec.get("status") === "final") {
+      try { require(__hooks + "/schedule.js").fillEmptyBracket(app, event); } catch (err) {}
+    }
   }
   const diamond = require(__hooks + "/diamond.js");
   return {

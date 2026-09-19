@@ -1052,3 +1052,5 @@ uses — the blank bracket should become the real bracket, not be replaced by on
 - [x] Slots fill in as pool results land, without redrawing
 - [x] Non-admin viewers see the blank bracket, not an empty state
 
+Covered by `BacklogOpenTests.test_blank_bracket_fills_when_pool_is_final`.
+

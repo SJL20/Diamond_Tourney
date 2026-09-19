@@ -1052,6 +1052,107 @@ function drawDoubleElim(app, event, seeds, flight) {
   return count;
 }
 
+function firstRoundPairings(seeds) {
+  const n = seeds.length;
+  if (n < 2) return [];
+  if (n <= 2) return [{ round: "F", slot: 1, home: seeds[0], away: seeds[1] }];
+  if (n <= 4) {
+    return [
+      { round: "SF", slot: 1, home: seeds[0], away: seeds[3] || { id: "" } },
+      { round: "SF", slot: 2, home: seeds[1], away: seeds[2] || { id: "" } },
+    ];
+  }
+  return [
+    { round: "QF", slot: 1, home: seeds[0], away: seeds[7] || { id: "" } },
+    { round: "QF", slot: 2, home: seeds[3] || { id: "" }, away: seeds[4] || { id: "" } },
+    { round: "QF", slot: 3, home: seeds[1] || { id: "" }, away: seeds[6] || { id: "" } },
+    { round: "QF", slot: 4, home: seeds[2] || { id: "" }, away: seeds[5] || { id: "" } },
+  ];
+}
+
+function seedNumberFromRef(text) {
+  const m = String(text || "").match(/seed\s*:?\s*(\d+)/i);
+  return m ? Number(m[1]) : 0;
+}
+
+function fillEmptySeat(rec, field, teamId) {
+  if (!teamId || rec.get("status") === "final" || rec.get(field)) return false;
+  rec.set(field, teamId);
+  return true;
+}
+
+function fillEmptyBracket(app, event) {
+  const existing = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+  if (!existing.length) return { filled: 0 };
+  const seeds = seedList(app, event);
+  let filled = 0;
+  const bySeed = {};
+  for (let i = 0; i < seeds.length; i++) {
+    if (seeds[i] && seeds[i].seed != null) bySeed[Number(seeds[i].seed)] = seeds[i].id;
+  }
+  const feeds = parseScheduler(event.get("scheduler")).bracket_feeds || {};
+  for (let i = 0; i < existing.length; i++) {
+    const rec = existing[i];
+    if (rec.get("status") === "final") continue;
+    const label = String(rec.get("game_id") || "").trim().toUpperCase();
+    const feed = feeds[label] || feeds[rec.get("game_id")] || {};
+    const homeSeed = seedNumberFromRef(feed.home_ref);
+    const awaySeed = seedNumberFromRef(feed.away_ref);
+    let changed = false;
+    if (homeSeed && bySeed[homeSeed]) changed = fillEmptySeat(rec, "home_team", bySeed[homeSeed]) || changed;
+    if (awaySeed && bySeed[awaySeed]) changed = fillEmptySeat(rec, "away_team", bySeed[awaySeed]) || changed;
+    if (changed) {
+      app.save(rec);
+      filled += 1;
+    }
+  }
+  const flights = splitFlights(seeds, event.get("bracket_flights"));
+  for (let i = 0; i < flights.length; i++) {
+    const pairs = firstRoundPairings(flights[i].seeds);
+    for (let p = 0; p < pairs.length; p++) {
+      const rec = findBracketSlot(app, event, pairs[p].round, pairs[p].slot, flights[i].flight);
+      if (!rec || rec.get("status") === "final") continue;
+      let changed = false;
+      if (pairs[p].home && pairs[p].home.id) changed = fillEmptySeat(rec, "home_team", pairs[p].home.id) || changed;
+      if (pairs[p].away && pairs[p].away.id) changed = fillEmptySeat(rec, "away_team", pairs[p].away.id) || changed;
+      if (changed) {
+        app.save(rec);
+        filled += 1;
+      }
+    }
+  }
+  if (filled && event.get("bracket_mode") === "empty") {
+    event.set("bracket_mode", "standings");
+    app.save(event);
+  }
+  return { filled: filled };
+}
+
+function stampEmptyTimes(app, event) {
+  const rows = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 400, 0, { e: event.id });
+  if (!rows.length) return;
+  const day = dateOnly(event.get("end") || event.get("start"));
+  const start = event.get("hours_start") || "08:00";
+  const fields = eventFields(app, event.id);
+  function offset(round) {
+    const r = String(round || "").toUpperCase();
+    if (r === "QF" || r === "L1") return 0;
+    if (r === "SF" || r === "CSF" || r === "L2" || r === "5TH") return 90;
+    return 180;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const rec = rows[i];
+    if (rec.get("status") === "final") continue;
+    if (!rec.get("date") && day) rec.set("date", day);
+    if (!rec.get("time")) rec.set("time", addMinutes(start, offset(rec.get("round"))));
+    if (!rec.get("field_name") && fields.length) {
+      const field = fields[(Number(rec.get("slot") || 1) - 1 + fields.length) % fields.length];
+      if (field) rec.set("field_name", field.name);
+    }
+    app.save(rec);
+  }
+}
+
 function buildBracket(app, event, opts) {
   opts = opts || {};
   const empty = opts.empty === true || opts.empty === "true" || opts.draw_empty === true;
@@ -1091,6 +1192,7 @@ function buildBracket(app, event, opts) {
     games += added;
     drawn.push({ flight: fl.flight || "", seeds: fl.seeds.length, games: added });
   }
+  if (empty) stampEmptyTimes(app, event);
   return { games: games, seeds: n, flights: drawn, format: format, bracket_flights: flightsKey || "none" };
 }
 
@@ -1419,6 +1521,7 @@ module.exports = {
   buildBracket: buildBracket,
   clearBracket: clearBracket,
   clearSchedule: clearSchedule,
+  fillEmptyBracket: fillEmptyBracket,
   poolResultCount: poolResultCount,
   saveCustomBracket: saveCustomBracket,
   listBracket: listBracket,

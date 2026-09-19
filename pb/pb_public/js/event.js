@@ -67,7 +67,7 @@ function tabEmpty(ev, slug, kind) {
     const lead = {
       schedule: "No games on the weekend board yet.",
       standings: "Standings appear after scores are entered.",
-      bracket: "No bracket games yet.",
+      bracket: "No bracket games yet. Publish a blank bracket for the fence, import a CSV, or draw from standings after a pool result.",
       stats: "No published box lines yet.",
       games: "No pool games on the board yet.",
     }[kind] || "Nothing posted yet.";
@@ -1075,6 +1075,59 @@ export async function eventPools(slug) {
   return eventStandings(slug);
 }
 
+function bracketPageActions(board, slug) {
+  if (!isDirector()) return "";
+  const finals = (board.schedule || []).filter((g) => g.status === "final").length;
+  const empty = !(board.bracket || []).length;
+  return `<section class="card no-print">
+    ${empty ? `<p>No bracket games yet. Publish the Sunday shape now so families can see times and fields with TBD in every slot. Import a bracket you already have, or draw from standings after a pool result.</p>` : `<p class="muted">Print this page for the fence. Cards stay collapsed so the tree fits one page.</p>`}
+    <div class="actions">
+      ${empty ? `<button class="btn" type="button" id="publish-blank-bracket">Publish blank bracket</button>` : ""}
+      <button class="btn ghost" type="button" id="draw-standings-bracket"${finals ? "" : " disabled"}>Draw from standings</button>
+      ${empty ? "" : `<button class="btn ghost" type="button" id="print-bracket">Print</button>`}
+    </div>
+    ${finals ? "" : `<p class="muted">Draw from standings waits until a pool game is final.</p>`}
+    ${bracketImportDesk()}
+  </section>`;
+}
+
+function bindBracketPageActions(slug, board) {
+  document.getElementById("publish-blank-bracket")?.addEventListener("click", async () => {
+    try {
+      await adminPost(slug, "/bracket/build", {
+        empty: true,
+        replace: true,
+        format: board.event.format || "pool-to-bracket",
+        bracket_flights: board.event.bracket_flights || "none",
+      });
+      flashSaved("Blank bracket posted");
+      eventBracket(slug);
+    } catch (err) {
+      window.alert(err.message || String(err));
+    }
+  });
+  document.getElementById("draw-standings-bracket")?.addEventListener("click", async () => {
+    const open = (board.schedule || []).filter((g) => g.status !== "final").length;
+    const body = {
+      format: board.event.format || "pool-to-bracket",
+      bracket_flights: board.event.bracket_flights || "none",
+      replace: true,
+    };
+    if (open && (board.schedule || []).some((g) => g.status === "final")) {
+      if (!confirm("Pool play is not finished (" + open + " games still open). Draw from the current standings anyway?")) return;
+      body.confirm = true;
+    }
+    try {
+      await adminPost(slug, "/bracket/build", body);
+      flashSaved("Bracket drawn from standings");
+      eventBracket(slug);
+    } catch (err) {
+      window.alert(err.message || String(err));
+    }
+  });
+  document.getElementById("print-bracket")?.addEventListener("click", () => window.print());
+}
+
 export async function eventBracket(slug) {
   const board = await fetchBoard(slug);
   const plan = buildDeskPlan(board);
@@ -1083,13 +1136,16 @@ export async function eventBracket(slug) {
       <h1>Bracket</h1>
       <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${isDirector() ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
     </section>
-    ${isDirector() ? `<section class="card">${bracketImportDesk()}</section>` : ""}
-    ${board.bracket.length ? bracketBoards(board.bracket, board.roster, plan) : `<section class="card">${tabEmpty(board.event, slug, "bracket")}</section>`}
+    ${bracketPageActions(board, slug)}
+    ${board.bracket.length ? `<div class="bracket-print">${bracketBoards(board.bracket, board.roster, plan)}</div>` : `<section class="card">${tabEmpty(board.event, slug, "bracket")}</section>`}
     ${board.bracket.length ? protestSwapForm(board.bracket) : ""}
   `);
   eventRoot()._deskPlan = plan;
   bindBracketDesk(slug, eventRoot());
-  if (isDirector()) bindBracketImport(slug, (err) => { window.alert(err.message || String(err)); });
+  if (isDirector()) {
+    bindBracketImport(slug, (err) => { window.alert(err.message || String(err)); });
+    bindBracketPageActions(slug, board);
+  }
 }
 
 export async function eventOverall(slug) {
