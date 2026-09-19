@@ -1393,3 +1393,150 @@ shown — not a separate admin view.
 - [ ] Readable and printable on a phone
 - [ ] Director and team manager see paid status and box score state on the same page
 
+
+## [ ] 26. Bracket seeding, flight sizing, pairing patterns and byes
+
+**Blocker for the next event. Largest single gap in the product.**
+
+Worked example throughout: **14 teams, 8 in Gold, 6 in Silver.**
+
+### What exists today
+
+`splitFlights()` in `pb/pb_hooks/schedule.js` divides teams evenly:
+`Math.ceil(leftTeams / leftFlights)`. Fourteen teams into two flights gives 7 and
+7. There is no way to ask for 8 and 6.
+
+Grep finds no bye handling anywhere in the codebase. A 6-team bracket needs two.
+
+A director cannot currently control how teams split, how they pair, or who sits
+out round one — which is most of what designing a bracket is.
+
+---
+
+## 26a. Flight sizing
+
+The director sets the size of each flight. Not derived, not even.
+
+- **Manual sizes** — "Gold 8, Silver 6." Must total the team count; show the
+  remainder as they type.
+- **Split at a seed** — "Gold is seeds 1–8." Equivalent, different mental model;
+  offer both.
+- **Even split** — current behavior, kept as an option.
+- **By pool finish** — "pool winners and runners-up to Gold, rest to Silver."
+  Common in multi-pool events.
+- **Manual assignment** — drag teams between flights. The escape hatch; always
+  needed, because there is always a reason the software cannot know.
+
+Flight names configurable beyond Gold / Silver / Platinum — directors use
+Championship / Consolation, Upper / Lower, A / B.
+
+## 26b. Seeding within a flight
+
+Once a team is in a flight, what is its seed there?
+
+- **Reseed 1..n** — Silver's teams become seeds 1–6 regardless of overall finish.
+  Usually what directors mean.
+- **Keep overall seed** — Silver holds seeds 9–14. Matters for display and for
+  pool-avoidance rules.
+- **Manual reorder** — drag to set seed order directly.
+
+Show both numbers where they differ: "Smash — Silver 2 (overall 10)."
+
+## 26c. Pairing patterns
+
+The core request. First-round matchups from a seed list:
+
+- **Standard / high-low** — 1v8, 2v7, 3v6, 4v5. The default.
+- **Cross-pool** — high-low, but avoid a round-one rematch of a pool game where
+  possible. Swap the minimum number of pairs to achieve it and report what was
+  swapped and why.
+- **Split-field** — 1v5, 2v6, 3v7, 4v8. Some directors prefer it for a straight
+  8-team single elim.
+- **Blind draw** — random. Used for equal-strength flights and for rec events.
+  Seed the randomness and record it, so a director can show the draw was not
+  rigged.
+- **Manual** — build every matchup by hand. Non-negotiable escape hatch.
+
+Whichever pattern is picked, show the resulting pairings for approval before
+writing any games.
+
+## 26d. Byes
+
+No bye handling exists. It is required: 6 teams in an 8-slot bracket needs two.
+
+- **Automatic to the top seeds** — the standard. 6 teams: seeds 1 and 2 have
+  byes, 3v6 and 4v5 play. This is exactly the example the owner gave.
+- **Manual bye assignment** — director picks. Sometimes a team arrives late or a
+  field is down and the bye is a scheduling decision, not a reward.
+- **Bye count is derived** — next power of two minus team count. 6 → 2 byes,
+  11 → 5, 13 → 3.
+
+Requirements:
+
+- A bye is **not a game**. It must not appear on the schedule, must not consume a
+  field or time slot, and must not be emailed to a coach as an upcoming game.
+- The bracket displays it as a bye, clearly, so a coach sees they advance without
+  playing.
+- Advancement works through it — a bye team appears in round two automatically.
+- **Double elimination byes are different.** A bye in the winners bracket changes
+  the losers bracket shape. Handle it explicitly rather than assuming the single
+  elim rule carries over.
+
+## 26e. Bracket type per flight
+
+Gold and Silver need not match. Gold double elim, Silver single elim is common —
+the top flight is worth more games, the lower flight has to finish earlier.
+
+Per flight: single elim, double elim, 4GG double elim, round robin, or pool to
+bracket.
+
+## 26f. Per-flight options
+
+- **Third place game** — on or off, per flight
+- **Consolation side** — on or off
+- **If-necessary game** in double elim, where the losers-bracket winner must beat
+  the winners-bracket team twice
+- **Re-seed between rounds** vs a fixed bracket. Fixed is standard in youth
+  softball; re-seeding exists and some directors want it.
+
+## 26g. Preview and manual override
+
+Nothing writes until the director has seen the bracket and approved it.
+
+Preview shows every matchup, every bye, times and fields where assigned, and a
+plain-language summary of what was applied: "Gold, 8 teams, standard high-low,
+double elimination with consolation. Silver, 6 teams, two byes to seeds 1 and 2,
+single elimination."
+
+After generation the director can still drag any team into any slot. Warn on a
+change that breaks the structure; do not block it. The director is the authority.
+
+## 26h. Validation
+
+- Flight sizes total the team count
+- No team appears in two flights
+- No team appears twice in round one
+- Bye count matches bracket size minus team count
+- Every game feeds somewhere except the final
+- Flights fit the available fields and hours; warn, do not block
+
+---
+
+### Acceptance criteria
+
+- [ ] **14 teams split 8 Gold / 6 Silver, by explicit size**
+- [ ] **Gold pairs 1v8, 2v7, 3v6, 4v5**
+- [ ] **Silver gives byes to seeds 1 and 2; 3v6 and 4v5 play round one**
+- [ ] Byes appear on no schedule, consume no field, trigger no coach email
+- [ ] Bye teams advance automatically
+- [ ] Gold and Silver can run different bracket types
+- [ ] Cross-pool avoids round-one rematches where possible and reports the swaps
+- [ ] Blind draw is reproducible and recorded
+- [ ] Manual override of any slot, after generation
+- [ ] Preview shown, with a plain-language summary, before anything is written
+- [ ] Third place and if-necessary games configurable per flight
+- [ ] **Reproduce Keystone Clash 2026: 8 teams, one flight, 4GG double elim,
+      14 games with correct advancement**
+- [ ] **Reproduce Scarecrow Slugfest: 14 teams, 8/6 Gold/Silver, byes as above**
+
+
