@@ -1402,11 +1402,11 @@ export async function eventLeaders(slug) {
   const hit = (publishedHit.length ? publishedHit : board.leaders.hitting).map((r) => `<tr>
     <td>${escapeHtml(r.player || r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
     <td>${r.ab ?? ""}</td><td>${r.h ?? ""}</td><td>${r.rbi ?? ""}</td>
-    <td>${r.avg || r.avg_display || ""}</td><td>${r.ops || ""}</td>
+    <td>${r.avg_display || r.avg || ""}</td><td>${r.ops || ""}</td>
   </tr>`);
   const pit = (publishedPit.length ? publishedPit : board.leaders.pitching).map((r) => `<tr>
     <td>${escapeHtml(r.player || r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-    <td>${r.ip ?? ""}</td><td>${r.k ?? r.so ?? ""}</td><td>${r.era || r.era_display || ""}</td>
+    <td>${r.ip ?? ""}</td><td>${r.k ?? r.so ?? ""}</td><td>${r.era_display || r.era || ""}</td>
   </tr>`);
   const full = fullHit.filter((r) => r.q !== false).concat(fullHit.filter((r) => r.q === false));
   const cap = hasPitchIpCap(board.event, board.leaders);
@@ -1437,7 +1437,7 @@ export async function eventLeaders(slug) {
         ${table(["Player", "Team", "IP", "K", "ERA"], pit)}</div>
     </section>
     ${full.length ? `<section class="card"><h2>Full published hitting board</h2>
-      <p class="muted">Every line the popup posted. Qualifiers first.</p>
+      <p class="muted">Every published line. Qualifiers first.</p>
       ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], full.map((r) => `<tr>
         <td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
         <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
