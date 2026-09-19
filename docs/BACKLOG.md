@@ -1720,3 +1720,91 @@ or Field 10 lands before Field 2.
 - [ ] Dates show the weekday
 - [ ] Storage format unchanged — display layer only
 - [ ] Sweep public pages for other internal vocabulary and list what's found
+
+
+## [ ] 28. Redesign the tournament home page
+
+**High. Owner-flagged: "plain and boring." The most-visited page in the product.**
+
+Do not treat this as a styling pass. The page is dull because the hierarchy is
+wrong — it opens with field hours, which almost nobody came for.
+
+### Who opens this page, and why
+
+Overwhelmingly a parent or coach on a phone, often standing outside. They want
+one of four things:
+
+1. **When and where do we play next?** (most common by far)
+2. What time do we need to leave on Saturday?
+3. Did we make the bracket, and when is that game?
+4. Where do I park and what's the gate situation?
+
+A director checking setup is a rare visitor. The current page is built for them.
+
+### The page should change by phase
+
+This is the main idea. One layout cannot serve all three states.
+
+**Before the tournament** — countdown to first pitch, the team list, schedule
+once posted, and the practical stuff: park hours, parking, time limits, what to
+bring. If no schedule exists yet, say when it will be posted.
+
+**During** — live board. What is playing right now on each diamond, what is next,
+recently final scores, current standings. This is the Saturday view and it should
+feel alive. Auto-refresh.
+
+**After** — champions first, by flight. Final standings, all-tournament team,
+stat leaders, a link to every team's page. This is what gets shared Sunday night
+and it is the best advertisement the product has.
+
+### Hierarchy, top to bottom
+
+1. **Tournament name, dates, venue** — compact, one or two lines
+2. **Status strip** — the phase-dependent block above. Largest element on screen.
+3. **Teams** — as linked chips, not a paragraph. Ties to item 24; tapping a team
+   goes straight to their schedule, which answers question 1 in two taps.
+4. **Schedule and bracket** — prominent links, or the next few games inline
+5. **Getting there** — address, map link, and the uploaded parking and entrance
+   photos from item 10. The owner tried a map and found it unhelpful; a photo of
+   the actual entrance beats a map pin at a school with three lots.
+6. **Rules and format** — time limit, tiebreakers, sanctioning body
+7. **Field hours** — demote. This is director detail. Collapse it, or move it to
+   the Info tab entirely.
+
+### Visual direction
+
+Keep the existing palette and type — the site already looks clean and the
+identity is fine. What it needs is contrast and weight, not new colors.
+
+- **One thing should dominate each screen.** Right now everything is the same
+  visual weight, which is why it reads flat.
+- **Scores and times want to be big.** This is a scoreboard product. Live scores
+  and next-game times should be the largest type on the page, not body text in a
+  table row.
+- **Use the venue photo as a header image** once uploads exist (item 10). A
+  photo of the actual field does more for the page than any layout change.
+- **Champion callout after the event** — a real banner, not a table row. Teams
+  screenshot this.
+- **Live state should be visible at a glance** — a game in progress should be
+  obviously different from a scheduled one, and not by color alone.
+
+### Constraints
+
+- Phone first. Most traffic is a phone outdoors, in sunlight, on bad wifi.
+- Loads fast and readable without images if they fail.
+- Prints cleanly — some directors print the home page for the fence.
+- No fabricated content. An empty tournament shows honest empty states, not a
+  ranked list of zeros (item 14).
+
+### Acceptance criteria
+
+- [ ] The page leads with what a parent came for, not field hours
+- [ ] Three distinct phases render correctly: before, during, after
+- [ ] The most prominent element answers "when and where do we play next"
+- [ ] Teams are tappable links to team pages
+- [ ] Live games are visually distinct from scheduled ones
+- [ ] Venue photos used where available; field hours demoted
+- [ ] Champion display after completion
+- [ ] Usable on a phone in sunlight, one-handed
+- [ ] **Open it on a phone and find your team's next game in under five seconds
+      without scrolling past anything irrelevant**
