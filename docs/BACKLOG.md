@@ -938,4 +938,49 @@ already `final`, and report counts before committing.
 - [ ] **End-to-end: export the Keystone Clash 8-team double-elim as CSV, import it
       into a fresh tournament, confirm all 14 games with correct advancement**
 
+## [ ] 19. Schedule sorts by field, ignoring game number; string concat breaks on 10+ fields
+
+**Medium. Owner-reproduced on scarecrow-slugfest schedule tab.**
+
+Within a time slot the schedule shows Game 2, Game 3, Game 4, Game 1 — because
+the sort ignores game number entirely.
+
+`pb/pb_public/js/event.js` line 1047:
+
+    .sort((a, b) => String(a.date + a.time + a.field + a.home)
+                     .localeCompare(String(b.date + b.time + b.field + b.home)))
+
+### 19a. Game number is not a sort key
+
+Order resolves to date, time, then field, then home team name. Games at 08:00 on
+Fields 1, 2, 4 and 6 display as Games 2, 3, 4, 1.
+
+Directors assign game numbers deliberately — they go on the printed sheet, get
+called over the PA, and are how a coach asks "what field is Game 4 on?" A
+schedule that lists them out of order is harder to read than paper.
+
+**Fix:** sort by date, then time, then game number, then field. Data is correct;
+only the display order is wrong.
+
+### 19b. Concatenating field as a string misorders 10+ fields
+
+`a.field` joined into a string means "Field 10" sorts before "Field 2". Not
+visible at six fields, guaranteed at ten. The June turf complex and any large
+venue will hit it.
+
+**Fix:** compare fields as a tuple with numeric ordering, not concatenated text.
+Extract the numeric part where present and fall back to a natural-sort compare.
+
+### 19c. Same comparator, same risk elsewhere
+
+Check every other `.sort(` that concatenates values into one string. The pattern
+fails for any numeric segment, and it fails silently — the page renders fine and
+is simply in the wrong order.
+
+### Acceptance criteria
+
+- [ ] Games within a time slot appear in game-number order
+- [ ] A venue with 10+ fields orders Field 2 before Field 10
+- [ ] Games with no game number still sort sensibly, by field
+- [ ] Same fix applied to the overall schedule and any other concatenated sort
 
