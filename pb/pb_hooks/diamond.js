@@ -735,9 +735,15 @@ function listOverall(schedule, bracket) {
       round: g.pool ? "Pool " + g.pool : "Pool",
       home: g.home,
       away: g.away,
+      home_id: g.home_id,
+      away_id: g.away_id,
+      home_slug: g.home_slug || "",
+      away_slug: g.away_slug || "",
       home_runs: g.home_runs,
       away_runs: g.away_runs,
       status: g.status,
+      score_source: g.score_source || "",
+      book_state: g.book_state || g.score_source || "",
       delayed_from: g.delayed_from || "",
       can_score: !!g.can_score,
       has_box: !!g.has_box,
@@ -755,9 +761,15 @@ function listOverall(schedule, bracket) {
       round: g.round || "",
       home: g.home || "",
       away: g.away || "",
+      home_id: g.home_id,
+      away_id: g.away_id,
+      home_slug: g.home_slug || "",
+      away_slug: g.away_slug || "",
       home_runs: g.home_runs,
       away_runs: g.away_runs,
       status: g.status,
+      score_source: g.score_source || "",
+      book_state: g.book_state || "",
       protest_note: g.protest_note || "",
     });
   }
@@ -786,6 +798,8 @@ function publicBoard(app, event, auth) {
       const feed = feeds[label] || feeds[g.get("game_id")] || {};
       const homeName = teamName(g.get("home_team"));
       const awayName = teamName(g.get("away_team"));
+      const source = g.get("score_source") || "";
+      const conflict = source === "conflict";
       return {
         id: g.id,
         game_id: g.get("game_id") || "",
@@ -799,8 +813,12 @@ function publicBoard(app, event, auth) {
         away: awayName || feed.away_ref || "",
         home_id: g.get("home_team") || "",
         away_id: g.get("away_team") || "",
-        home_runs: g.get("home_runs"),
-        away_runs: g.get("away_runs"),
+        home_slug: (function () { try { return app.findRecordById("event_teams", g.get("home_team")).get("slug"); } catch (err) { return ""; } })(),
+        away_slug: (function () { try { return app.findRecordById("event_teams", g.get("away_team")).get("slug"); } catch (err) { return ""; } })(),
+        home_runs: conflict ? null : g.get("home_runs"),
+        away_runs: conflict ? null : g.get("away_runs"),
+        score_source: source,
+        book_state: source || "",
         winner: teamName(g.get("winner")),
         winner_id: g.get("winner") || "",
         winner_to: feed.winner_to || "",

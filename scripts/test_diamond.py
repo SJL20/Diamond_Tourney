@@ -203,6 +203,19 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("requireRegisteredTeam", add_fn)
         self.assertNotIn("upsertEventTeam", add_fn)
         self.assertIn(".btn.danger", (ROOT / "pb/pb_public/css/app.css").read_text())
+        self.assertIn("function teamLink", event)
+        self.assertIn("eventTeamPage", event)
+        self.assertIn("boxUploadPage", event)
+        self.assertIn("boxHelpPage", event)
+        self.assertIn("/help/box-score", event)
+        self.assertIn("This page does not guess", event)
+        self.assertIn("data-assist", event)
+        self.assertIn("/boxes/desk", event)
+        self.assertIn("next-game", event)
+        self.assertIn("/team/", app)
+        self.assertIn("/box/", app)
+        self.assertIn("box-score-ask", (ROOT / "pb/pb_hooks/main.pb.js").read_text())
+        self.assertIn("box_submissions", (ROOT / "pb/pb_migrations/1700000029_box_submissions.js").read_text())
 
     def test_match_card_starts_collapsed(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
@@ -3010,6 +3023,255 @@ class BacklogOpenTests(unittest.TestCase):
         filled = [g for g in after["bracket"] if g.get("home") and g.get("away")]
         self.assertTrue(filled)
         self.assertEqual(after["event"].get("bracket_mode"), "standings")
+
+
+class BoxScoreTeamPageTests(unittest.TestCase):
+    """BACKLOG 21–24: token box mail, two-book reconcile, read-only assist, team pages."""
+
+    MIN_PDF = b"%PDF-1.1\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+    def _weekend(self, td, name):
+        slug = name + "-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": name.replace("-", " ").title(),
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+            "start": "2026-09-18",
+            "end": "2026-09-19",
+            "hours_start": "08:00",
+            "hours_end": "18:00",
+            "game_length_minutes": 90,
+            "format": "pool-to-bracket",
+        })
+        return slug
+
+    def _team(self, td, slug, name, email):
+        out = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": name,
+            "contact_name": "Coach " + name,
+            "contact_email": email,
+            "coach_email": email,
+            "coach_phone": "412-555-0100",
+            "pool": "A",
+            "as_director": True,
+        })
+        return out["team"]
+
+    def test_box_mail_tokens_reconcile_and_privacy(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._weekend(td, "box-mail")
+        home_email = f"home.{uuid.uuid4().hex[:6]}@local.test"
+        away_email = f"away.{uuid.uuid4().hex[:6]}@local.test"
+        home = self._team(td, slug, "Dukes Book", home_email)
+        away = self._team(td, slug, "Roadrunners Book", away_email)
+        played = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Dukes Book",
+            "away": "Roadrunners Book",
+            "date": "2026-09-18",
+            "time": "09:00",
+            "field": "Field 1",
+            "pool": "A",
+            "game_number": 4,
+        })["game"]
+        cancelled = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Dukes Book",
+            "away": "Roadrunners Book",
+            "date": "2026-09-18",
+            "time": "11:00",
+            "field": "Field 1",
+            "pool": "A",
+            "status": "cancelled",
+        })["game"]
+        first = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T12:00:00.000Z",
+        })
+        self.assertEqual(first["invited"], 2)
+        self.assertEqual(len(first["invites"]), 2)
+        self.assertEqual(first.get("reason"), "smtp_not_configured")
+        tokens = {row["team_id"]: row["token"] for row in first["invites"]}
+        self.assertEqual(set(tokens), {home["id"], away["id"]})
+        again = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T12:30:00.000Z",
+        })
+        self.assertEqual(again["invited"], 0)
+        self.assertEqual(again["reminded"], 0)
+        reminder = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-19T12:00:00.000Z",
+        })
+        self.assertEqual(reminder["reminded"], 2)
+        third = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-20T12:00:00.000Z",
+        })
+        self.assertEqual(third["reminded"], 0)
+        self.assertEqual(third["invited"], 0)
+        desk = request(BASE, "GET", f"/api/events/{slug}/boxes/desk", td)
+        self.assertFalse(any(g["id"] == cancelled["id"] and g.get("books") for g in desk["games"]
+                             if g["id"] == cancelled["id"] and g["books"]))
+        cancelled_row = next(g for g in desk["games"] if g["id"] == cancelled["id"])
+        self.assertEqual(cancelled_row["books"], [])
+        home_tok = tokens[home["id"]]
+        away_tok = tokens[away["id"]]
+        public = request(BASE, "GET", f"/api/box/{home_tok}")
+        self.assertEqual(public["team"]["name"], "Dukes Book")
+        self.assertEqual(public["game"]["game_number"], 4)
+        blob = json.dumps(public)
+        self.assertNotIn(home_email, blob)
+        self.assertNotIn(away_email, blob)
+        self.assertNotIn(away_tok, blob)
+        other = request(BASE, "GET", f"/api/box/{away_tok}")
+        self.assertEqual(other["team"]["name"], "Roadrunners Book")
+        first_book = request(BASE, "POST", f"/api/box/{home_tok}", None, {
+            "home_runs": 5,
+            "away_runs": 3,
+            "method": "manual",
+            "submitted_by": "Dukes coach",
+        })
+        self.assertEqual(first_book["state"], "one_book")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(g for g in board["schedule"] if g["id"] == played["id"])
+        self.assertEqual(row["home_runs"], 5)
+        self.assertEqual(row["away_runs"], 3)
+        self.assertEqual(row["score_source"], "one_book")
+        self.assertIn("home_slug", row)
+        gc = request(BASE, "POST", f"/api/box/{away_tok}", None, {
+            "home_runs": 6,
+            "away_runs": 3,
+            "gc_url": "https://web.gc.com/teams/roadrunners/schedule/game-4/box-score",
+            "method": "gc_link",
+            "submitted_by": "Roadrunners coach",
+        })
+        self.assertEqual(gc["state"], "conflict")
+        held = request(BASE, "GET", f"/api/event/{slug}/board")
+        held_row = next(g for g in held["schedule"] if g["id"] == played["id"])
+        self.assertIsNone(held_row["home_runs"])
+        self.assertIsNone(held_row["away_runs"])
+        self.assertEqual(held_row["score_source"], "conflict")
+        desk2 = request(BASE, "GET", f"/api/events/{slug}/boxes/desk", td)
+        self.assertEqual(desk2["games"][0]["book_state"], "conflict")
+        resolved = request(BASE, "POST", f"/api/events/{slug}/boxes/resolve", td, {
+            "game_id": played["id"],
+            "kind": "schedule",
+            "pick": "home",
+        })
+        self.assertEqual(resolved["score_source"], "verified")
+        self.assertEqual(resolved["home_runs"], 5)
+        final = request(BASE, "GET", f"/api/event/{slug}/board")
+        done = next(g for g in final["schedule"] if g["id"] == played["id"])
+        self.assertEqual(done["home_runs"], 5)
+        self.assertEqual(done["score_source"], "verified")
+        stop = request(BASE, "POST", f"/api/box/{home_tok}/unsubscribe")
+        self.assertTrue(stop["stopped"])
+        self.assertFalse(read_or_denied("/api/collections/box_submissions/records?perPage=1"))
+        self.assertFalse(read_or_denied(f"/api/collections/team_contacts/records?perPage=1"))
+        page = request(BASE, "GET", f"/api/event/{slug}/team/{home['slug']}")
+        page_blob = json.dumps(page)
+        self.assertNotIn(home_email, page_blob)
+        self.assertNotIn(away_email, page_blob)
+        self.assertNotIn("412-555-0100", page_blob)
+        self.assertNotIn("coach_email", page_blob)
+        self.assertNotIn("coach_phone", page_blob)
+        self.assertEqual(page["team"]["name"], "Dukes Book")
+        self.assertTrue(page["schedule"])
+        self.assertIsNone(page.get("paid"))
+        director_page = request(BASE, "GET", f"/api/event/{slug}/team/{home['slug']}", td)
+        self.assertIn("paid", director_page)
+        self.assertIn("box_scores", director_page)
+        pdf_slug = self._weekend(td, "box-file")
+        pdf_home = self._team(td, pdf_slug, "File Hawks", f"fileh.{uuid.uuid4().hex[:6]}@local.test")
+        pdf_away = self._team(td, pdf_slug, "File Heat", f"filea.{uuid.uuid4().hex[:6]}@local.test")
+        request(BASE, "POST", f"/api/events/{pdf_slug}/schedule/game", td, {
+            "home": "File Hawks",
+            "away": "File Heat",
+            "date": "2026-09-18",
+            "time": "08:00",
+            "field": "Field 1",
+            "pool": "A",
+        })
+        ran = request(BASE, "POST", f"/api/events/{pdf_slug}/boxes/run", td, {
+            "now": "2026-09-18T12:00:00.000Z",
+        })
+        file_tok = next(row["token"] for row in ran["invites"] if row["team_id"] == pdf_home["id"])
+        uploaded = request_multipart(BASE, f"/api/box/{file_tok}", None, {
+            "home_runs": "2",
+            "away_runs": "1",
+            "method": "gc_pdf",
+            "original_name": "book.pdf",
+            "submitted_by": "File coach",
+        }, {"file": ("book.pdf", self.MIN_PDF, "application/pdf")})
+        self.assertEqual(uploaded["state"], "one_book")
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        logs = request(BASE, "GET", "/api/collections/sync_log/records?perPage=200", owner)
+        self.assertTrue(any(row.get("kind") == "box_mail" for row in logs.get("items") or []))
+
+    def test_assist_is_read_only_and_shows_math(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._weekend(td, "assist-fit")
+        request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "fields": [{"name": "Field 1"}, {"name": "Field 2"}],
+            "hours_start": "08:00",
+            "hours_end": "18:00",
+            "game_length_minutes": 90,
+            "start": "2026-09-12",
+            "end": "2026-09-13",
+            "format": "pool-to-bracket",
+        })
+        for i in range(8):
+            self._team(td, slug, f"Assist {i+1}", f"assist{i}.{uuid.uuid4().hex[:4]}@local.test")
+        fit = request(BASE, "GET", f"/api/events/{slug}/assist?q=fit", td)
+        self.assertEqual(fit["label"], "assistant-generated")
+        self.assertEqual(fit["numbers"]["teams"], 8)
+        self.assertEqual(fit["numbers"]["fields"], 2)
+        self.assertTrue(fit["math"])
+        self.assertIn("fields", fit["math"][0])
+        lose = request(BASE, "GET", f"/api/events/{slug}/assist?q=lose_field&field=Field%202&time=12:00", td)
+        self.assertEqual(lose["question"], "lose_field")
+        self.assertTrue(lose["math"])
+        behind = request(BASE, "GET", f"/api/events/{slug}/assist?q=behind", td)
+        self.assertEqual(behind["question"], "behind")
+        unknown = request(BASE, "GET", f"/api/events/{slug}/assist?q=mercy-rule", td)
+        self.assertIn("I don't know", unknown["answer"])
+        with self.assertRaises(RuntimeError) as anon:
+            request(BASE, "GET", f"/api/events/{slug}/assist?q=fit")
+        self.assertTrue("401" in str(anon.exception) or "403" in str(anon.exception))
+        with self.assertRaises(RuntimeError) as wrote:
+            request(BASE, "POST", f"/api/events/{slug}/assist", td, {"q": "fit"})
+        self.assertTrue("404" in str(wrote.exception) or "405" in str(wrote.exception))
+        try:
+            request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+            admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+            ks = request(BASE, "GET", "/api/events/keystone-clash-2026/assist?q=fit", admin)
+            self.assertEqual(ks["label"], "assistant-generated")
+            self.assertGreaterEqual(ks["numbers"]["teams"], 8)
+        except RuntimeError:
+            pass
+
+    def test_team_names_link_and_public_json_omits_contacts(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = self._weekend(td, "team-page")
+        email = f"hidden.{uuid.uuid4().hex[:6]}@local.test"
+        team = self._team(td, slug, "Forward Hawks", email)
+        self._team(td, slug, "Forward Heat", f"other.{uuid.uuid4().hex[:6]}@local.test")
+        request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Forward Hawks",
+            "away": "Forward Heat",
+            "date": "2026-10-11",
+            "time": "12:30",
+            "field": "Field 4",
+            "pool": "A",
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertTrue(any(t.get("slug") == team["slug"] for p in board["standings"] for t in p["teams"]))
+        self.assertTrue(any(g.get("home_slug") == team["slug"] for g in board["schedule"]))
+        page = request(BASE, "GET", f"/api/event/{slug}/team/{team['slug']}")
+        self.assertEqual(page["event"]["slug"], slug)
+        self.assertTrue(page["next"])
+        self.assertEqual(page["next"]["field"], "Field 4")
+        self.assertNotIn(email, json.dumps(page))
+        src = (ROOT / "pb/pb_public/js/event.js").read_text()
+        self.assertIn("function teamLink", src)
+        self.assertIn("/t/${eventSlug}/team/${teamSlug}", src)
 
 
 if __name__ == "__main__":
