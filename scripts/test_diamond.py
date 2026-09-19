@@ -3609,5 +3609,24 @@ class EventBoxReviewTests(unittest.TestCase):
         self.assertIn('routerAdd("POST", "/api/coach/staging/{id}/decision"', main)
 
 
+class PressureBotTests(unittest.TestCase):
+    """Two live bot processes hit season + tournament doors together."""
+
+    def test_pressure_script_exists_and_event_update_upserts(self):
+        src = (ROOT / "scripts/pressure_test_bots.py").read_text()
+        self.assertIn("bot_a_worker", src)
+        self.assertIn("bot_c_worker", src)
+        self.assertIn("/api/bot/event-update", src)
+        hooks = (ROOT / "pb/pb_hooks/score.js").read_text()
+        self.assertIn("function attachUpdateBox", hooks)
+        main = (ROOT / "pb/pb_hooks/main.pb.js").read_text()
+        self.assertIn("score.attachUpdateBox", main)
+        self.assertNotIn("new Record(e.app.findCollectionByNameOrId(\"event_boxes\"))", main)
+
+    def test_two_bots_pressure_weekend(self):
+        from scripts.pressure_test_bots import main as pressure_main
+        self.assertEqual(pressure_main(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
