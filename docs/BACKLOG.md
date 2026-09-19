@@ -1308,3 +1308,75 @@ the grounded-answer pattern is proven.
       does it reproduce the format that actually worked?**
 
 
+
+## [ ] 24. Team pages — clickable team names with that team's schedule and results
+
+**High. Owner request. This is the link a coach forwards to twelve families.**
+
+Team names are plain text everywhere — standings, schedule, games, bracket. There
+is no per-team view. A parent who only cares about one team has to scan the whole
+grid every time, on a phone, in a parking lot.
+
+### The page
+
+Route: `/t/<slug>/team/<team-slug>`. Public, no login.
+
+Contents, in this order — it is read on a phone, standing up:
+
+1. **Next game**, large and unmissable: time, field, opponent. Everything else is
+   secondary. "Field 4, 12:30, vs Roadrunners" is what 90% of visits are for.
+2. **Their full schedule** — every game, pool and bracket, with field, time,
+   opponent, result. Chronological. Past games show the score; future ones do not
+   pretend to.
+3. **Their record and current seed**, with the tiebreaker reason from item 14 when
+   one applies.
+4. **Their stats** — the team's own hitting and pitching lines once box scores land.
+   The stats tab already filters by team; this is that view, per team.
+5. **Their bracket path** once a bracket exists — where they enter and who they
+   would meet.
+6. **GameChanger link** if the team supplied one.
+
+### Link team names everywhere
+
+Standings rows, schedule rows, game cards, bracket slots, the stats table. Every
+appearance of a team name becomes a link to that team's page. That is most of the
+value — it makes the whole board navigable instead of a wall of text.
+
+### What must NOT be on it
+
+Coach email and phone. Item 2 puts contacts in a restricted collection precisely
+so they never reach a public page. A team page is the most likely place for them
+to leak back in. Public shows team name, GameChanger link, schedule, results,
+stats. Nothing else.
+
+No player names beyond what already appears in published stat lines.
+
+### Shareable
+
+This is the artifact a coach sends to their families, so:
+
+- Clean URL a coach can read out loud
+- Page title and social preview that name the team and tournament
+- Prints on one page — some coaches will print and hand it out
+- Loads fast on bad park wifi
+
+### Director extras
+
+Logged in as director or that team's manager, same page also shows paid status,
+submitted box scores (item 22), and a link to edit the team. Same page, more
+shown — not a separate admin view.
+
+### Acceptance criteria
+
+- [ ] `/t/<slug>/team/<team-slug>` renders for any registered team
+- [ ] Team names link to it from standings, schedule, games, bracket and stats
+- [ ] Next game is the most prominent element
+- [ ] Full schedule with results, chronological
+- [ ] Record, seed, and tiebreaker reason where one applies
+- [ ] Team stats appear once box scores are in
+- [ ] Bracket path shown once a bracket exists
+- [ ] **No coach email or phone on the public page — verify with a logged-out
+      request against the API, not by looking at the page**
+- [ ] Readable and printable on a phone
+- [ ] Director and team manager see paid status and box score state on the same page
+
