@@ -1522,6 +1522,7 @@ module.exports = {
   clearBracket: clearBracket,
   clearSchedule: clearSchedule,
   fillEmptyBracket: fillEmptyBracket,
+  seedList: seedList,
   poolResultCount: poolResultCount,
   saveCustomBracket: saveCustomBracket,
   listBracket: listBracket,
