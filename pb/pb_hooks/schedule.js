@@ -1526,6 +1526,9 @@ function editBracketGame(app, event, id, body) {
     const home = rec.get("home_team") || "";
     rec.set("home_team", rec.get("away_team") || "");
     rec.set("away_team", home);
+    const href = rec.get("home_ref") || "";
+    rec.set("home_ref", rec.get("away_ref") || "");
+    rec.set("away_ref", href);
   }
   if (body.home_id !== undefined || body.home !== undefined || body.home_ref !== undefined) {
     const raw = body.home_ref || (body.home_id !== undefined ? body.home_id : body.home);
@@ -1568,10 +1571,16 @@ function swapBracketSeats(app, event, body) {
   if (b.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
   const fromSeat = body.from_seat === "away" ? "away_team" : "home_team";
   const toSeat = body.to_seat === "away" ? "away_team" : "home_team";
+  const fromRef = fromSeat === "away_team" ? "away_ref" : "home_ref";
+  const toRef = toSeat === "away_team" ? "away_ref" : "home_ref";
   const first = a.get(fromSeat) || "";
   const second = b.get(toSeat) || "";
+  const firstRef = a.get(fromRef) || "";
+  const secondRef = b.get(toRef) || "";
   a.set(fromSeat, second);
   b.set(toSeat, first);
+  a.set(fromRef, secondRef);
+  b.set(toRef, firstRef);
   if (a.get("status") === "final") clearBracketResult(a);
   if (b.get("status") === "final") clearBracketResult(b);
   if (body.protest_note) {

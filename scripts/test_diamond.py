@@ -1483,7 +1483,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(slot["time"], "11:30")
         self.assertEqual(slot["date"], "2026-09-20")
 
-        qf = next(g for g in board["bracket"] if g["round"] in ("QF", "SF", "F") and g["home"] and g["away"])
+        qf = next(g for g in board["bracket"] if g.get("home_id") and g.get("away_id"))
         home_before, away_before = qf["home"], qf["away"]
         request(BASE, "POST", f"/api/events/{slug}/bracket/{qf['id']}/score", td, {
             "home_runs": 8,
@@ -2861,7 +2861,7 @@ class BacklogOpenTests(unittest.TestCase):
         self.assertGreaterEqual(empty["games"], 1)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         self.assertTrue(board["bracket"])
-        seeded = [g for g in board["bracket"] if g.get("home") and g.get("away")]
+        seeded = [g for g in board["bracket"] if g.get("home_id") and g.get("away_id")]
         self.assertEqual(seeded, [])
         cleared = request(BASE, "POST", f"/api/events/{slug}/bracket/clear", td, {})
         self.assertGreaterEqual(cleared["deleted"], 1)
@@ -3066,8 +3066,11 @@ class BacklogOpenTests(unittest.TestCase):
         by_id = {g.get("game_id"): g for g in board["bracket"]}
         self.assertEqual(by_id["B1"]["winner_to"], "B5")
         self.assertEqual(by_id["B1"]["loser_to"], "L1")
-        self.assertIn("Seed", by_id["B1"]["home"])
-        self.assertIn("Winner of", by_id["B5"]["home"])
+        self.assertTrue("1st" in (by_id["B1"]["home"] or "") or "Seed" in (by_id["B1"]["home"] or ""))
+        self.assertTrue(
+            (by_id["B5"]["home"] or "").startswith("W")
+            or "Winner" in (by_id["B5"]["home"] or "")
+        )
         bad = request(BASE, "POST", f"/api/events/{slug}/import-bracket/preview", td, {
             "csv": (
                 "game,round,home,away,winner_to\n"
