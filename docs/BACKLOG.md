@@ -1523,11 +1523,11 @@ names each, and assigns each split.
 ### What exists today (2026-09-20)
 
 `events.bracket_plan` plus the Admin / Scheduler flight desk: count → name →
-custom split (size, overall seed range, or specific teams). `splitFlights()`
-no longer even-divides. A named Gold / Silver key without sizes refuses to
-draw. Byes are `bracket_games.status = bye` and never land on the schedule
-or in box-score mail. Pairing is per bracket (high-low, split-field,
-cross-pool, blind, manual). Preview is `POST /bracket/preview`.
+custom split (size, overall seed range, pool finish, seed list, or specific
+teams). `splitFlights()` no longer even-divides. A named Gold / Silver key
+without sizes refuses to draw. Byes are `bracket_games.status = bye` and
+never land on the schedule or in box-score mail. Pairing, format, seed mode,
+and bye mode are per bracket. Preview is `POST /bracket/preview`.
 
 ---
 
