@@ -793,24 +793,20 @@ routerAdd("POST", "/api/event/import-schedule", (e) => {
 
 routerAdd("POST", "/api/bot/event-update", (e) => {
   const sb = require(__hooks + "/softball.js");
+  const score = require(__hooks + "/score.js");
   sb.requireRole(e, ["bot", "region_admin", "event_td"]);
   const body = e.requestInfo().body || {};
   const event = e.app.findFirstRecordByData("events", "slug", body.event_slug);
   sb.requireEventAdminOrBot(e, event);
   if (body.schedule_id) {
     const row = e.app.findRecordById("event_schedule", body.schedule_id);
+    if (row.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
     if (body.home_runs != null) row.set("home_runs", body.home_runs);
     if (body.away_runs != null) row.set("away_runs", body.away_runs);
     if (body.status) row.set("status", body.status);
+    if (e.auth) row.set("scored_by", e.auth.id);
     e.app.save(row);
-    if (body.box) {
-      const box = new Record(e.app.findCollectionByNameOrId("event_boxes"));
-      box.set("schedule_row", row.id);
-      box.set("hitting", body.box.hitting || []);
-      box.set("pitching", body.box.pitching || []);
-      box.set("source", body.box.source || "gc");
-      e.app.save(box);
-    }
+    if (body.box) score.attachUpdateBox(e.app, event, row, body, e.auth);
   }
   if (body.bracket_id && body.winner_id) {
     const bg = e.app.findRecordById("bracket_games", body.bracket_id);

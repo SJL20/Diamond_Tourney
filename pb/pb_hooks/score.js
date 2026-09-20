@@ -329,6 +329,26 @@ function saveBox(app, event, id, body, files, auth) {
   return out;
 }
 
+function attachUpdateBox(app, event, game, body, auth) {
+  const boxPayload = body.box || {};
+  const hitting = asList(boxPayload.hitting);
+  const pitching = asList(boxPayload.pitching);
+  const box = upsertBox(app, event, game);
+  box.set("event", event.id);
+  box.set("schedule_row", game.id);
+  if (hitting.length) box.set("hitting", hitting);
+  if (pitching.length) box.set("pitching", pitching);
+  box.set("source", boxPayload.source || body.source || "bot");
+  const status = boxPayload.status || body.box_status || (hitting.length || pitching.length ? "needs_review" : "queued");
+  box.set("status", status);
+  if (auth) box.set("submitted_by", auth.id);
+  if (boxPayload.note != null) box.set("note", boxPayload.note);
+  else if (body.note != null) box.set("note", body.note);
+  app.save(box);
+  if (hitting.length || pitching.length) applyBoxLines(app, event, game, hitting, pitching);
+  return boxJson(app, box);
+}
+
 function botApply(app, body, auth) {
   const slug = body.event_slug || body.slug;
   if (!slug || !body.schedule_id) throw new BadRequestError("event_slug and schedule_id required");
@@ -421,6 +441,7 @@ module.exports = {
   postScore: postScore,
   saveBox: saveBox,
   botApply: botApply,
+  attachUpdateBox: attachUpdateBox,
   reviewBox: reviewBox,
   pendingFilter: pendingFilter,
   listPendingBoxes: listPendingBoxes,
