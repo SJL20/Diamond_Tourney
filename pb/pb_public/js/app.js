@@ -6,7 +6,8 @@ import {
   startTournament,
 } from "./event.js";
 import { accountHome, adminEvents, adminTeams, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
-import { flashSaved, isSiteAdmin, pageShell } from "./chrome.js";
+import { collapseSetupOnPhone, flashSaved, isSiteAdmin, measureChrome, pageShell } from "./chrome.js";
+import { formatDateDisplay, stampDataTh } from "./display.js";
 
 const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
@@ -103,9 +104,10 @@ function chrome(team, page, body) {
 }
 
 function table(headers, rows, totals) {
-  return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
-    <tbody>${rows.join("")}</tbody>
-    ${totals ? `<tfoot><tr class="total">${totals}</tr></tfoot>` : ""}
+  const stamped = (rows || []).map((r) => stampDataTh(r, headers));
+  return `<div class="table-wrap"><table class="card-table"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+    <tbody>${stamped.join("")}</tbody>
+    ${totals ? `<tfoot><tr class="total">${stampDataTh(totals, headers)}</tr></tfoot>` : ""}
   </table></div>`;
 }
 
@@ -272,7 +274,7 @@ async function games(slug) {
   const team = await requireTeamPage(slug, "games");
   if (!team) return;
   const rows = (await loadGames(team.id)).map((g) => `<tr>
-    <td>${escapeHtml(g.date)}</td>
+    <td>${escapeHtml(formatDateDisplay(g.date) || g.date)}</td>
     <td><a data-link href="/teams/${slug}/games/${g.id}">${escapeHtml(g.opponent)}</a></td>
     <td>${g.us_runs}-${g.them_runs}</td>
     <td><span class="badge ${g.result.toLowerCase()}">${g.result}</span></td>
@@ -295,7 +297,7 @@ async function box(slug, gameId) {
     <td>${outsToIp(r.ip_outs)}</td><td>${r.h}</td><td>${r.r}</td><td>${r.er}</td><td>${r.bb}</td><td>${r.so}</td><td>${era(r.er, r.ip_outs)}</td></tr>`);
   app.innerHTML = chrome(team, "games", `
     <section class="hero"><h1>${escapeHtml(game.opponent)}</h1>
-      <p>${escapeHtml(game.date)} · ${game.us_runs}-${game.them_runs} · <span class="badge ${game.result.toLowerCase()}">${game.result}</span></p>
+      <p>${escapeHtml(formatDateDisplay(game.date) || game.date)} · ${game.us_runs}-${game.them_runs} · <span class="badge ${game.result.toLowerCase()}">${game.result}</span></p>
     </section>
     <section class="grid two">
       <div class="card"><h2>Hitting</h2>${table(["#", "Player", "AB", "R", "H", "RBI", "BB", "SO"], h)}</div>
@@ -326,7 +328,7 @@ async function review(slug) {
   const cards = items.map((s) => {
     const payload = typeof s.payload === "string" ? JSON.parse(s.payload || "{}") : (s.payload || {});
     return `<article class="card" data-staging="${s.id}">
-      <h3>${escapeHtml(payload.opponent || "Unknown opponent")} · ${escapeHtml(payload.date || "no date")}</h3>
+      <h3>${escapeHtml(payload.opponent || "Unknown opponent")} · ${escapeHtml(formatDateDisplay(payload.date) || payload.date || "no date")}</h3>
       <p><span class="badge ${s.status}">${s.status}</span> ${payload.us_runs ?? "?"}–${payload.them_runs ?? "?"}</p>
       <p class="muted">${escapeHtml(s.parser_notes || "No parser notes.")}</p>
       ${previewTable(payload)}
@@ -372,63 +374,64 @@ async function teams() {
 async function render() {
   const { name, params } = matchRoute();
   try {
-    if (name === "login") return login();
-    if (name === "register") return startGate("register");
-    if (name === "forgot") return forgotPage();
-    if (name === "reset") return resetPage();
-    if (name === "verify") return verifyPage();
-    if (name === "find") return findPage();
-    if (name === "account") return accountHome();
-    if (name === "adminEvents") return adminEvents();
-    if (name === "adminTeams") return adminTeams();
-    if (name === "year") return yearPage(params[0] || "2026");
-    if (name === "landing" || name === "teams") return landing();
-    if (name === "start") {
-      if (!user()) return startGate("login");
-      return startTournament();
+    if (name === "login") await login();
+    else if (name === "register") await startGate("register");
+    else if (name === "forgot") await forgotPage();
+    else if (name === "reset") await resetPage();
+    else if (name === "verify") await verifyPage();
+    else if (name === "find") await findPage();
+    else if (name === "account") await accountHome();
+    else if (name === "adminEvents") await adminEvents();
+    else if (name === "adminTeams") await adminTeams();
+    else if (name === "year") await yearPage(params[0] || "2026");
+    else if (name === "landing" || name === "teams") await landing();
+    else if (name === "start") {
+      if (!user()) await startGate("login");
+      else await startTournament();
     }
-    if (name === "native") return directorNative();
-    if (name === "linktm") return directorLinkTm();
-    if (name === "import") return directorImport();
-    if (name === "importpopup") return directorImportPopup();
-    if (name === "duplicate") return directorDuplicate();
-    if (name === "events") return eventList();
-    if (name === "ehome") return eventHome(params[0]);
-    if (name === "estandings" || name === "epools") return eventStandings(params[0]);
-    if (name === "ebracket") return eventBracket(params[0]);
-    if (name === "eoverall") return eventOverall(params[0]);
-    if (name === "eschedule") return eventSchedule(params[0]);
-    if (name === "egame") return eventGame(params[0], params[1]);
-    if (name === "eleaders") return eventLeaders(params[0]);
-    if (name === "estats") return eventStats(params[0]);
-    if (name === "eawards") return eventAwards(params[0]);
-    if (name === "esignup") return eventSignup(params[0]);
-    if (name === "einfo") return eventInfo(params[0]);
-    if (name === "eadmin") return eventAdmin(params[0]);
-    if (name === "eteam") return eventTeamPage(params[0], params[1]);
-    if (name === "boxupload") return boxUploadPage(params[0]);
-    if (name === "boxstop") return boxStopPage(params[0]);
-    if (name === "boxhelp") return boxHelpPage();
-    if (name === "publicTeam") return publicTeam(params[0]);
-    if (name === "home") return home(params[0]);
-    if (name === "roster") return roster(params[0]);
-    if (name === "hitting") return hitting(params[0]);
-    if (name === "pitching") return pitching(params[0]);
-    if (name === "games") return games(params[0]);
-    if (name === "box") return box(params[0], params[1]);
-    if (name === "review") return review(params[0]);
-    app.innerHTML = chrome(null, "", `<section class="card empty">Page not found.</section>`);
+    else if (name === "native") await directorNative();
+    else if (name === "linktm") await directorLinkTm();
+    else if (name === "import") await directorImport();
+    else if (name === "importpopup") await directorImportPopup();
+    else if (name === "duplicate") await directorDuplicate();
+    else if (name === "events") await eventList();
+    else if (name === "ehome") await eventHome(params[0]);
+    else if (name === "estandings" || name === "epools") await eventStandings(params[0]);
+    else if (name === "ebracket") await eventBracket(params[0]);
+    else if (name === "eoverall") await eventOverall(params[0]);
+    else if (name === "eschedule") await eventSchedule(params[0]);
+    else if (name === "egame") await eventGame(params[0], params[1]);
+    else if (name === "eleaders") await eventLeaders(params[0]);
+    else if (name === "estats") await eventStats(params[0]);
+    else if (name === "eawards") await eventAwards(params[0]);
+    else if (name === "esignup") await eventSignup(params[0]);
+    else if (name === "einfo") await eventInfo(params[0]);
+    else if (name === "eadmin") await eventAdmin(params[0]);
+    else if (name === "eteam") await eventTeamPage(params[0], params[1]);
+    else if (name === "boxupload") await boxUploadPage(params[0]);
+    else if (name === "boxstop") await boxStopPage(params[0]);
+    else if (name === "boxhelp") await boxHelpPage();
+    else if (name === "publicTeam") await publicTeam(params[0]);
+    else if (name === "home") await home(params[0]);
+    else if (name === "roster") await roster(params[0]);
+    else if (name === "hitting") await hitting(params[0]);
+    else if (name === "pitching") await pitching(params[0]);
+    else if (name === "games") await games(params[0]);
+    else if (name === "box") await box(params[0], params[1]);
+    else if (name === "review") await review(params[0]);
+    else app.innerHTML = chrome(null, "", `<section class="card empty">Page not found.</section>`);
   } catch (err) {
     const msg = String(err?.message || err);
     if (msg.includes("404") || msg.toLowerCase().includes("not found")) {
       app.innerHTML = chrome(null, "", `<section class="card empty">That team was not found.</section>`);
-      return;
-    }
-    if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
+    } else if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
       app.innerHTML = chrome(null, "", `<section class="card empty">You do not have access to this book.</section>`);
-      return;
+    } else {
+      app.innerHTML = chrome(null, "", `<section class="card error"><p>Could not load this page.</p><pre>${escapeHtml(msg)}</pre></section>`);
     }
-    app.innerHTML = chrome(null, "", `<section class="card error"><p>Could not load this page.</p><pre>${escapeHtml(msg)}</pre></section>`);
+  } finally {
+    measureChrome();
+    collapseSetupOnPhone();
   }
 }
 

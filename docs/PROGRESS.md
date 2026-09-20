@@ -198,6 +198,17 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-20 — One-PR mobile pass (chrome, cards, times, home)
+
+Phone review on Harbor Eight (390×844) showed the Admin rail stretching the
+page (~970px) and tables hiding Home/Away/Score behind a nested swipe. This
+PR contains the whole list: sticky chrome height vars, 44px taps, safe-area,
+toast under the site bar, Admin desk `<select>` under 800px, 12-hour times and
+weekday dates from `display.js`, Park hours, schedule/team game cards,
+card-table labels for standings/stats/books, stacked bracket rounds, and a
+parent home that leads with next pitch and team chips. Field hours are
+collapsed. Live-score polling (BACKLOG 28b) is not in this PR.
+
 ### 2026-09-19 — two-bot pressure test + event-update upsert
 
 Spun Bot A (season ingest/publish) and Bot C (event-box / event-update /

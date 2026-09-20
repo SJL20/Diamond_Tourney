@@ -1,4 +1,5 @@
 import { flashSaved, isSiteAdmin, loginWithPassword, pageShell } from "./chrome.js";
+import { stampDataTh } from "./display.js";
 
 const flowRoot = () => document.getElementById("app");
 const flowPb = new PocketBase(location.origin);
@@ -353,14 +354,15 @@ export async function yearPage(year) {
     <td>${r.ip}</td><td>${r.er}</td><td>${r.so}</td><td>${r.era_display}</td>
   </tr>`);
   function table(headers, rows) {
-    return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
-      <tbody>${rows.join("") || `<tr><td colspan="${headers.length}" class="empty">No qualifying lines yet.</td></tr>`}</tbody></table></div>`;
+    const stamped = (rows || []).map((r) => stampDataTh(r, headers));
+    return `<div class="table-wrap"><table class="card-table"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+      <tbody>${stamped.join("") || `<tr><td colspan="${headers.length}" class="empty">No qualifying lines yet.</td></tr>`}</tbody></table></div>`;
   }
   flowRoot().innerHTML = gateChrome("year", `
     <section class="page-head">
       <h1>${escapeHtml(year)} series board</h1>
       <p class="muted">Same club across weekends stays one row. Totals come from final event scores and approved boxes — nothing invented.</p>
-      <p>${(board.events || []).map((ev) => `<a data-link href="/t/${ev.slug}">${escapeHtml(ev.name)}</a>`).join(" · ") || "No public events in this year yet."}</p>
+      <p class="year-links">${(board.events || []).map((ev) => `<a data-link href="/t/${ev.slug}">${escapeHtml(ev.name)}</a>`).join(" · ") || "No public events in this year yet."}</p>
     </section>
     <section class="card">
       <h2>Team standings</h2>
