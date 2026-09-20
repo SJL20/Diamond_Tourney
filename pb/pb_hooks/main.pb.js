@@ -696,6 +696,16 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
   }));
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/events/{slug}/bracket/preview", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const schedule = require(__hooks + "/schedule.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  const body = e.requestInfo().body || {};
+  body.preview = true;
+  return e.json(200, schedule.buildBracket(e.app, event, body));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/events/{slug}/bracket/clear", (e) => {
   const sb = require(__hooks + "/softball.js");
   const schedule = require(__hooks + "/schedule.js");

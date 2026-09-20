@@ -27,7 +27,7 @@ function homeAwayIds(game) {
 
 function isSuppressed(game) {
   const st = String(game.get("status") || "");
-  if (st === "cancelled" || st === "forfeit" || st === "postponed" || st === "rained_out") return true;
+  if (st === "cancelled" || st === "forfeit" || st === "postponed" || st === "rained_out" || st === "bye") return true;
   const notes = String(game.get("notes") || "").toLowerCase();
   return /\bforfeit\b|\bcancel/.test(notes);
 }
@@ -541,6 +541,7 @@ function directorDesk(app, event) {
   } catch (err) { bracket = []; }
   for (let i = 0; i < bracket.length; i++) {
     const g = bracket[i];
+    if (g.get("status") === "bye") continue;
     const sides = homeAwayIds(g);
     let rows = [];
     try {

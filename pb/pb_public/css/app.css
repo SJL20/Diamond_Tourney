@@ -617,6 +617,99 @@ details.setup-block > summary::-webkit-details-marker { display: none; }
 details.setup-block[open] > summary { margin-bottom: 10px; }
 
 #guide-form + details.setup-block { margin-top: 12px; }
+
+.flight-plan { display: grid; gap: 12px; min-width: 0; max-width: 100%; }
+.flight-card {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  background: #fafafa;
+  min-width: 0;
+  max-width: 100%;
+}
+.flight-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.flight-card-title {
+  font-family: "Oswald", sans-serif;
+  font-size: 1.05rem;
+  color: var(--navy);
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+.flight-more { min-width: 0; display: grid; gap: 8px; }
+.flight-more > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.flight-fields, .flight-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 800px) {
+  .flight-plan [data-add-flight] {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .flight-card {
+    scroll-margin-top: calc(var(--chrome-h, 52px) + 8px);
+  }
+  .flight-card-head {
+    width: 100%;
+  }
+  .flight-card-title {
+    min-height: 44px;
+  }
+  .flight-card-head .btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+    flex: 0 0 auto;
+  }
+  .flight-card input,
+  .flight-card select,
+  .flight-card textarea {
+    font-size: 16px;
+    min-height: 44px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .flight-card input[type="time"] {
+    max-width: 100%;
+  }
+  .flight-card .form-grid.two {
+    grid-template-columns: 1fr;
+  }
+  .flight-card label.check,
+  .flight-fields label.check,
+  .flight-teams label.check {
+    min-height: 44px;
+    width: 100%;
+  }
+  .flight-fields,
+  .flight-teams {
+    display: grid;
+    gap: 2px;
+  }
+}
+.bk-match.bye { opacity: 0.92; }
+.bk-match .bye-seat { font-style: italic; }
 .co-owner-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .co-owner-list li {
   display: flex;
