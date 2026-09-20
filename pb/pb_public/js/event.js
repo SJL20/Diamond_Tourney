@@ -344,9 +344,9 @@ function flightPlanDesk(flights, teams, fields) {
   return `
     <div class="flight-plan" data-flight-plan>
       <label>How many brackets
-        <input name="flight_count" type="number" min="1" max="12" value="${rows.length}">
+        <input name="flight_count" type="number" min="1" max="40" value="${rows.length}">
       </label>
-      <p class="muted">Name each bracket, then give that bracket its own split. Size, seed range, or specific teams. Nothing is hardcoded.</p>
+      <p class="muted">Name each bracket, then give that bracket its own split — a count, overall seeds, pool finish, or specific teams. There is no automatic even split and nothing is hardcoded.</p>
       <p class="muted" data-flight-remainder></p>
       <div data-flight-cards>${rows.map((f, i) => flightCard(f, i, teams, fields)).join("")}</div>
     </div>
@@ -359,16 +359,31 @@ function flightCard(fl, i, teams, fields) {
   const size = fl.size || "";
   const seedFrom = fl.seed_from || "";
   const seedTo = fl.seed_to || "";
+  const poolFrom = fl.pool_place_from || "";
+  const poolTo = fl.pool_place_to || "";
+  const seedList = (fl.seeds || []).join(", ");
+  const byeSeeds = (fl.bye_seeds || []).join(", ");
   const assigned = new Set(fl.team_ids || fl.teams || []);
   const pickedFields = new Set(fl.fields || []);
   const fmt = fl.format || "";
+  const seedMode = fl.seed_mode || "reseed";
+  const byeMode = fl.bye_mode || "top-seeds";
   return `<fieldset class="flight-card" data-flight-card>
     <legend>Bracket ${i + 1}</legend>
     <div class="form-grid two">
       <label>Name <input name="flight_name" value="${escapeHtml(name)}" placeholder="Championship, Gold, Consolation…"></label>
-      <label>Teams in this bracket <input name="flight_size" type="number" min="0" value="${escapeHtml(String(size))}" placeholder="8"></label>
+      <label>Teams in this bracket <input name="flight_size" type="number" min="0" value="${escapeHtml(String(size))}" placeholder="leave blank if using seeds or teams"></label>
       <label>Overall seeds from <input name="flight_seed_from" type="number" min="0" value="${escapeHtml(String(seedFrom))}" placeholder="1"></label>
       <label>through <input name="flight_seed_to" type="number" min="0" value="${escapeHtml(String(seedTo))}" placeholder="8"></label>
+      <label>Or specific overall seeds <input name="flight_seeds" value="${escapeHtml(seedList)}" placeholder="1, 4, 5, 8"></label>
+      <label>Pool finish from <input name="flight_pool_from" type="number" min="0" value="${escapeHtml(String(poolFrom))}" placeholder="1"></label>
+      <label>through <input name="flight_pool_to" type="number" min="0" value="${escapeHtml(String(poolTo))}" placeholder="2 = winners and runners-up"></label>
+      <label>Seeds inside this bracket
+        <select name="flight_seed_mode">
+          <option value="reseed" ${seedMode !== "overall" ? "selected" : ""}>Reseed 1…n in this bracket</option>
+          <option value="overall" ${seedMode === "overall" ? "selected" : ""}>Keep overall seed numbers</option>
+        </select>
+      </label>
       <label>This bracket’s format
         <select name="flight_format">
           <option value="" ${!fmt ? "selected" : ""}>Same as weekend format</option>
@@ -384,6 +399,13 @@ function flightCard(fl, i, teams, fields) {
             `<option value="${v}" ${(fl.pairing || "high-low") === v ? "selected" : ""}>${l}</option>`).join("")}
         </select>
       </label>
+      <label>Byes
+        <select name="flight_bye_mode">
+          <option value="top-seeds" ${byeMode !== "manual" ? "selected" : ""}>Automatic to the top seeds</option>
+          <option value="manual" ${byeMode === "manual" ? "selected" : ""}>Director picks the bye seeds</option>
+        </select>
+      </label>
+      <label>Bye seeds (if picked) <input name="flight_bye_seeds" value="${escapeHtml(byeSeeds)}" placeholder="1, 2"></label>
       <label>First pitch <input name="flight_start" type="time" value="${escapeHtml(fl.start_time || "")}"></label>
       <label>Minutes per slot <input name="flight_slot" type="number" min="30" value="${escapeHtml(String(fl.slot_minutes || 90))}"></label>
       <label>Finish by <input name="flight_finish" type="time" value="${escapeHtml(fl.finish_time || "")}"></label>
@@ -416,8 +438,14 @@ function readFlightPlan(root) {
       size: Number(card.querySelector("[name=flight_size]")?.value || 0) || 0,
       seed_from: Number(card.querySelector("[name=flight_seed_from]")?.value || 0) || 0,
       seed_to: Number(card.querySelector("[name=flight_seed_to]")?.value || 0) || 0,
+      seeds: (card.querySelector("[name=flight_seeds]")?.value || "").split(/[,|\s]+/).map((s) => Number(s)).filter((n) => n > 0),
+      pool_place_from: Number(card.querySelector("[name=flight_pool_from]")?.value || 0) || 0,
+      pool_place_to: Number(card.querySelector("[name=flight_pool_to]")?.value || 0) || 0,
+      seed_mode: card.querySelector("[name=flight_seed_mode]")?.value || "reseed",
       format: card.querySelector("[name=flight_format]")?.value || "",
       pairing: card.querySelector("[name=flight_pairing]")?.value || "high-low",
+      bye_mode: card.querySelector("[name=flight_bye_mode]")?.value || "top-seeds",
+      bye_seeds: (card.querySelector("[name=flight_bye_seeds]")?.value || "").split(/[,|\s]+/).map((s) => Number(s)).filter((n) => n > 0),
       start_time: card.querySelector("[name=flight_start]")?.value || "",
       slot_minutes: Number(card.querySelector("[name=flight_slot]")?.value || 90) || 90,
       finish_time: card.querySelector("[name=flight_finish]")?.value || "",
@@ -443,18 +471,24 @@ function bindOneFlightPlan(box, teams, fields) {
   const cards = () => box.querySelector("[data-flight-cards]");
   const paintRemainder = () => {
     const plan = readFlightPlan(box);
-    const sized = plan.flights.reduce((n, f) => n + (Number(f.size) || (f.team_ids || []).length || 0), 0);
+    const sized = plan.flights.reduce((n, f) => {
+      if ((f.team_ids || []).length) return n + f.team_ids.length;
+      if (Number(f.size)) return n + Number(f.size);
+      if ((f.seeds || []).length) return n + f.seeds.length;
+      if (f.seed_from && f.seed_to && f.seed_to >= f.seed_from) return n + (f.seed_to - f.seed_from + 1);
+      return n;
+    }, 0);
     const note = box.querySelector("[data-flight-remainder]");
     if (!note) return;
     const total = (teams || []).length;
     if (!total && !sized) { note.textContent = ""; return; }
     const left = total - sized;
     note.textContent = total
-      ? `${total} registered team${total === 1 ? "" : "s"}. ${sized} assigned by size or list. ${left === 0 ? "Split adds up." : left > 0 ? left + " still unassigned." : Math.abs(left) + " over the roster — that is allowed if you mean it."}`
+      ? `${total} registered team${total === 1 ? "" : "s"}. ${sized} assigned by size, seeds, or list. ${left === 0 ? "Split adds up." : left > 0 ? left + " still unassigned." : Math.abs(left) + " over the roster — that is allowed if you mean it."}`
       : `${sized} team slot${sized === 1 ? "" : "s"} set across ${plan.flights.length} bracket${plan.flights.length === 1 ? "" : "s"}.`;
   };
   countEl?.addEventListener("change", () => {
-    const want = Math.max(1, Math.min(12, Number(countEl.value || 1)));
+    const want = Math.max(1, Math.min(40, Number(countEl.value || 1)));
     const plan = readFlightPlan(box);
     while (plan.flights.length < want) plan.flights.push({ id: "", name: "" });
     plan.flights = plan.flights.slice(0, want);

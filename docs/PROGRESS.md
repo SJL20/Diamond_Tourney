@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 108 unit/integration cases + 13 acceptance checks |
+| Tests | 111 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -213,7 +213,9 @@ Item 25 was already on `eventJson` / `/plan` / `/board` (Claude grepped the
 wrong file). This PR adds `events.bracket_plan` and a director flow of
 **how many brackets → name each → custom split for each**. There is no
 automatic even split. A Gold / Silver key without sizes now refuses to draw
-and tells the director to assign a size, a seed range, or teams.
+and tells the director to assign a size, a seed range, a pool-finish range,
+or teams. Each card also sets seed mode (reseed vs keep overall), pairing,
+bye mode (top seeds or picked seeds), fields, and format.
 
 Byes are `status=bye` records: no game number, field, time, schedule row, or
 coach email. Six teams in an eight-slot tree give byes to seeds 1 and 2.

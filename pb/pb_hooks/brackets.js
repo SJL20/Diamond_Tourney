@@ -151,13 +151,15 @@ function normalizeFlight(raw, index) {
     format: fmt,
     size: Number(raw.size || 0) || 0,
     team_ids: asIdList(raw.team_ids || raw.teams),
-    seeds: asList(raw.seeds).map(Number).filter(function (n) { return n > 0; }),
+    seeds: asList(raw.seeds || raw.seeds_text).map(Number).filter(function (n) { return n > 0; }),
     seed_from: Number(raw.seed_from || 0) || 0,
     seed_to: Number(raw.seed_to || 0) || 0,
     seed_mode: String(raw.seed_mode || "reseed").toLowerCase(),
     pairing: String(raw.pairing || "high-low").toLowerCase(),
     bye_mode: String(raw.bye_mode || "top-seeds").toLowerCase(),
-    bye_seeds: asList(raw.bye_seeds).map(Number).filter(function (n) { return n > 0; }),
+    bye_seeds: asList(raw.bye_seeds || raw.bye_seeds_text).map(Number).filter(function (n) { return n > 0; }),
+    pool_place_from: Number(raw.pool_place_from || 0) || 0,
+    pool_place_to: Number(raw.pool_place_to || 0) || 0,
     consolation: flag(raw.consolation, false),
     third_place: flag(raw.third_place, false),
     if_necessary: flag(raw.if_necessary, fmt === "double-elim" || fmt === "4gg-double-elim"),
@@ -230,7 +232,16 @@ function summarizeKey(plan) {
 function flightHasSplit(fl) {
   if (!fl) return false;
   return !!(fl.size > 0 || (fl.team_ids && fl.team_ids.length) || (fl.seeds && fl.seeds.length)
-    || (fl.seed_from && fl.seed_to));
+    || (fl.seed_from && fl.seed_to)
+    || (fl.pool_place_from && fl.pool_place_to));
+}
+
+function overallOf(row) {
+  return Number((row && (row.overall_seed || row.seed)) || 0);
+}
+
+function poolPlaceOf(row) {
+  return Number((row && (row.pool_place || row.pool_rank)) || 0);
 }
 
 function placeholderSeeds(count) {
@@ -290,14 +301,24 @@ function assignFlights(seeds, plan, opts) {
       const order = {};
       for (let t = 0; t < fl.seeds.length; t++) order[fl.seeds[t]] = t;
       picked = takeMatching(function (row) {
-        return order[Number(row.seed || row.overall_seed || 0)] != null;
+        return order[overallOf(row)] != null;
       });
       picked.sort(function (a, b) {
-        return order[Number(a.seed || a.overall_seed)] - order[Number(b.seed || b.overall_seed)];
+        return order[overallOf(a)] - order[overallOf(b)];
+      });
+    } else if (fl.pool_place_from && fl.pool_place_to && fl.pool_place_to >= fl.pool_place_from) {
+      picked = takeMatching(function (row) {
+        const n = poolPlaceOf(row);
+        return n >= fl.pool_place_from && n <= fl.pool_place_to;
+      });
+      picked.sort(function (a, b) {
+        const pa = poolPlaceOf(a) - poolPlaceOf(b);
+        if (pa) return pa;
+        return overallOf(a) - overallOf(b);
       });
     } else if (fl.seed_from && fl.seed_to && fl.seed_to >= fl.seed_from) {
       picked = takeMatching(function (row) {
-        const n = Number(row.seed || row.overall_seed || 0);
+        const n = overallOf(row);
         return n >= fl.seed_from && n <= fl.seed_to;
       });
     } else if (fl.size > 0) {
@@ -475,6 +496,25 @@ function orderFirstRound(pairs, laterTop) {
   return firstHasOne ? second.concat(first) : first.concat(second);
 }
 
+function splitManualByes(teams, flight, need) {
+  const listed = {};
+  const byeTeams = [];
+  const play = [];
+  const seeds = flight.bye_seeds || [];
+  for (let i = 0; i < seeds.length; i++) listed[Number(seeds[i])] = true;
+  for (let i = 0; i < (teams || []).length; i++) {
+    const t = teams[i];
+    if (listed[Number(t.seed)]) byeTeams.push(t);
+    else play.push(t);
+  }
+  const want = Math.max(Number(need) || 0, byeTeams.length);
+  play.sort(function (a, b) { return Number(a.seed || 99) - Number(b.seed || 99); });
+  while (byeTeams.length < want && play.length) {
+    byeTeams.push(play.shift());
+  }
+  return { play: play, byes: byeTeams };
+}
+
 function buildSingleElimGames(teams, flight, opts) {
   opts = opts || {};
   flight = flight || normalizeFlight({}, 0);
@@ -485,14 +525,27 @@ function buildSingleElimGames(teams, flight, opts) {
   if (n < 2) return { games: games, byes: byes, notes: notes, feeds: {} };
   const size = nextPowerOfTwo(n);
   const byeCount = size - n;
-  let pairs = firstRoundPairs(teams, flight.pairing || "high-low", flight.draw_seed);
+  let pairs;
+  if (flight.bye_mode === "manual" && flight.bye_seeds && flight.bye_seeds.length) {
+    const split = splitManualByes(teams, flight, byeCount);
+    pairs = firstRoundPairs(split.play, flight.pairing || "high-low", flight.draw_seed);
+    for (let b = 0; b < split.byes.length; b++) {
+      pairs.push({
+        home: split.byes[b],
+        away: null,
+        slot: pairs.length + 1,
+        home_seed: split.byes[b] && split.byes[b].seed,
+        away_seed: 0,
+      });
+    }
+    notes.push("Director-picked byes: seeds " + flight.bye_seeds.join(", "));
+  } else {
+    pairs = firstRoundPairs(teams, flight.pairing || "high-low", flight.draw_seed);
+  }
   if ((flight.pairing || "") === "cross-pool") {
     const adjusted = applyCrossPool(pairs, opts.rematches || []);
     pairs = adjusted.pairs;
     for (let i = 0; i < adjusted.swaps.length; i++) notes.push(adjusted.swaps[i]);
-  }
-  if (flight.bye_mode === "manual" && flight.bye_seeds && flight.bye_seeds.length) {
-    notes.push("Manual byes use the listed seeds; other empty seats stay byes.");
   }
   const rounds = winnerRoundNames(size);
   const firstRound = rounds[0];
@@ -752,7 +805,12 @@ function summarizeFlight(flight, teams, built) {
   bits.push((flight.pairing || "high-low") + " pairing");
   bits.push(flight.format || "event format");
   const byeN = (built.byes || []).length;
-  if (byeN) bits.push(byeN + " bye" + (byeN === 1 ? "" : "s") + " to top seeds");
+  if (byeN) {
+    bits.push(byeN + " bye" + (byeN === 1 ? "" : "s")
+      + (flight.bye_mode === "manual" && flight.bye_seeds && flight.bye_seeds.length
+        ? " picked by the director"
+        : " to top seeds"));
+  }
   return bits.join(", ");
 }
 
@@ -866,4 +924,5 @@ module.exports = {
   missingSplits: missingSplits,
   formatIsDouble: formatIsDouble,
   addMinutes: addMinutes,
+  splitManualByes: splitManualByes,
 };

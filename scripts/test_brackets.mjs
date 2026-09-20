@@ -82,4 +82,34 @@ if (dePlay.length !== 14) throw new Error("8-team 4GG DE should be 14 games, got
 const one = br.assignFlights(eight, { flights: [br.normalizeFlight({ id: "", name: "" }, 0)] });
 if (one.flights[0].teams.length !== 8) throw new Error("single flight takes all");
 
+const pooled = [];
+["A", "B"].forEach((pool, p) => {
+  for (let i = 1; i <= 4; i++) {
+    pooled.push({
+      id: pool + i,
+      name: pool + i,
+      seed: p * 4 + i,
+      overall_seed: p * 4 + i,
+      pool_place: i,
+      pool,
+    });
+  }
+});
+const byPlace = br.assignFlights(pooled, {
+  flights: [
+    br.normalizeFlight({ name: "Upper", pool_place_from: 1, pool_place_to: 2 }, 0),
+    br.normalizeFlight({ name: "Lower", pool_place_from: 3, pool_place_to: 4 }, 1),
+  ],
+});
+eq(byPlace.flights[0].teams.map((t) => t.id).sort(), ["A1", "A2", "B1", "B2"], "pool winners and runners-up");
+eq(byPlace.flights[1].teams.map((t) => t.id).sort(), ["A3", "A4", "B3", "B4"], "pool 3rd and 4th");
+
+const six = [];
+for (let i = 1; i <= 6; i++) six.push({ id: "s" + i, name: "S" + i, seed: i });
+const picked = br.buildSingleElimGames(six, br.normalizeFlight({
+  name: "Consolation", pairing: "high-low", bye_mode: "manual", bye_seeds: [3, 4],
+}, 0));
+const pickedByes = picked.games.filter((g) => g.is_bye).map((g) => g.home && g.home.seed).sort();
+eq(pickedByes, [3, 4], "director-picked byes");
+
 console.log("brackets.js ok");

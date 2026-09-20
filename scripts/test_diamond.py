@@ -220,6 +220,10 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("function flightPlanDesk", event)
         self.assertIn("function readFlightPlan", event)
         self.assertIn("bracket_plan", event)
+        self.assertIn("flight_pool_from", event)
+        self.assertIn("flight_seed_mode", event)
+        self.assertIn("flight_bye_mode", event)
+        self.assertIn("no automatic even split", event)
         self.assertNotIn("split by overall ranking", event)
         self.assertIn("fields.length ? fields : [{}]", event)
         self.assertIn("Start with one diamond", event)
@@ -3948,6 +3952,72 @@ class FlexibleBracketTests(unittest.TestCase):
         self.assertIn("QF", rounds)
         self.assertIn("LF", rounds)
         self.assertIn("IFN", rounds)
+
+    def test_pool_finish_split_and_director_byes(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "pool-split-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Pool Finish Classic",
+            "slug": slug,
+            "format": "pool-to-bracket",
+            "start": "2026-10-17",
+            "end": "2026-10-18",
+            "fields": [{"name": "North"}, {"name": "South"}],
+        })
+        names = [f"Place {n}" for n in ("Ace", "Bay", "Cove", "Dale", "Echo", "Fern", "Gale", "Hill")]
+        for i, name in enumerate(names):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A" if i < 4 else "B",
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-10-17"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        for game in auto["schedule"]:
+            home_win = game["home"] in ("Place Ace", "Place Bay", "Place Echo", "Place Fern")
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                "home_runs": 8 if home_win else 1,
+                "away_runs": 1 if home_win else 8,
+                "status": "final",
+                "confirm": True,
+            })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "format": "pool-to-bracket",
+            "consolation": False,
+            "confirm": True,
+            "bracket_plan": {
+                "flights": [
+                    {
+                        "name": "Upper",
+                        "pool_place_from": 1,
+                        "pool_place_to": 2,
+                        "format": "single-elim",
+                    },
+                    {
+                        "name": "Lower",
+                        "pool_place_from": 3,
+                        "pool_place_to": 4,
+                        "format": "single-elim",
+                    },
+                ],
+            },
+        })
+        flights = {row["name"]: row for row in drawn.get("flights") or []}
+        self.assertEqual(flights["Upper"]["seeds"], 4)
+        self.assertEqual(flights["Lower"]["seeds"], 4)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        labels = {g.get("flight") for g in board["bracket"] if g.get("status") != "bye"}
+        self.assertEqual(labels, {"upper", "lower"})
+        saved = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        plan = saved["event"]["bracket_plan"]["flights"]
+        self.assertEqual(plan[0]["pool_place_from"], 1)
+        self.assertEqual(plan[1]["pool_place_to"], 4)
 
 
 if __name__ == "__main__":

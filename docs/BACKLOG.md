@@ -16,7 +16,8 @@ signup). They are **not** GitHub PRs #29 / #30 / #31.
 There is no open heading **25** in the original Derek list. Claude’s 8:33 mail
 called the Gold/Silver persist leftover “item 25.” That leftover is shipped;
 the heading is recorded below as `[x] 25` so the next agent does not reopen it
-as missing. Item **26** is still the real flight-sizing / bye / pairing work.
+as missing. Item **26** is director-authored flights: count, name, custom split.
+There is no automatic even split.
 
 GitHub issue still open: **#7** (signup email) — same work as item 1. Agents
 cannot close issues (403).
@@ -34,13 +35,13 @@ cannot close issues (403).
 | 21 | `[x]` | Verified GameChanger export steps + live coach-email E2E (needs item 1 SMTP and owner screenshots). Do not invent iOS/Android menu names. |
 | 22 | `[x]` | GameChanger screenshots on the help page and in the upload email (owner supplies) |
 | 23–25 | `[x]` | — |
-| 26 | `[ ]` | **Next product build.** 8 Gold / 6 Silver, byes, pairing patterns |
-| 26i | `[ ]` | Scarecrow Slugfest reference bracket (attach schedule.xlsx) |
+| 26 | `[x]` | Director names N brackets and assigns each split. No even-split. |
+| 26i | `[x]` | Scarecrow 8/6 concurrent shape is a test, not a hardcoded product |
 | 27 | `[x]` | Park hours + 12-hour times + weekday dates |
 | 28 | `[x]` | Home-page redesign |
 | 28b | `[ ]` | Live scores. Coordinate with Steve. |
 | 29 | `[ ]` | Team logos (this item, not PR #29) |
-| 30 | `[ ]` | Custom bracket Home/Away accept seed / winner / loser (this item, not PR #30) |
+| 30 | `[x]` | Custom bracket Home/Away accept seed / winner / loser (this item, not PR #30) |
 | 31 | `[ ]` | Invite-only director signup (this item, not PR #31) |
 | 32 | `[x]` | Live leader gates scale with games played; no “over” without an IP cap (PR #30) |
 | 33 | `[x]` | Approve stats on the game, overview, and Admin rail (PR #29 + #31) |
@@ -51,12 +52,10 @@ cannot close issues (403).
 Do not reorder without asking the owner. Item 23’s old “park until 1–22” note
 was overridden; assist is already shipped.
 
-1. **26 + 26i** — blocker for the next event
-2. **28b** — live scores (ask Steve before building)
-3. **29** — team logos
-4. **30** — custom bracket seed and winner references
-5. **31** — invite-only director signup
-6. **Ops leftovers** (do not write fake product code to tick these): item 1 SMTP,
+1. **28b** — live scores (ask Steve before building)
+2. **29** — team logos
+3. **31** — invite-only director signup
+4. **Ops leftovers** (do not write fake product code to tick these): item 1 SMTP,
    item 11 Keystone CSV weekend, item 16 scarecrow leftover bracket, item 21/22
    owner GameChanger screenshots and a real inbox test
 
@@ -1540,11 +1539,13 @@ The director sets the size of each flight. Not derived, not even.
   remainder as they type.
 - **Split at a seed** — "Gold is seeds 1–8." Equivalent, different mental model;
   offer both.
-- **Even split** — current behavior, kept as an option.
+- **Even split** — **removed on purpose.** The owner said there is no automatic
+  split. Directors type a count, a seed range, a pool-finish range, or a team
+  list. Do not add even-split back.
 - **By pool finish** — "pool winners and runners-up to Gold, rest to Silver."
   Common in multi-pool events.
-- **Manual assignment** — drag teams between flights. The escape hatch; always
-  needed, because there is always a reason the software cannot know.
+- **Manual assignment** — pick teams on each bracket card. The escape hatch;
+  always needed, because there is always a reason the software cannot know.
 
 Flight names configurable beyond Gold / Silver / Platinum — directors use
 Championship / Consolation, Upper / Lower, A / B.
@@ -2041,10 +2042,9 @@ before shipping uploads — it is the state most teams will be in.
 
 ## [x] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
 
-**High. Blocks building a bracket before pool play. Corrects a recent change.**
-Still open 2026-09-20. This is BACKLOG 30, not GitHub PR #30. CSV import already
-accepts `seed:3` / `winner:B1` / `loser:B5`. The custom builder and scheduler
-Add-game / edit rows still say “registered teams only.”
+**Shipped.** Custom builder seats accept `seed:N`, `winner:G1`, `loser:G3`, a
+registered team, or TBD. CSV import already did. This is BACKLOG 30, not GitHub
+PR #30.
 
 The custom bracket builder restricts Home and Away to registered teams
 (`pb/pb_public/js/event.js` line 2230, tightened by the commit "Require

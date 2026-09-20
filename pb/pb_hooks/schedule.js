@@ -969,8 +969,25 @@ function seedList(app, event) {
   const standings = diamond.poolStandings(app, event.id);
   const ranked = [];
   for (const pool of standings) {
-    for (const t of pool.teams) {
-      if (t.seed != null) ranked.push(t);
+    const teams = pool.teams || [];
+    for (let i = 0; i < teams.length; i++) {
+      const t = teams[i];
+      if (t.seed == null) continue;
+      ranked.push({
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        pool: pool.name || t.pool || "",
+        w: t.w,
+        l: t.l,
+        t: t.t,
+        rs: t.rs,
+        ra: t.ra,
+        diff: t.diff,
+        seed: t.seed,
+        pool_place: Number(t.pool_place || t.pool_rank || (i + 1)) || 0,
+        overall_seed: 0,
+      });
     }
   }
   ranked.sort(function (a, b) {
@@ -983,6 +1000,10 @@ function seedList(app, event) {
     if ((a.diff || 0) !== (b.diff || 0)) return (b.diff || 0) - (a.diff || 0);
     return (b.rs || 0) - (a.rs || 0);
   });
+  for (let i = 0; i < ranked.length; i++) {
+    ranked[i].overall_seed = i + 1;
+    ranked[i].seed = i + 1;
+  }
   return ranked;
 }
 
@@ -1187,11 +1208,6 @@ function writeBuiltGames(app, event, games) {
   return count;
 }
 
-function seedNumberFromRef(text) {
-  const m = String(text || "").match(/seed\s*:?\s*(\d+)/i);
-  return m ? Number(m[1]) : 0;
-}
-
 function fillEmptySeat(rec, field, teamId) {
   if (!teamId || rec.get("status") === "final" || rec.get(field)) return false;
   rec.set(field, teamId);
@@ -1203,26 +1219,6 @@ function fillEmptyBracket(app, event) {
   if (!existing.length) return { filled: 0 };
   const seeds = seedList(app, event);
   let filled = 0;
-  const bySeed = {};
-  for (let i = 0; i < seeds.length; i++) {
-    if (seeds[i] && seeds[i].seed != null) bySeed[Number(seeds[i].seed)] = seeds[i].id;
-  }
-  const feeds = parseScheduler(event.get("scheduler")).bracket_feeds || {};
-  for (let i = 0; i < existing.length; i++) {
-    const rec = existing[i];
-    if (rec.get("status") === "final") continue;
-    const label = String(rec.get("game_id") || "").trim().toUpperCase();
-    const feed = feeds[label] || feeds[rec.get("game_id")] || {};
-    const homeSeed = seedNumberFromRef(feed.home_ref);
-    const awaySeed = seedNumberFromRef(feed.away_ref);
-    let changed = false;
-    if (homeSeed && bySeed[homeSeed]) changed = fillEmptySeat(rec, "home_team", bySeed[homeSeed]) || changed;
-    if (awaySeed && bySeed[awaySeed]) changed = fillEmptySeat(rec, "away_team", bySeed[awaySeed]) || changed;
-    if (changed) {
-      app.save(rec);
-      filled += 1;
-    }
-  }
   const br = require(__hooks + "/brackets.js");
   const plan = br.planFromInputs(event, {});
   const assigned = br.assignFlights(seeds, plan, {});
