@@ -198,6 +198,18 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-20 — BACKLOG statuses match `main` through PR #31
+
+`docs/BACKLOG.md` now has a status board and a pending list checked against
+`main` `1b094a8`. Items 1–24 stay as they were (1 still `[~]` for Fly SMTP).
+Item 25 is recorded as done (Gold/Silver *labels* persist; not 8/6 sizing).
+Items 26–31 stay open. Shipped owner requests that had no heading are **32**
+(dynamic live gates / no “over” without an IP cap, PR #30) and **33** (Approve
+stats findable, PRs #29 + #31). BACKLOG 29/30/31 are not those GitHub PRs.
+
+Next product build is still **26 + 26i**. Do not invent GameChanger menu names
+to close 21/22. GitHub issue #7 stays open (same as item 1).
+
 ### 2026-09-19 — two-bot pressure test + event-update upsert
 
 Spun Bot A (season ingest/publish) and Bot C (event-box / event-update /
