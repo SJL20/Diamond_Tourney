@@ -210,6 +210,15 @@ two finals) and printed no over badge without an IP cap.
 skip `event` / `applyBoxLines`. It now upserts through `attachUpdateBox`.
 Covered by `scripts/pressure_test_bots.py` and `PressureBotTests`.
 
+### 2026-09-19 — Approve stats is on the game, overview, and Stats tab
+
+Directors could not find the box Approve button. It lived only on Admin →
+Stats inbox, a hidden rail pane. The rail is now **Approve stats**. Overview
+lists it first and repeats waiting boxes with Approve / Reject. A waiting box
+also shows **Approve stats** on the game page. Logged-in directors see a
+banner on the public Stats / leaders tabs that links to `/admin#admin-stats`.
+Packet Approve on Teams is unchanged (that is insurance/roster files).
+
 ### 2026-09-19 — Dynamic leader gates and no “over” without an IP cap
 
 Test Run on diamondtourney.com showed Min 8 AB / Min 5 IP and pitching counts
