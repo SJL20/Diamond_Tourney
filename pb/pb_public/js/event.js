@@ -339,21 +339,25 @@ function setupFormatFields(ev = {}, extras = {}) {
   `;
 }
 
+function defaultFlightRows(flights) {
+  if (flights && flights.length) return flights;
+  return [{ id: "", name: "" }];
+}
+
 function flightPlanDesk(flights, teams, fields) {
-  const rows = (flights && flights.length) ? flights : [{ id: "", name: "" }];
+  const rows = defaultFlightRows(flights);
   return `
     <div class="flight-plan" data-flight-plan>
-      <label>How many brackets
-        <input name="flight_count" type="number" min="1" max="40" value="${rows.length}">
-      </label>
-      <p class="muted">Name each bracket, then give that bracket its own split — a count, overall seeds, pool finish, or specific teams. There is no automatic even split and nothing is hardcoded.</p>
+      <p class="muted">One bracket by default. Add another only if this weekend needs a second tree — you name each one and assign its own split. There is no automatic even split.</p>
+      <input type="hidden" name="flight_count" value="${rows.length}">
       <p class="muted" data-flight-remainder></p>
-      <div data-flight-cards>${rows.map((f, i) => flightCard(f, i, teams, fields)).join("")}</div>
+      <div data-flight-cards>${rows.map((f, i) => flightCard(f, i, teams, fields, rows.length > 1)).join("")}</div>
+      <button type="button" class="btn ghost" data-add-flight>Add another bracket</button>
     </div>
   `;
 }
 
-function flightCard(fl, i, teams, fields) {
+function flightCard(fl, i, teams, fields, canRemove) {
   fl = fl || {};
   const name = fl.name || "";
   const size = fl.size || "";
@@ -369,7 +373,7 @@ function flightCard(fl, i, teams, fields) {
   const seedMode = fl.seed_mode || "reseed";
   const byeMode = fl.bye_mode || "top-seeds";
   return `<fieldset class="flight-card" data-flight-card>
-    <legend>Bracket ${i + 1}</legend>
+    <legend class="flight-card-head">Bracket ${i + 1}${canRemove ? ` <button type="button" class="btn ghost compact" data-remove-flight>Remove</button>` : ""}</legend>
     <div class="form-grid two">
       <label>Name <input name="flight_name" value="${escapeHtml(name)}" placeholder="Championship, Gold, Consolation…"></label>
       <label>Teams in this bracket <input name="flight_size" type="number" min="0" value="${escapeHtml(String(size))}" placeholder="leave blank if using seeds or teams"></label>
@@ -469,6 +473,12 @@ function bindOneFlightPlan(box, teams, fields) {
   if (!box) return;
   const countEl = box.querySelector("[name=flight_count]");
   const cards = () => box.querySelector("[data-flight-cards]");
+  const render = (plan) => {
+    const rows = (plan && plan.flights && plan.flights.length) ? plan.flights : [{ id: "", name: "" }];
+    if (countEl) countEl.value = String(rows.length);
+    cards().innerHTML = rows.map((f, i) => flightCard(f, i, teams || [], fields || [], rows.length > 1)).join("");
+    paintRemainder();
+  };
   const paintRemainder = () => {
     const plan = readFlightPlan(box);
     const sized = plan.flights.reduce((n, f) => {
@@ -492,8 +502,23 @@ function bindOneFlightPlan(box, teams, fields) {
     const plan = readFlightPlan(box);
     while (plan.flights.length < want) plan.flights.push({ id: "", name: "" });
     plan.flights = plan.flights.slice(0, want);
-    cards().innerHTML = plan.flights.map((f, i) => flightCard(f, i, teams || [], fields || [])).join("");
-    paintRemainder();
+    render(plan);
+  });
+  box.querySelector("[data-add-flight]")?.addEventListener("click", () => {
+    const plan = readFlightPlan(box);
+    if (plan.flights.length >= 40) return;
+    plan.flights.push({ id: "", name: "" });
+    render(plan);
+  });
+  box.addEventListener("click", (evnt) => {
+    const btn = evnt.target.closest("[data-remove-flight]");
+    if (!btn) return;
+    const plan = readFlightPlan(box);
+    if (plan.flights.length <= 1) return;
+    const card = btn.closest("[data-flight-card]");
+    const idx = [...box.querySelectorAll("[data-flight-card]")].indexOf(card);
+    if (idx >= 0) plan.flights.splice(idx, 1);
+    render(plan);
   });
   box.addEventListener("input", paintRemainder);
   paintRemainder();
@@ -1015,10 +1040,8 @@ const ROUND_META = {
 
 function flightPlanList(ev) {
   const plan = ev && ev.bracket_plan;
-  if (plan && Array.isArray(plan.flights) && plan.flights.length) return plan.flights;
-  const key = ev && ev.bracket_flights;
-  if (key === "gold-silver") return [{ id: "gold", name: "Gold" }, { id: "silver", name: "Silver" }];
-  if (key === "platinum-gold-silver") return [{ id: "platinum", name: "Platinum" }, { id: "gold", name: "Gold" }, { id: "silver", name: "Silver" }];
+  const flights = plan && Array.isArray(plan.flights) ? plan.flights : [];
+  if (flights.length) return flights;
   return [{ id: "", name: "" }];
 }
 

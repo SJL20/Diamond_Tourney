@@ -216,9 +216,13 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Custom bracket builder", event)
         self.assertIn("pool-double-elim", event)
         self.assertIn("round-robin", event)
-        self.assertIn("How many brackets", event)
+        self.assertIn("One bracket by default", event)
+        self.assertIn("Add another bracket", event)
+        self.assertIn("data-add-flight", event)
+        self.assertIn("data-remove-flight", event)
         self.assertIn("function flightPlanDesk", event)
         self.assertIn("function readFlightPlan", event)
+        self.assertIn("function defaultFlightRows", event)
         self.assertIn("bracket_plan", event)
         self.assertIn("flight_pool_from", event)
         self.assertIn("flight_seed_mode", event)
@@ -3759,13 +3763,16 @@ class FlexibleBracketTests(unittest.TestCase):
     def test_eventjson_returns_bracket_plan(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
         slug = "plan-audit-" + uuid.uuid4().hex[:8]
-        request(BASE, "POST", "/api/events/create", td, {
+        created = request(BASE, "POST", "/api/events/create", td, {
             "source": "native",
             "name": "Plan Audit Classic",
             "slug": slug,
             "venue": "Harbor",
             "ages": "10U",
         })
+        self.assertEqual(created["event"]["bracket_flights"], "none")
+        created_flights = (created["event"].get("bracket_plan") or {}).get("flights") or []
+        self.assertEqual(len(created_flights), 1)
         saved = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
             "bracket_plan": {
                 "flights": [

@@ -631,6 +631,15 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   font-family: "Oswald", sans-serif;
   padding: 0 4px;
 }
+.flight-card-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.flight-card-head .btn.compact {
+  padding: 2px 8px;
+  font-size: 0.85rem;
+}
 .flight-fields, .flight-teams {
   display: flex;
   flex-wrap: wrap;

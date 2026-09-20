@@ -211,10 +211,10 @@ what the next session should pick up.
 Derek’s Claude note listed Scarecrow as blocked on 25 / 26a / 26d / 30 / 26i.
 Item 25 was already on `eventJson` / `/plan` / `/board` (Claude grepped the
 wrong file). This PR adds `events.bracket_plan` and a director flow of
-**how many brackets → name each → custom split for each**. There is no
-automatic even split. A Gold / Silver key without sizes now refuses to draw
-and tells the director to assign a size, a seed range, a pool-finish range,
-or teams. Each card also sets seed mode (reseed vs keep overall), pairing,
+**one bracket by default, then add more → name each → custom split for each**.
+There is no automatic even split. A Gold / Silver key without sizes now
+refuses to draw and tells the director to assign a size, a seed range, a
+pool-finish range, or teams. Each card also sets seed mode (reseed vs keep overall), pairing,
 bye mode (top seeds or picked seeds), fields, and format.
 
 Byes are `status=bye` records: no game number, field, time, schedule row, or

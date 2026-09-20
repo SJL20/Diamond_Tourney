@@ -1517,8 +1517,8 @@ Item 26 now owns sizes, byes, and pairing. `eventJson` also returns
 **Shipped as director-authored plans. Even split was removed on purpose.**
 
 Worked example throughout: **14 teams, 8 in Gold, 6 in Silver.** That is a
-test shape, not a hardcoded product. The director types how many brackets,
-names each, and assigns each split.
+test shape, not a hardcoded product. The desk starts with one bracket. The
+director adds more if needed, names each, and assigns each split.
 
 ### What exists today (2026-09-20)
 
