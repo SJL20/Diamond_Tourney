@@ -1997,3 +1997,68 @@ A director can still override any resolved slot by hand afterward (item 26g).
 - [ ] Manual override still available after resolution
 - [ ] **Build the Scarecrow Slugfest Gold and Silver brackets above entirely in
       seed and winner references, before any pool game is played**
+
+
+## [ ] 31. Invite-only director signup with a request queue
+
+**High. Owner decision — the product is not open for public signup yet.**
+
+Account creation is currently open. It should be gated to people the owners
+invite, while the product is days old and support is two people.
+
+### What stays public
+
+**Only director account creation is gated.** Tournament boards, schedules,
+standings, brackets, stats and team pages stay fully public with no login — those
+links go to a hundred and twenty families per event and must never require an
+account.
+
+Team registration for a tournament also stays open where a director has enabled
+signup. A coach entering a team is not creating a director account.
+
+### The flow
+
+1. Someone hits the signup page and sees a short **request access** form: name,
+   organization, email, phone, what they run — "how many tournaments a year, what
+   age groups."
+2. The request lands in a queue and emails **hello@diamondtourney.com**.
+3. An owner approves or declines from an admin screen.
+4. Approval emails a single-use invite link, valid 14 days, that carries them
+   through account creation.
+5. Declines can be silent or send a short "not yet, we'll be in touch."
+
+Also support **direct invites** — an owner enters an email and sends an invite
+without a request. That is how most early users will actually arrive, since the
+owners will be recruiting directly.
+
+### Requirements
+
+- **Existing accounts keep working.** Do not lock out anyone already registered.
+- Invite links are single-use and expire; a used or expired link says so plainly
+  rather than failing oddly.
+- The request form is rate-limited and has basic spam protection.
+- Requests are stored, not only emailed — an owner needs a list, not an inbox.
+- Status per request: pending, invited, joined, declined.
+- Resend an invite from the queue.
+- **A kill switch**: a setting that opens signup to everyone, so this can be
+  turned off in one place when the product is ready, rather than needing a code
+  change.
+
+### Privacy
+
+Requests carry personal contact details. Same rule as item 2 — the queue is
+admin-only, never exposed on any public endpoint. Verify with a logged-out
+request against the API.
+
+### Acceptance criteria
+
+- [ ] Public signup replaced by a request access form
+- [ ] Requests stored and emailed to hello@diamondtourney.com
+- [ ] Owner can approve, decline, or directly invite from an admin screen
+- [ ] Invite link is single-use, expires, and gives a clear message when spent
+- [ ] Existing accounts unaffected
+- [ ] **Tournament boards, schedules, brackets and team pages remain public with
+      no login** — verify logged out
+- [ ] Team signup for a tournament still works without a director account
+- [ ] Request queue is admin-only, verified with a logged-out API call
+- [ ] A single setting opens signup publicly when ready

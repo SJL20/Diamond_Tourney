@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 101 unit/integration cases + 13 acceptance checks |
+| Tests | 103 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -138,6 +138,10 @@ direct unit tests for the hook modules.
 
 ### Closed
 
+- ~~**`POST /api/bot/event-update` inserted a new `event_boxes` row every
+  time.**~~ It now upserts via `attachUpdateBox` (same schedule_row), sets
+  `event`, and applies stored lines. Covered by `PressureBotTests`.
+
 - ~~**Stats inbox had no Approve/Reject for pending event boxes.**~~ Bots post
   `needs_review` to `POST /api/bot/event-box`, but Admin → Stats inbox only
   showed Open. Directors now Approve or Reject via
@@ -193,6 +197,18 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-19 — two-bot pressure test + event-update upsert
+
+Spun Bot A (season ingest/publish) and Bot C (event-box / event-update /
+gc-monitor) as parallel processes against a fresh weekend plus Hawks.
+Bots stayed out of Approve; director cleared the Stats inbox; public
+board/team JSON kept coach contacts off; leaders scaled (min 4 AB after
+two finals) and printed no over badge without an IP cap.
+
+`POST /api/bot/event-update` used to `new Record` a box every time and
+skip `event` / `applyBoxLines`. It now upserts through `attachUpdateBox`.
+Covered by `scripts/pressure_test_bots.py` and `PressureBotTests`.
 
 ### 2026-09-19 — Approve stats is on the game, overview, and Stats tab
 
