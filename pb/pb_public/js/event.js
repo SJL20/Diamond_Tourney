@@ -355,8 +355,8 @@ function flightPlanDesk(flights, teams, fields) {
       <p class="muted">One bracket by default. Add another only if this weekend needs a second tree — you name each one and assign its own split. There is no automatic even split.</p>
       <input type="hidden" name="flight_count" value="${rows.length}">
       <p class="muted" data-flight-remainder></p>
-      <div data-flight-cards>${rows.map((f, i) => flightCard(f, i, teams, fields, rows.length > 1)).join("")}</div>
       <button type="button" class="btn ghost" data-add-flight>Add another bracket</button>
+      <div data-flight-cards>${rows.map((f, i) => flightCard(f, i, teams, fields, rows.length > 1)).join("")}</div>
     </div>
   `;
 }
@@ -377,7 +377,10 @@ function flightCard(fl, i, teams, fields, canRemove) {
   const seedMode = fl.seed_mode || "reseed";
   const byeMode = fl.bye_mode || "top-seeds";
   return `<fieldset class="flight-card" data-flight-card>
-    <legend class="flight-card-head">Bracket ${i + 1}${canRemove ? ` <button type="button" class="btn ghost" data-remove-flight>Remove</button>` : ""}</legend>
+    <div class="flight-card-head">
+      <span class="flight-card-title">Bracket ${i + 1}</span>
+      ${canRemove ? `<button type="button" class="btn ghost" data-remove-flight>Remove</button>` : ""}
+    </div>
     <div class="flight-core form-grid two">
       <label>Name <input name="flight_name" value="${escapeHtml(name)}" placeholder="Championship, Gold, Consolation…"></label>
       <label>Teams in this bracket <input name="flight_size" type="number" min="0" value="${escapeHtml(String(size))}" placeholder="leave blank if using seeds or teams"></label>
@@ -518,6 +521,9 @@ function bindOneFlightPlan(box, teams, fields) {
     if (plan.flights.length >= 40) return;
     plan.flights.push({ id: "", name: "" });
     render(plan);
+    const added = [...box.querySelectorAll("[data-flight-card]")].at(-1);
+    added?.scrollIntoView({ behavior: "smooth", block: "start" });
+    added?.querySelector("[name=flight_name]")?.focus({ preventScroll: true });
   });
   box.addEventListener("click", (evnt) => {
     const btn = evnt.target.closest("[data-remove-flight]");
