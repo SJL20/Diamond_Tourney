@@ -152,8 +152,8 @@ function applyBoxLines(app, event, game, hitting, pitching) {
 function boxJson(app, rec) {
   return {
     id: rec.id,
-    hitting: rec.get("hitting") || [],
-    pitching: rec.get("pitching") || [],
+    hitting: asList(rec.get("hitting")),
+    pitching: asList(rec.get("pitching")),
     source: rec.get("source") || "",
     status: rec.get("status") || "submitted",
     note: rec.get("note") || "",

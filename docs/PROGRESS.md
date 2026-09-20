@@ -198,6 +198,27 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-20 — iOS tournament tab bar, compact stats, box review
+
+Phone still had a top tournament strip that scrolled sideways (Home through
+Admin). Apple HIG wants three to five bottom tabs with labels, 44px targets,
+and overflow in More — not a hidden extra page. Phone now uses Home,
+Schedule, Standings, Bracket, and More (Games, Stats, Info, Sign up, Admin).
+Desktop keeps the full top row, wrapping instead of scrolling.
+
+Stats / leaders / standings / year / season hitting no longer explode into
+one labeled box per cell. Phone shows iOS-style rows: name, a secondary
+line, and one primary number. Desktop tables stay.
+
+Approve stats was file/GC links only even though `listPendingBoxes` already
+returns converted `hitting` / `pitching`. Directors now see those lines on
+Admin → Approve stats, Overview, and the game page before they tap Approve.
+Empty is honest: “No converted hitting lines yet.” File and GC stay
+secondary. Bots still cannot Approve. BACKLOG 28b stays open.
+
+Covered by `MobileDisplayTests`, `test_display.mjs` (`asLineList`), and
+`EventBoxReviewTests` asserting pending boxes carry converted names.
+
 ### 2026-09-20 — One-PR mobile pass (chrome, cards, times, home)
 
 Phone review on Harbor Eight (390×844) showed the Admin rail stretching the
