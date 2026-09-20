@@ -116,6 +116,8 @@ class MobileDisplayTests(unittest.TestCase):
         self.assertIn(".tourney-tabbar", css)
         self.assertIn(".phone-stat-list", css)
         self.assertIn(".box-review-card", css)
+        self.assertIn("table.desktop-table", css)
+        self.assertGreater(css.find("table.desktop-table"), css.find(".card-table tbody { display: block"))
         chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
         self.assertIn("tourney-tabbar", chrome)
         self.assertIn("tourney-more-sheet", chrome)

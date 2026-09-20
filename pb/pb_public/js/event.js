@@ -1,4 +1,5 @@
 import { canAdminEvent, flashSaved, isDirector as recordIsDirector, isSiteAdmin, pageShell } from "./chrome.js";
+import { battingAverage, era, ipToOuts } from "./metrics.js";
 import {
   asLineList,
   formatDateDisplay,
@@ -54,7 +55,12 @@ function hitStatRow(r, nameHtml, extras = {}) {
     r.h != null && r.h !== "" ? `${r.h} H` : "",
     r.rbi != null && r.rbi !== "" ? `${r.rbi} RBI` : "",
   ].filter(Boolean).join(" · ");
-  const value = r.avg_display || r.avg || (r.h != null && r.h !== "" ? String(r.h) : "—");
+  let value = r.avg_display || r.avg;
+  if (!value && r.ab != null && r.ab !== "" && r.h != null && r.h !== "") {
+    const ab = Number(r.ab);
+    if (ab > 0) value = battingAverage(Number(r.h), ab);
+  }
+  if (!value) value = r.h != null && r.h !== "" ? String(r.h) : "—";
   return statRow({
     seed: extras.seed,
     name: nameHtml || escapeHtml(linePlayer(r)),
@@ -72,7 +78,12 @@ function pitStatRow(r, nameHtml, extras = {}) {
     ip != null && ip !== "" ? `${ip} IP` : "",
     k != null && k !== "" ? `${k} K` : "",
   ].filter(Boolean).join(" · ");
-  const value = r.era_display || r.era || (ip != null && ip !== "" ? String(ip) : "—");
+  let value = r.era_display || r.era;
+  if (!value && r.er != null && r.er !== "" && (r.ip != null || r.ip_outs != null)) {
+    const outs = r.ip_outs != null ? Number(r.ip_outs) : ipToOuts(r.ip);
+    if (outs) value = era(Number(r.er), outs);
+  }
+  if (!value) value = ip != null && ip !== "" ? String(ip) : "—";
   return statRow({
     seed: extras.seed,
     name: nameHtml || escapeHtml(linePlayer(r)),
@@ -1452,7 +1463,7 @@ export async function eventGame(slug, id) {
     ${detail.director && boxWaiting(box) ? `<section class="card approve-banner">
       <h2>Approve stats</h2>
       <p class="muted">${escapeHtml(box.source || "box")} · ${escapeHtml(box.status)}. Review the converted lines, then approve to publish. Reject leaves them off the public board.</p>
-      ${boxReviewCard(box, slug, { hideGameLink: true, showActions: true })}
+      ${boxReviewCard(box, slug, { hideGameLink: true, showActions: true, title: `${g.home} vs ${g.away}` })}
     </section>` : ""}
     <section class="card">
       <h2>Score</h2>
@@ -2384,7 +2395,7 @@ function boxReviewCard(box, slug, opts = {}) {
   const hit = asLineList(box.hitting);
   const pit = asLineList(box.pitching);
   const game = box.game || {};
-  const title = game.home && game.away ? `${game.home} vs ${game.away}` : (game.home || "Converted lines");
+  const title = opts.title || (game.home && game.away ? `${game.home} vs ${game.away}` : (game.home || "Converted lines"));
   const files = boxFileLinks(box);
   const waiting = boxWaiting(box);
   const showActions = opts.showActions !== false && waiting && box.id;

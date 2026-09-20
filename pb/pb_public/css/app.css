@@ -308,6 +308,7 @@ button, input, select, textarea { font: inherit; }
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 .box-review-head h3 { margin: 0 0 4px; font-size: 1.05rem; }
 .box-review-cols {
@@ -1118,10 +1119,13 @@ details.fields-block > summary {
   .more-done { width: calc(100% - 32px); margin: 12px 16px 0; }
   .phone-stat-list { display: grid; }
   .box-review-cols { grid-template-columns: 1fr; }
-  .desktop-table { display: none; }
   .card-table thead { display: none; }
   .card-table,
   .card-table tbody { display: block; width: 100%; }
+  table.desktop-table,
+  .card-table.desktop-table,
+  .card-table.desktop-table thead,
+  .card-table.desktop-table tbody { display: none; }
   .card-table tr {
     display: grid;
     gap: 2px;
