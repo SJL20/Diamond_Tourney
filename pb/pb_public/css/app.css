@@ -448,6 +448,8 @@ button, input, select, textarea { font: inherit; }
 }
 
 .table-wrap { overflow: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+table.desktop-table th,
+table.desktop-table td { white-space: nowrap; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 th {
@@ -992,12 +994,39 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .team-sheet { max-width: 720px; }
 
 .game-list { display: grid; gap: 10px; }
+.sched-board { display: grid; gap: 4px; }
+.sched-day { margin: 0 0 18px; }
+.sched-day h3 {
+  font-family: "Oswald", sans-serif;
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+}
 .game-card {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px 16px;
+  min-width: 0;
 }
+.game-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+}
+.game-card-ident {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.box-mark {
+  flex: 0 0 auto;
+  letter-spacing: 0.02em;
+}
+.badge.none { background: #eee; color: var(--muted); }
 .game-card-kicker {
   margin: 0 0 4px;
   font-size: 0.72rem;
@@ -1008,11 +1037,49 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 }
 .game-card-match {
   margin: 0 0 6px;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
+  overflow-wrap: break-word;
 }
-.game-card-when, .game-card-score { margin: 0 0 4px; }
+.game-card-when, .game-card-score { margin: 0 0 8px; color: var(--muted); }
+.game-card-sides {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.game-card-side {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.game-card-side span {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.game-card-side b {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.2rem;
+}
+.game-card-side.winner { font-weight: 700; }
+.game-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.game-card-foot a {
+  font-weight: 700;
+  color: var(--action);
+  text-decoration: none;
+}
 .game-card .actions { margin-top: 8px; }
 .fields-block.demoted { margin-top: 8px; }
 details.fields-block > summary {
@@ -1123,6 +1190,7 @@ details.fields-block > summary {
   .card-table,
   .card-table tbody { display: block; width: 100%; }
   table.desktop-table,
+  .table-wrap.desktop-table,
   .card-table.desktop-table,
   .card-table.desktop-table thead,
   .card-table.desktop-table tbody { display: none; }
@@ -1158,7 +1226,9 @@ details.fields-block > summary {
 }
 
 @media (min-width: 801px) {
-  .game-list { display: none; }
+  .game-list,
+  .phone-schedule,
+  .sched-day { display: none; }
 }
 
 @media print {

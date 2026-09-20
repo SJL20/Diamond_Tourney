@@ -138,6 +138,14 @@ direct unit tests for the hook modules.
 
 ### Closed
 
+- ~~**Phone Schedule showed a 7-column table that wrapped letter-by-letter.**~~
+  `schedulePair` put `desktop-table` on the wrapper only, so
+  `table.desktop-table` never matched and the table stayed visible under the
+  iOS tab bar. The hide rule now targets `.table-wrap.desktop-table` as well.
+  Phone Schedule is date-grouped game cards (home/away stacked with the
+  posted score); desktop keeps the table. Same pair is used on Games and the
+  team sheet. Covered by `MobileDisplayTests`.
+
 - ~~**`POST /api/bot/event-update` inserted a new `event_boxes` row every
   time.**~~ It now upserts via `attachUpdateBox` (same schedule_row), sets
   `event`, and applies stored lines. Covered by `PressureBotTests`.
@@ -197,6 +205,33 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-20 — Box chip: No box / Submitted / Approved
+
+Schedule cards only said “box” or nothing, so a director could not tell a
+posted scorebook from an approved one. The board now carries `box_status`
+from `event_boxes` (queued / submitted / needs_review / approved / rejected).
+Phone cards put a chip on the right: **No box**, **Submitted**, **Approved**,
+or **Rejected**. Desktop adds a Box column. Public JSON has no emails.
+
+Covered by `EventBoxReviewTests` (anonymous board before and after Approve)
+and `MobileDisplayTests` (`boxMark`).
+
+### 2026-09-20 — Phone Schedule no longer letter-wraps
+
+Live Test Run Schedule on a phone still showed Game / When / Field / Round /
+Home / Away / Score as a squeezed table. The prior mobile pass already built
+game cards, but `desktop-table` was on `.table-wrap` and the CSS only hid
+`table.desktop-table`, so the table stayed on top and wrapped Field into
+F-i-e-l-d.
+
+Phone now hides `.table-wrap.desktop-table` and lists date-grouped cards:
+game number, round, time, field, home and away on their own lines with the
+posted score, then status and one action. Desktop still uses the table.
+Games-by-field and the team sheet use the same hide rule. No stats invented;
+scores still come from the posted box.
+
+Covered by `MobileDisplayTests` (`scheduleCards`, `.table-wrap.desktop-table`).
 
 ### 2026-09-20 — iOS tournament tab bar, compact stats, box review
 

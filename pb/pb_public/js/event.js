@@ -472,6 +472,21 @@ function scoreCell(g) {
   return scoreText(g) + bookMark(g);
 }
 
+function boxState(g) {
+  const status = g?.box_status || "";
+  if (status === "approved") return { key: "approved", label: "Approved" };
+  if (status === "rejected") return { key: "rejected", label: "Rejected" };
+  if (status === "needs_review" || status === "submitted" || status === "queued" || g?.has_box) {
+    return { key: "needs_review", label: "Submitted" };
+  }
+  return { key: "none", label: "No box" };
+}
+
+function boxMark(g) {
+  const state = boxState(g);
+  return `<span class="badge ${state.key} box-mark">${escapeHtml(state.label)}</span>`;
+}
+
 function teamHref(eventSlug, teamSlug) {
   if (!eventSlug || !teamSlug) return "";
   return `/t/${eventSlug}/team/${teamSlug}`;
@@ -530,6 +545,22 @@ function gameKindLabel(g) {
   return "Pool";
 }
 
+function sideRuns(g, side) {
+  if (g.score_source === "conflict" || g.book_state === "conflict") return "—";
+  if (g.home_runs == null && g.away_runs == null) return "";
+  const v = side === "home" ? g.home_runs : g.away_runs;
+  return v == null ? "—" : String(v);
+}
+
+function sideWins(g, side) {
+  if (g.home_runs == null || g.away_runs == null) return false;
+  if (g.score_source === "conflict" || g.book_state === "conflict") return false;
+  const home = Number(g.home_runs);
+  const away = Number(g.away_runs);
+  if (!Number.isFinite(home) || !Number.isFinite(away) || home === away) return false;
+  return side === "home" ? home > away : away > home;
+}
+
 function gameCard(g, slug, opts = {}) {
   const kind = opts.kind || gameKindLabel(g);
   const href = opts.href || gameHref(slug, g);
@@ -537,18 +568,63 @@ function gameCard(g, slug, opts = {}) {
     ? ` <span class="muted">(was ${escapeHtml(formatTimeDisplay(g.delayed_from) || g.delayed_from)})</span>`
     : "";
   const openLabel = opts.openLabel || (g.kind === "bracket" ? "Bracket" : (g.can_score ? "Post score" : "Open"));
+  const when = opts.hideDate
+    ? (formatTimeDisplay(g.time) || (g.time ? String(g.time) : "TBD"))
+    : whenLine(g);
+  const homeScore = sideRuns(g, "home");
+  const awayScore = sideRuns(g, "away");
   return `<article class="game-card${g.status === "live" ? " live" : ""}">
-    <p class="game-card-kicker">${escapeHtml([gameNo(g), kind].filter(Boolean).join(" · "))}</p>
-    <p class="game-card-match">${teamLink(slug, g.home_slug, g.home || "TBD")} vs ${teamLink(slug, g.away_slug, g.away || "TBD")}</p>
-    <p class="game-card-when">${escapeHtml(whenLine(g))}${g.field ? ` · ${escapeHtml(g.field)}` : ""}${delayed}</p>
-    <p class="game-card-score">${scoreCell(g)} · ${escapeHtml(g.status || "")}${g.has_box ? " · box" : ""}</p>
-    ${g.id || href ? `<p class="actions"><a data-link href="${href}">${escapeHtml(openLabel)}</a></p>` : ""}
+    <div class="game-card-top">
+      <span class="game-card-ident">
+        ${gameNo(g) ? `<span class="game-no">${escapeHtml(gameNo(g))}</span>` : ""}
+        <span class="ov-kind ${escapeHtml(g.kind || "")}">${escapeHtml(kind)}</span>
+      </span>
+      ${boxMark(g)}
+    </div>
+    <p class="game-card-when">${escapeHtml(when)}${g.field ? ` · ${escapeHtml(g.field)}` : ""}${delayed}</p>
+    <div class="game-card-sides">
+      <div class="game-card-side${sideWins(g, "home") ? " winner" : ""}">
+        <span>${teamLink(slug, g.home_slug, g.home || "TBD")}</span>
+        ${homeScore !== "" ? `<b>${escapeHtml(homeScore)}</b>` : ""}
+      </div>
+      <div class="game-card-side${sideWins(g, "away") ? " winner" : ""}">
+        <span>${teamLink(slug, g.away_slug, g.away || "TBD")}</span>
+        ${awayScore !== "" ? `<b>${escapeHtml(awayScore)}</b>` : ""}
+      </div>
+    </div>
+    <p class="game-card-foot">
+      <span>${bookMark(g)}${escapeHtml(g.status || "")}</span>
+      ${g.id || href ? `<a data-link href="${href}">${escapeHtml(openLabel)}</a>` : ""}
+    </p>
   </article>`;
 }
 
 function schedulePair(headers, rows, cards) {
-  return `${table(headers, rows, { className: "", wrapClass: "desktop-table" })}
-    <div class="game-list">${(cards || []).join("")}</div>`;
+  return `${table(headers, rows, { className: "desktop-table", wrapClass: "desktop-table" })}
+    <div class="phone-schedule">${cards || ""}</div>`;
+}
+
+function scheduleCards(games, slug, opts = {}) {
+  const list = games || [];
+  if (!list.length) return "";
+  if (opts.groupBy !== "date") {
+    return `<div class="game-list">${list.map((g) => gameCard(g, slug, opts)).join("")}</div>`;
+  }
+  const groups = [];
+  const byDate = new Map();
+  for (const g of list) {
+    const key = g.date || "TBD";
+    if (!byDate.has(key)) {
+      byDate.set(key, []);
+      groups.push(key);
+    }
+    byDate.get(key).push(g);
+  }
+  return groups.map((key) => `
+    <section class="sched-day">
+      <h3>${escapeHtml(formatDateDisplay(key) || key)}</h3>
+      <div class="game-list">${byDate.get(key).map((g) => gameCard(g, slug, { ...opts, hideDate: true })).join("")}</div>
+    </section>`).join("");
 }
 
 function fieldSortParts(name) {
@@ -601,16 +677,17 @@ function scheduleByField(games, slug) {
     return `
     <div class="sched-field">
       <h3>${escapeHtml(name)}</h3>
-      ${schedulePair(["Game", "When", "Pool", "Home", "Away", "Score", ""], rows.map((g) => `<tr>
+      ${schedulePair(["Game", "When", "Pool", "Home", "Away", "Score", "Box", ""], rows.map((g) => `<tr>
         <td>${gameNoCell(g)}</td>
         <td>${escapeHtml(whenLine(g))}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(formatTimeDisplay(g.delayed_from) || g.delayed_from)})</span>` : ""}</td>
         <td>${escapeHtml(g.pool || "")}</td>
         <td>${teamLink(slug, g.home_slug, g.home)}</td><td>${teamLink(slug, g.away_slug, g.away)}</td>
         <td>${scoreCell(g)}</td>
-        <td>${escapeHtml(g.status)}${g.has_box ? " · box" : ""}
+        <td>${boxMark(g)}</td>
+        <td>${escapeHtml(g.status)}
           ${g.id ? ` · <a data-link href="/t/${escapeHtml(slug)}/games/${g.id}">${g.can_score ? "Post score" : "Open"}</a>` : ""}
         </td>
-      </tr>`), rows.map((g) => gameCard(g, slug)))}
+      </tr>`), scheduleCards(rows, slug))}
     </div>`;
   }).join("");
 }
@@ -1405,8 +1482,7 @@ export async function eventOverall(slug) {
       <p class="muted">Every game this weekend — pool play and the bracket — sorted by date, first pitch, and field.</p>
     </section>
     ${rainBanner(board.event)}
-    <section class="card">
-      ${rows.length ? schedulePair(["Game", "When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
+    ${rows.length ? `<div class="sched-board">${schedulePair(["Game", "When", "Field", "Round", "Home", "Away", "Score", "Box"], rows.map((g) => {
         const kind = g.kind === "bracket" ? (ROUND_META[g.round]?.label || g.round || "Bracket") : (g.round || "Pool");
         const href = g.kind === "pool" && g.id
           ? `/t/${escapeHtml(slug)}/games/${g.id}`
@@ -1421,9 +1497,9 @@ export async function eventOverall(slug) {
           <td>${scoreCell(g)} · ${escapeHtml(g.status || "")}
             ${g.id ? ` · <a data-link href="${href}">${g.kind === "pool" ? (g.can_score ? "Post score" : "Open") : "Bracket"}</a>` : ""}
           </td>
+          <td>${boxMark(g)}</td>
         </tr>`;
-      }), rows.map((g) => gameCard(g, slug))) : tabEmpty(board.event, slug, "schedule")}
-    </section>
+      }), scheduleCards(rows, slug, { groupBy: "date" }))}</div>` : `<section class="card">${tabEmpty(board.event, slug, "schedule")}</section>`}
   `);
 }
 
@@ -3833,7 +3909,7 @@ export async function eventTeamPage(eventSlug, teamSlug) {
       ${nextGameCard(ev.slug, team, page.next)}
       <section class="card">
         <h2>Schedule</h2>
-        ${(page.schedule || []).length ? schedulePair(["Game", "When", "Field", "Opponent", "Result"], page.schedule.map((g) => {
+        ${(page.schedule || []).length ? schedulePair(["Game", "When", "Field", "Opponent", "Result", "Box"], page.schedule.map((g) => {
           const usHome = g.home === team.name || g.home_id === team.id;
           const opp = usHome ? g.away : g.home;
           const oppSlug = usHome ? g.away_slug : g.home_slug;
@@ -3844,19 +3920,26 @@ export async function eventTeamPage(eventSlug, teamSlug) {
             <td>${escapeHtml(g.field || "—")}</td>
             <td>${teamLink(ev.slug, oppSlug, opp || "TBD")}</td>
             <td>${past ? scoreCell(g) : "—"}</td>
+            <td>${boxMark(g)}</td>
           </tr>`;
-        }), page.schedule.map((g) => {
+        }), `<div class="game-list">${page.schedule.map((g) => {
           const usHome = g.home === team.name || g.home_id === team.id;
           const opp = usHome ? g.away : g.home;
           const oppSlug = usHome ? g.away_slug : g.home_slug;
           const past = g.status === "final" || g.score_source === "one_book" || g.score_source === "verified";
           return `<article class="game-card${g.status === "live" ? " live" : ""}">
-            <p class="game-card-kicker">${escapeHtml([gameNo(g), g.round || g.pool].filter(Boolean).join(" · "))}</p>
-            <p class="game-card-match">vs ${teamLink(ev.slug, oppSlug, opp || "TBD")}</p>
+            <div class="game-card-top">
+              <span class="game-card-ident">
+                ${gameNo(g) ? `<span class="game-no">${escapeHtml(gameNo(g))}</span>` : ""}
+                <span class="ov-kind">${escapeHtml(g.round || g.pool || "")}</span>
+              </span>
+              ${boxMark(g)}
+            </div>
             <p class="game-card-when">${escapeHtml(whenLine(g))}${g.field ? ` · ${escapeHtml(g.field)}` : ""}</p>
-            <p class="game-card-score">${past ? scoreCell(g) : "—"}</p>
+            <p class="game-card-match">${usHome ? "vs" : "@"} ${teamLink(ev.slug, oppSlug, opp || "TBD")}</p>
+            <p class="game-card-foot"><span>${past ? scoreCell(g) : "—"}</span></p>
           </article>`;
-        })) : `<p class="empty">No games posted for this team yet.</p>`}
+        }).join("")}</div>`) : `<p class="empty">No games posted for this team yet.</p>`}
       </section>
       <section class="card">
         <h2>Record</h2>
