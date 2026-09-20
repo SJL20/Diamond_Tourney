@@ -9,6 +9,61 @@ proposing an alternative.
 
 Status: `[ ]` open, `[x]` done, `[~]` in progress.
 
+Checked against `main` after PRs #31–#36. BACKLOG numbers
+**29 / 30 / 31** are these owner items (logos, custom-bracket seeds, invite-only
+signup). They are **not** GitHub PRs #29 / #30 / #31.
+
+There is no open heading **25** in the original Derek list. Claude’s 8:33 mail
+called the Gold/Silver persist leftover “item 25.” That leftover is shipped;
+the heading is recorded below as `[x] 25` so the next agent does not reopen it
+as missing. Item **26** is still the real flight-sizing / bye / pairing work.
+
+GitHub issue still open: **#7** (signup email) — same work as item 1. Agents
+cannot close issues (403).
+
+### Status board
+
+| # | Status | What is left |
+|---|---|---|
+| 1 | `[~]` | Fly SMTP + SPF/DKIM + live inbox proof. Code already sends. |
+| 2–10 | `[x]` | — |
+| 11 | `[x]` | Live Keystone pool-CSV → standings → 8-team DE (ops, not missing code) |
+| 12–15 | `[x]` | — |
+| 16 | `[x]` | Clear leftover scarecrow-slugfest empty-standings bracket if it is still on the live site (ops) |
+| 17–20 | `[x]` | — |
+| 21 | `[x]` | Verified GameChanger export steps + live coach-email E2E (needs item 1 SMTP and owner screenshots). Do not invent iOS/Android menu names. |
+| 22 | `[x]` | GameChanger screenshots on the help page and in the upload email (owner supplies) |
+| 23–25 | `[x]` | — |
+| 26 | `[ ]` | **Next product build.** 8 Gold / 6 Silver, byes, pairing patterns |
+| 26i | `[ ]` | Scarecrow Slugfest reference bracket (attach schedule.xlsx) |
+| 27 | `[x]` | Park hours + 12-hour times + weekday dates |
+| 28 | `[x]` | Home-page redesign |
+| 28b | `[ ]` | Live scores. Coordinate with Steve. |
+| 29 | `[ ]` | Team logos (this item, not PR #29) |
+| 30 | `[ ]` | Custom bracket Home/Away accept seed / winner / loser (this item, not PR #30) |
+| 31 | `[ ]` | Invite-only director signup (this item, not PR #31) |
+| 32 | `[x]` | Live leader gates scale with games played; no “over” without an IP cap (PR #30) |
+| 33 | `[x]` | Approve stats on the game, overview, and Admin rail (PR #29 + #31) |
+| 34 | `[x]` | iOS tab bar, compact stats, converted-line review (PR #35) |
+
+### Still pending (work these)
+
+Do not reorder without asking the owner. Item 23’s old “park until 1–22” note
+was overridden; assist is already shipped.
+
+1. **26 + 26i** — blocker for the next event
+2. **28b** — live scores (ask Steve before building)
+3. **29** — team logos
+4. **30** — custom bracket seed and winner references
+5. **31** — invite-only director signup
+6. **Ops leftovers** (do not write fake product code to tick these): item 1 SMTP,
+   item 11 Keystone CSV weekend, item 16 scarecrow leftover bracket, item 21/22
+   owner GameChanger screenshots and a real inbox test
+
+Out of scope unless the owner asks: Finding 2 (Keystone stored zeros), two-bot
+pressure-test engineering, wiping Fly `/data`, isolated leftover `:8097` Harbor
+data, inventing Friday/Saturday Keystone pool boxes the popup does not list.
+
 ---
 
 ## [~] 1. No email is sent when a user signs up
@@ -310,6 +365,14 @@ storage stay. Baseball can still turn a limit on later without a rebuild.
 - [x] Field and storage retained
 - [x] Appears when sport is baseball — section always visible; mode defaults to none
 
+Live Test Run also showed “Weekend limit 0.0 IP” and an over badge when the
+mode was none, plus Min 8 AB / Min 5 IP on leaders after a couple of games.
+That is shipped as **item 32** (PR #30). Pitching counts print “No posted
+weekend inning cap” unless `pitch_limit_mode` is `ip` or `both` and the IP
+cap is above zero. Live `/leaders` and `/stats` gates start at 2 AB / 1.0 IP
+and rise with finals played, capped at the Sunday awards line (8 AB / 3.0 IP).
+Do not hide this section. Do not change metric formulas.
+
 ---
 
 ## [x] 9. Field rows skip numbers on Add another field
@@ -336,7 +399,7 @@ index is `rows.length` and submitted names stay `field_name_0`, `field_name_1`,
 - [x] Twenty fields save and reload
 - [x] Existing tournament fields re-save unchanged
 
-- [x] ## [x] 10. Remove both map pin nudge controls; add a field map upload instead
+## [x] 10. Remove both map pin nudge controls; add a field map upload instead
 
 **High. Owner has raised this repeatedly — it is still live on the site.**
 
@@ -475,7 +538,7 @@ the bracket draws from them.
       compute with correct seeds, then draw the 8-team double-elim bracket from them**
 
 
-      ## [x] 12. Info page shows Keystone Clash's dates and parking map on other tournaments
+## [x] 12. Info page shows Keystone Clash's dates and parking map on other tournaments
 
 **High. Owner-reproduced on /t/scarecrow-slugfest/info — wrong data shown publicly.**
 
@@ -1134,6 +1197,12 @@ supplied.
 
 Covered by `BoxScoreTeamPageTests.test_box_mail_tokens_reconcile_and_privacy`.
 
+Directors approve queued `event_boxes` with
+`POST /api/events/{slug}/boxes/{id}/review`. **Approve stats** is on the game
+page, Admin overview, and the Admin rail (item 33 / PRs #29 + #31). Bots still
+cannot approve. Packet Approve on Teams is insurance/roster files, not box
+stats.
+
 ### Acceptance criteria
 
 - [x] Cron fires within 15 minutes of a game's expected end
@@ -1215,7 +1284,8 @@ Sort conflicts to the top. Outstanding submissions next, with a resend button pe
 team. Everything verified drops to the bottom.
 
 This is the Sunday-morning screen. It tells a director exactly which two coaches
-to go find.
+to go find. The Admin rail label is **Approve stats** (item 33), not a hidden
+“Stats inbox.”
 
 ### 22d. First submission still populates the score
 
@@ -1256,7 +1326,8 @@ Covered by `BoxScoreTeamPageTests.test_box_mail_tokens_reconcile_and_privacy`.
 
 ## [x] 23. Schedule feasibility assistant for directors
 
-**Differentiator, not a blocker. Park until items 1–22 are done.**
+**Differentiator, not a blocker.** The original note said park until items 1–22
+were done. The owner overrode that. Assist is shipped on `main`.
 
 Let a director ask plain-language questions about their own tournament and get a
 grounded answer with the arithmetic shown.
@@ -1423,19 +1494,40 @@ Covered by `BoxScoreTeamPageTests.test_team_names_link_and_public_json_omits_con
 - [x] Director and team manager see paid status and box score state on the same page
 
 
+## [x] 25. Gold/Silver flight *labels* persist on save
+
+Claude’s 8:33 mail called this leftover “item 25.” It was never a Derek heading.
+Recorded here so it is not reopened as missing.
+
+`bracket_flights` already returned on `/board` and `/plan`, and `/settings`
+already saved it. Auto-schedule only wrote flights inside `if (format)`. It now
+saves on that path even when format is unchanged. A settings POST with only
+`bracket_flights` is checked on both `/plan` and `/board`.
+
+**This is not item 26.** Labels persist. Sizes do not. Fourteen teams still
+even-split 7 and 7. No 8/6, no byes, no pairing patterns.
+
+- [x] Flight labels persist when the director saves settings or auto-schedules
+- [x] Board and plan return `bracket_flights`
+- [x] A copied Keystone `parking-map.png` packet URL does not render on any
+      other slug (item 12b leftover, same 8:33 mail)
+
+
 ## [ ] 26. Bracket seeding, flight sizing, pairing patterns and byes
 
 **Blocker for the next event. Largest single gap in the product.**
 
 Worked example throughout: **14 teams, 8 in Gold, 6 in Silver.**
 
-### What exists today
+### What exists today (2026-09-20)
 
-`splitFlights()` in `pb/pb_hooks/schedule.js` divides teams evenly:
-`Math.ceil(leftTeams / leftFlights)`. Fourteen teams into two flights gives 7 and
-7. There is no way to ask for 8 and 6.
+Directors can pick Gold/Silver (or Platinum/Gold/Silver) **labels**. Those
+labels persist on settings and auto-schedule (item 25). `splitFlights()` in
+`pb/pb_hooks/schedule.js` still even-splits:
+`Math.ceil(leftTeams / leftFlights)`. Fourteen teams into two flights gives 7
+and 7. There is no way to ask for 8 and 6.
 
-Grep finds no bye handling anywhere in the codebase. A 6-team bracket needs two.
+Grep finds no bye handling anywhere in the hooks. A 6-team bracket needs two.
 
 A director cannot currently control how teams split, how they pair, or who sits
 out round one — which is most of what designing a bracket is.
@@ -1571,7 +1663,7 @@ change that breaks the structure; do not block it. The director is the authority
 
 ## [ ] 26i. Reference implementation — Scarecrow Slugfest bracket
 
-**Attach the original schedule.xlsx to this issue.**
+**Attach the original schedule.xlsx to this issue. Still open 2026-09-20.**
 
 The director's own bracket, built by hand. This is the target output. Anything
 that cannot reproduce it exactly is not finished.
@@ -1692,7 +1784,9 @@ event's own configuration, never from a remembered example.
 
 ## [x] 27. Human-readable times and dates everywhere; rename "Global hours"
 
-**Medium. Affects every public page. Owner-flagged.**
+**Medium. Affects every public page. Owner-flagged. Still open 2026-09-20.**
+The public home card still prints `Global hours` and raw `08:00–18:00`
+(`event.js`). No shared 12-hour time or weekday date formatter.
 
 ### 27a. "Global hours" is engineer language
 
@@ -1759,6 +1853,8 @@ use Park hours, weekday dates, and 12-hour first pitch.
 ## [x] 28. Redesign the tournament home page
 
 **High. Owner-flagged: "plain and boring." The most-visited page in the product.**
+Still open 2026-09-20. Team names already link to team pages (item 24). Venue
+photos already upload (item 10). The home hierarchy has not been rebuilt.
 
 Do not treat this as a styling pass. The page is dull because the hierarchy is
 wrong — it opens with field hours, which almost nobody came for.
@@ -1849,10 +1945,11 @@ Posted finals can show as “Recently final.” **28b live polling is still open
 and waits on Steve — this page does not auto-refresh or invent a live score.
 
 
-      ## [ ] 28b. Live scores on the tournament home page
+## [ ] 28b. Live scores on the tournament home page
 
-**Coordinate with Steve before building — he has live score work in progress.
-This item describes what the home page needs from it, not how to build it.**
+**Still open 2026-09-20. Coordinate with Steve before building — he has live
+score work in progress. This item describes what the home page needs from it,
+not how to build it.**
 
 Live scores are the reason to open the page twice on a Saturday instead of once.
 They should be the dominant element while the tournament is running.
@@ -1886,7 +1983,8 @@ is that the home page surfaces it, not that a second version gets written.
 
 ## [ ] 29. Team logos
 
-**Medium. Owner request. Large visual payoff for modest work.**
+**Medium. Owner request. Large visual payoff for modest work. Still open
+2026-09-20.** This is BACKLOG 29, not GitHub PR #29.
 
 Logos are what make a bracket look like a real bracket instead of a table of text.
 Every club already has one and is proud of it.
@@ -1946,6 +2044,9 @@ before shipping uploads — it is the state most teams will be in.
 ## [ ] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
 
 **High. Blocks building a bracket before pool play. Corrects a recent change.**
+Still open 2026-09-20. This is BACKLOG 30, not GitHub PR #30. CSV import already
+accepts `seed:3` / `winner:B1` / `loser:B5`. The custom builder and scheduler
+Add-game / edit rows still say “registered teams only.”
 
 The custom bracket builder restricts Home and Away to registered teams
 (`pb/pb_public/js/event.js` line 2230, tightened by the commit "Require
@@ -2012,6 +2113,9 @@ A director can still override any resolved slot by hand afterward (item 26g).
 ## [ ] 31. Invite-only director signup with a request queue
 
 **High. Owner decision — the product is not open for public signup yet.**
+Still open 2026-09-20. This is BACKLOG 31, not GitHub PR #31. `/register` is
+still a public Create account form. Tournament team signup is separate and
+must stay open where the director enabled it.
 
 Account creation is currently open. It should be gated to people the owners
 invite, while the product is days old and support is two people.
@@ -2072,6 +2176,59 @@ request against the API.
 - [ ] Team signup for a tournament still works without a director account
 - [ ] Request queue is admin-only, verified with a logged-out API call
 - [ ] A single setting opens signup publicly when ready
+
+## [x] 32. Live leader gates scale with games played; no “over” without an IP cap
+
+**Owner, Test Run on diamondtourney.com. Not in the original Derek numbered
+list.** Shipped on `main` as GitHub PR #30 (`943a329`).
+
+Native weekends default to `pitch_limit_mode=none`. A 0.0 IP cap was treated as
+a real cap, so any inning printed **over**. Counts now say “No posted weekend
+inning cap” and never print over/ok unless the mode is `ip` or `both` and the
+IP cap is above zero. Do not hide the pitching-limit section (item 8).
+
+Live `/leaders` and `/stats` mins scale with finals played per team (max):
+
+    min_ab = min(8, max(2, games * 2))
+    min_ip = min(3, max(1, games))
+
+Sunday awards stay 8 AB / 3.0 IP. Keystone packet mins stay as published. Do
+not change metric formulas. Youth ERA base is still 7.
+
+Covered by `LeaderQualifyTests`.
+
+- [x] No over badge when there is no posted IP cap
+- [x] Live gates start at 2 AB / 1.0 IP and rise after a couple of games
+- [x] Awards stay 8 AB / 3.0 IP
+- [x] Packet mins still override when the event published them
+
+
+## [x] 33. Approve stats is on the game, overview, and Admin rail
+
+**Owner could not find the approve button.** Shipped on `main` as GitHub PRs
+#29 (`9cab1af`) and #31 (`1b094a8`).
+
+`POST /api/events/{slug}/boxes/{id}/review` lets a director Approve or Reject
+a pending `event_boxes` row. Bots are refused. Reject flips status only and
+does not delete live hitting/pitching. Season-team staging Approve is
+unchanged.
+
+The buttons were only on a hidden Stats inbox. They are now on:
+
+- the game page, above Score, when the viewer is a director and a box is waiting
+- Admin overview, first jump, with the waiting table
+- the Admin rail, labeled **Approve stats** (badge = waiting count)
+- a banner on public Stats / leaders for a logged-in director
+
+Packet Approve on Teams is insurance/roster files, not box stats.
+
+Covered by `EventBoxReviewTests` and the Approve-stats markup checks in
+`TournamentUiTests`.
+
+- [x] Director can Approve / Reject a pending event box
+- [x] Bots cannot approve
+- [x] Approve stats is on the game, overview, and Admin rail
+- [x] Packet Approve on Teams is unchanged
 
 ---
 

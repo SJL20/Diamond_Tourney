@@ -265,6 +265,18 @@ card-table labels for standings/stats/books, stacked bracket rounds, and a
 parent home that leads with next pitch and team chips. Field hours are
 collapsed. Live-score polling (BACKLOG 28b) is not in this PR.
 
+### 2026-09-20 — BACKLOG statuses match `main` through PR #36
+
+`docs/BACKLOG.md` has a status board and a pending list. Items 1–25 stay as
+they were (1 still `[~]` for Fly SMTP). Items 26–26i stay open. 27 and 28
+are done; **28b** live scores stays open. Shipped owner requests that had no
+heading are **32** (dynamic live gates, PR #30), **33** (Approve stats
+findable, PRs #29 + #31), and **34** (iOS tab bar / compact stats / review,
+PR #35). BACKLOG 29/30/31 are not those GitHub PRs.
+
+Next product build is still **26 + 26i**. Do not invent GameChanger menu names
+to close 21/22. GitHub issue #7 stays open (same as item 1).
+
 ### 2026-09-19 — two-bot pressure test + event-update upsert
 
 Spun Bot A (season ingest/publish) and Bot C (event-box / event-update /
