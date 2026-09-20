@@ -112,6 +112,7 @@ class MobileDisplayTests(unittest.TestCase):
         self.assertIn(".desktop-table", css)
         self.assertIn(".card-table td::before", css)
         self.assertIn(".game-list", css)
+        self.assertIn(".admin-rail nav.admin-rail-nav", css)
 
 
 class TournamentUiTests(unittest.TestCase):

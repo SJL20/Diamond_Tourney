@@ -329,7 +329,7 @@ button, input, select, textarea { font: inherit; }
     min-height: 44px;
     font-size: 16px;
   }
-  .admin-rail-nav { display: none; }
+  .admin-rail nav.admin-rail-nav { display: none; }
   .admin-jump button.link { width: 100%; }
 }
 
