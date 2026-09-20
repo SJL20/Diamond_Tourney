@@ -344,6 +344,10 @@ function defaultFlightRows(flights) {
   return [{ id: "", name: "" }];
 }
 
+function flightMoreOpen() {
+  try { return window.matchMedia("(min-width: 801px)").matches; } catch (err) { return true; }
+}
+
 function flightPlanDesk(flights, teams, fields) {
   const rows = defaultFlightRows(flights);
   return `
@@ -373,59 +377,64 @@ function flightCard(fl, i, teams, fields, canRemove) {
   const seedMode = fl.seed_mode || "reseed";
   const byeMode = fl.bye_mode || "top-seeds";
   return `<fieldset class="flight-card" data-flight-card>
-    <legend class="flight-card-head">Bracket ${i + 1}${canRemove ? ` <button type="button" class="btn ghost compact" data-remove-flight>Remove</button>` : ""}</legend>
-    <div class="form-grid two">
+    <legend class="flight-card-head">Bracket ${i + 1}${canRemove ? ` <button type="button" class="btn ghost" data-remove-flight>Remove</button>` : ""}</legend>
+    <div class="flight-core form-grid two">
       <label>Name <input name="flight_name" value="${escapeHtml(name)}" placeholder="Championship, Gold, Consolation…"></label>
       <label>Teams in this bracket <input name="flight_size" type="number" min="0" value="${escapeHtml(String(size))}" placeholder="leave blank if using seeds or teams"></label>
-      <label>Overall seeds from <input name="flight_seed_from" type="number" min="0" value="${escapeHtml(String(seedFrom))}" placeholder="1"></label>
-      <label>through <input name="flight_seed_to" type="number" min="0" value="${escapeHtml(String(seedTo))}" placeholder="8"></label>
-      <label>Or specific overall seeds <input name="flight_seeds" value="${escapeHtml(seedList)}" placeholder="1, 4, 5, 8"></label>
-      <label>Pool finish from <input name="flight_pool_from" type="number" min="0" value="${escapeHtml(String(poolFrom))}" placeholder="1"></label>
-      <label>through <input name="flight_pool_to" type="number" min="0" value="${escapeHtml(String(poolTo))}" placeholder="2 = winners and runners-up"></label>
-      <label>Seeds inside this bracket
-        <select name="flight_seed_mode">
-          <option value="reseed" ${seedMode !== "overall" ? "selected" : ""}>Reseed 1…n in this bracket</option>
-          <option value="overall" ${seedMode === "overall" ? "selected" : ""}>Keep overall seed numbers</option>
-        </select>
-      </label>
-      <label>This bracket’s format
-        <select name="flight_format">
-          <option value="" ${!fmt ? "selected" : ""}>Same as weekend format</option>
-          <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
-          <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
-          <option value="4gg-double-elim" ${fmt === "4gg-double-elim" ? "selected" : ""}>4-game-guarantee double elim</option>
-          <option value="round-robin" ${fmt === "round-robin" ? "selected" : ""}>Round robin</option>
-        </select>
-      </label>
-      <label>Pairing
-        <select name="flight_pairing">
-          ${[["high-low", "High-low (1v last)"], ["split-field", "Split field"], ["cross-pool", "Avoid pool rematches"], ["blind", "Blind draw"], ["manual", "Manual later"]].map(([v, l]) =>
-            `<option value="${v}" ${(fl.pairing || "high-low") === v ? "selected" : ""}>${l}</option>`).join("")}
-        </select>
-      </label>
-      <label>Byes
-        <select name="flight_bye_mode">
-          <option value="top-seeds" ${byeMode !== "manual" ? "selected" : ""}>Automatic to the top seeds</option>
-          <option value="manual" ${byeMode === "manual" ? "selected" : ""}>Director picks the bye seeds</option>
-        </select>
-      </label>
-      <label>Bye seeds (if picked) <input name="flight_bye_seeds" value="${escapeHtml(byeSeeds)}" placeholder="1, 2"></label>
-      <label>First pitch <input name="flight_start" type="time" value="${escapeHtml(fl.start_time || "")}"></label>
-      <label>Minutes per slot <input name="flight_slot" type="number" min="30" value="${escapeHtml(String(fl.slot_minutes || 90))}"></label>
-      <label>Finish by <input name="flight_finish" type="time" value="${escapeHtml(fl.finish_time || "")}"></label>
-      <label>Game labels start with <input name="flight_prefix" value="${escapeHtml(fl.game_prefix || "G")}" placeholder="G"></label>
     </div>
-    <label class="check"><input type="checkbox" name="flight_later" ${(fl.later_slot_for_top_seeds !== false) ? "checked" : ""}> When a round needs two times, the top seed’s half plays later</label>
-    <label class="check"><input type="checkbox" name="flight_consolation" ${fl.consolation ? "checked" : ""}> Consolation / placement games</label>
-    <label class="check"><input type="checkbox" name="flight_third" ${fl.third_place ? "checked" : ""}> Third-place game</label>
-    <label class="check"><input type="checkbox" name="flight_ifn" ${fl.if_necessary ? "checked" : ""}> If-necessary championship (double elim)</label>
-    ${(fields || []).length ? `<fieldset class="flight-fields"><legend>Diamonds for this bracket</legend>${fields.map((f) => {
-      const fname = typeof f === "string" ? f : (f.name || "");
-      if (!fname) return "";
-      return `<label class="check"><input type="checkbox" name="flight_field" value="${escapeHtml(fname)}" ${pickedFields.has(fname) ? "checked" : ""}> ${escapeHtml(fname)}</label>`;
-    }).join("")}</fieldset>` : ""}
-    ${(teams || []).length ? `<fieldset class="flight-teams"><legend>Or assign specific teams</legend>${teams.map((t) =>
-      `<label class="check"><input type="checkbox" name="flight_team" value="${escapeHtml(t.id)}" ${assigned.has(t.id) ? "checked" : ""}> ${escapeHtml(t.name)}</label>`).join("")}</fieldset>` : ""}
+    <details class="flight-more"${flightMoreOpen() ? " open" : ""}>
+      <summary>More settings for this bracket</summary>
+      <div class="form-grid two">
+        <label>Overall seeds from <input name="flight_seed_from" type="number" min="0" value="${escapeHtml(String(seedFrom))}" placeholder="1"></label>
+        <label>through <input name="flight_seed_to" type="number" min="0" value="${escapeHtml(String(seedTo))}" placeholder="8"></label>
+        <label>Or specific overall seeds <input name="flight_seeds" value="${escapeHtml(seedList)}" placeholder="1, 4, 5, 8"></label>
+        <label>Pool finish from <input name="flight_pool_from" type="number" min="0" value="${escapeHtml(String(poolFrom))}" placeholder="1"></label>
+        <label>through <input name="flight_pool_to" type="number" min="0" value="${escapeHtml(String(poolTo))}" placeholder="2 = winners and runners-up"></label>
+        <label>Seeds inside this bracket
+          <select name="flight_seed_mode">
+            <option value="reseed" ${seedMode !== "overall" ? "selected" : ""}>Reseed 1…n in this bracket</option>
+            <option value="overall" ${seedMode === "overall" ? "selected" : ""}>Keep overall seed numbers</option>
+          </select>
+        </label>
+        <label>This bracket’s format
+          <select name="flight_format">
+            <option value="" ${!fmt ? "selected" : ""}>Same as weekend format</option>
+            <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
+            <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
+            <option value="4gg-double-elim" ${fmt === "4gg-double-elim" ? "selected" : ""}>4-game-guarantee double elim</option>
+            <option value="round-robin" ${fmt === "round-robin" ? "selected" : ""}>Round robin</option>
+          </select>
+        </label>
+        <label>Pairing
+          <select name="flight_pairing">
+            ${[["high-low", "High-low (1v last)"], ["split-field", "Split field"], ["cross-pool", "Avoid pool rematches"], ["blind", "Blind draw"], ["manual", "Manual later"]].map(([v, l]) =>
+              `<option value="${v}" ${(fl.pairing || "high-low") === v ? "selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </label>
+        <label>Byes
+          <select name="flight_bye_mode">
+            <option value="top-seeds" ${byeMode !== "manual" ? "selected" : ""}>Automatic to the top seeds</option>
+            <option value="manual" ${byeMode === "manual" ? "selected" : ""}>Director picks the bye seeds</option>
+          </select>
+        </label>
+        <label>Bye seeds (if picked) <input name="flight_bye_seeds" value="${escapeHtml(byeSeeds)}" placeholder="1, 2"></label>
+        <label>First pitch <input name="flight_start" type="time" value="${escapeHtml(fl.start_time || "")}"></label>
+        <label>Minutes per slot <input name="flight_slot" type="number" min="30" value="${escapeHtml(String(fl.slot_minutes || 90))}"></label>
+        <label>Finish by <input name="flight_finish" type="time" value="${escapeHtml(fl.finish_time || "")}"></label>
+        <label>Game labels start with <input name="flight_prefix" value="${escapeHtml(fl.game_prefix || "G")}" placeholder="G"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="flight_later" ${(fl.later_slot_for_top_seeds !== false) ? "checked" : ""}> When a round needs two times, the top seed’s half plays later</label>
+      <label class="check"><input type="checkbox" name="flight_consolation" ${fl.consolation ? "checked" : ""}> Consolation / placement games</label>
+      <label class="check"><input type="checkbox" name="flight_third" ${fl.third_place ? "checked" : ""}> Third-place game</label>
+      <label class="check"><input type="checkbox" name="flight_ifn" ${fl.if_necessary ? "checked" : ""}> If-necessary championship (double elim)</label>
+      ${(fields || []).length ? `<fieldset class="flight-fields"><legend>Diamonds for this bracket</legend>${fields.map((f) => {
+        const fname = typeof f === "string" ? f : (f.name || "");
+        if (!fname) return "";
+        return `<label class="check"><input type="checkbox" name="flight_field" value="${escapeHtml(fname)}" ${pickedFields.has(fname) ? "checked" : ""}> ${escapeHtml(fname)}</label>`;
+      }).join("")}</fieldset>` : ""}
+      ${(teams || []).length ? `<fieldset class="flight-teams"><legend>Or assign specific teams</legend>${teams.map((t) =>
+        `<label class="check"><input type="checkbox" name="flight_team" value="${escapeHtml(t.id)}" ${assigned.has(t.id) ? "checked" : ""}> ${escapeHtml(t.name)}</label>`).join("")}</fieldset>` : ""}
+    </details>
     <input type="hidden" name="flight_id" value="${escapeHtml(fl.id || "")}">
   </fieldset>`;
 }
