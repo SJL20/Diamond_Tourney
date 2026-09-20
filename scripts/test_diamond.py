@@ -92,6 +92,52 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("ensure-pocketbase.sh", src)
 
 
+class MobileDisplayTests(unittest.TestCase):
+    def test_display_formatters(self):
+        import subprocess
+        out = subprocess.check_output(
+            ["node", str(ROOT / "scripts/test_display.mjs")],
+            text=True,
+        )
+        self.assertIn("display.js ok", out)
+
+    def test_phone_chrome_markers(self):
+        event = (ROOT / "pb/pb_public/js/event.js").read_text()
+        css = (ROOT / "pb/pb_public/css/app.css").read_text()
+        self.assertIn("id=\"admin-desk-select\"", event)
+        self.assertIn("function gameCard", event)
+        self.assertIn("function boxMark", event)
+        self.assertIn("No box", event)
+        self.assertIn("function scheduleCards", event)
+        self.assertIn('className: "desktop-table"', event)
+        self.assertIn('groupBy: "date"', event)
+        self.assertIn("homePhaseBlock", event)
+        self.assertIn("teamChips", event)
+        self.assertIn('data-phase="', event)
+        self.assertIn(".desktop-table", css)
+        self.assertIn(".table-wrap.desktop-table", css)
+        self.assertIn(".phone-schedule", css)
+        self.assertIn(".card-table td::before", css)
+        self.assertIn(".game-list", css)
+        self.assertIn(".box-mark", css)
+        self.assertIn(".admin-rail nav.admin-rail-nav", css)
+        self.assertIn(".tourney-tabbar", css)
+        self.assertIn(".phone-stat-list", css)
+        self.assertIn(".box-review-card", css)
+        self.assertIn("table.desktop-table", css)
+        self.assertGreater(css.find(".table-wrap.desktop-table"), css.find(".card-table tbody { display: block"))
+        chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
+        self.assertIn("tourney-tabbar", chrome)
+        self.assertIn("tourney-more-sheet", chrome)
+        self.assertIn("event-nav-desk", chrome)
+        self.assertIn("export function bindEventChrome", chrome)
+        self.assertIn("export function eventDestinations", chrome)
+        self.assertIn("No converted hitting lines yet", event)
+        self.assertIn("function boxReviewCard", event)
+        self.assertIn("function deskTable", event)
+        self.assertIn("phone-stat-list", event)
+
+
 class TournamentUiTests(unittest.TestCase):
     def test_standings_tab_game_numbers_and_save_toast(self):
         chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
@@ -125,6 +171,17 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Check back closer to the weekend", event)
         self.assertIn("No pool results yet", event)
         self.assertIn("function formatWeekendDates", event)
+        self.assertIn("from \"./display.js\"", event)
+        self.assertIn("formatTimeDisplay", event)
+        self.assertIn("formatDateDisplay", event)
+        self.assertIn("admin-desk-select", event)
+        self.assertIn("class=\"game-card", event)
+        self.assertIn("Park hours", event)
+        self.assertNotIn("Global hours", event)
+        self.assertIn("overflow-x: clip", css)
+        self.assertIn(".admin-desk-pick", css)
+        self.assertIn("export function measureChrome", chrome)
+        self.assertIn("measureChrome", app)
         self.assertIn("function tabEmpty", event)
         self.assertIn("function compareGames", event)
         self.assertIn("Import a bracket CSV", event)
@@ -226,7 +283,7 @@ class TournamentUiTests(unittest.TestCase):
         self.assertNotIn("Qualifying minimums are 8 at-bats and 5 innings", event)
         inbox = event.split('data-admin-pane="stats"', 1)[1].split('data-admin-pane="boxes"', 1)[0]
         self.assertIn("<h2>Approve stats</h2>", inbox)
-        self.assertIn("approveStatsButtons(b.id)", inbox)
+        self.assertIn("boxReviewList(pending", inbox)
         self.assertIn("data-box-review", event)
         self.assertIn(">Approve stats<", event)
         self.assertIn(">Reject<", event)
@@ -1270,6 +1327,7 @@ class ScheduleTests(unittest.TestCase):
         scored = next(g for g in board["schedule"] if g["id"] == mine["id"])
         self.assertTrue(scored["can_score"])
         self.assertTrue(scored["has_box"])
+        self.assertEqual(scored["box_status"], "submitted")
         self.assertEqual(scored["status"], "final")
 
     def test_four_stats_upload_routes(self):
@@ -2707,6 +2765,8 @@ class BacklogOpenTests(unittest.TestCase):
     def test_info_dates_come_from_event_not_keystone_literal(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
         self.assertIn("function formatWeekendDates", src)
+        self.assertNotIn("Global hours", src)
+        self.assertIn("Park hours", src)
         self.assertNotIn('packet?.dates || "September 11', src)
         self.assertIn("function parkingMapView", src)
         self.assertIn("isKeystoneParkingAsset", src)
@@ -3529,8 +3589,17 @@ class EventBoxReviewTests(unittest.TestCase):
         posted = self._bot_review_box(bot, slug, game_id)
         self.assertEqual(posted["box"]["status"], "needs_review")
         box_id = posted["box"]["id"]
+        public = request(BASE, "GET", f"/api/event/{slug}/board")
+        waiting = next(g for g in public["schedule"] if g["id"] == game_id)
+        self.assertEqual(waiting["box_status"], "needs_review")
+        self.assertTrue(waiting["has_box"])
+        overall_wait = next(g for g in public["overall"] if g["id"] == game_id)
+        self.assertEqual(overall_wait["box_status"], "needs_review")
         plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
-        self.assertTrue(any(b["id"] == box_id for b in plan.get("pending_boxes", [])))
+        pending = next(b for b in plan.get("pending_boxes", []) if b["id"] == box_id)
+        self.assertEqual(pending["hitting"][0]["name"], "Maeve D")
+        self.assertEqual(pending["pitching"][0]["name"], "Sam P")
+        self.assertEqual(int(pending["hitting"][0]["h"]), 2)
         hits_before = self._hitting_count(td, game_id)
         self.assertGreaterEqual(hits_before, 1)
 
@@ -3539,6 +3608,10 @@ class EventBoxReviewTests(unittest.TestCase):
         })
         self.assertEqual(approved["box"]["status"], "approved")
         self.assertEqual(self._hitting_count(td, game_id), hits_before)
+        after = request(BASE, "GET", f"/api/event/{slug}/board")
+        done = next(g for g in after["schedule"] if g["id"] == game_id)
+        self.assertEqual(done["box_status"], "approved")
+        self.assertTrue(done["has_box"])
         plan2 = request(BASE, "GET", f"/api/events/{slug}/plan", td)
         self.assertFalse(any(b["id"] == box_id for b in plan2.get("pending_boxes", [])))
 
@@ -3548,6 +3621,10 @@ class EventBoxReviewTests(unittest.TestCase):
         self.assertTrue(again.get("already"))
 
         slug2, game2 = self._weekend_with_game(td)
+        empty = request(BASE, "GET", f"/api/event/{slug2}/board")
+        none = next(g for g in empty["schedule"] if g["id"] == game2)
+        self.assertEqual(none.get("box_status") or "", "")
+        self.assertFalse(none["has_box"])
         posted2 = self._bot_review_box(bot, slug2, game2, "alignment messy")
         reject_id = posted2["box"]["id"]
         hits2 = self._hitting_count(td, game2)

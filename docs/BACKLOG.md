@@ -9,7 +9,7 @@ proposing an alternative.
 
 Status: `[ ]` open, `[x]` done, `[~]` in progress.
 
-Checked against `main` at `1b094a8` (PR #31 merged 2026-09-20). BACKLOG numbers
+Checked against `main` after PRs #31–#36. BACKLOG numbers
 **29 / 30 / 31** are these owner items (logos, custom-bracket seeds, invite-only
 signup). They are **not** GitHub PRs #29 / #30 / #31.
 
@@ -36,13 +36,15 @@ cannot close issues (403).
 | 23–25 | `[x]` | — |
 | 26 | `[ ]` | **Next product build.** 8 Gold / 6 Silver, byes, pairing patterns |
 | 26i | `[ ]` | Scarecrow Slugfest reference bracket (attach schedule.xlsx) |
-| 27 | `[ ]` | “Park hours” + 12-hour times + weekday dates |
-| 28 / 28b | `[ ]` | Home-page redesign + live scores. Coordinate 28b with Steve. |
+| 27 | `[x]` | Park hours + 12-hour times + weekday dates |
+| 28 | `[x]` | Home-page redesign |
+| 28b | `[ ]` | Live scores. Coordinate with Steve. |
 | 29 | `[ ]` | Team logos (this item, not PR #29) |
 | 30 | `[ ]` | Custom bracket Home/Away accept seed / winner / loser (this item, not PR #30) |
 | 31 | `[ ]` | Invite-only director signup (this item, not PR #31) |
 | 32 | `[x]` | Live leader gates scale with games played; no “over” without an IP cap (PR #30) |
 | 33 | `[x]` | Approve stats on the game, overview, and Admin rail (PR #29 + #31) |
+| 34 | `[x]` | iOS tab bar, compact stats, converted-line review (PR #35) |
 
 ### Still pending (work these)
 
@@ -50,12 +52,11 @@ Do not reorder without asking the owner. Item 23’s old “park until 1–22”
 was overridden; assist is already shipped.
 
 1. **26 + 26i** — blocker for the next event
-2. **27** — human-readable times and dates
-3. **28 / 28b** — tournament home page (ask Steve before building live scores)
-4. **29** — team logos
-5. **30** — custom bracket seed and winner references
-6. **31** — invite-only director signup
-7. **Ops leftovers** (do not write fake product code to tick these): item 1 SMTP,
+2. **28b** — live scores (ask Steve before building)
+3. **29** — team logos
+4. **30** — custom bracket seed and winner references
+5. **31** — invite-only director signup
+6. **Ops leftovers** (do not write fake product code to tick these): item 1 SMTP,
    item 11 Keystone CSV weekend, item 16 scarecrow leftover bracket, item 21/22
    owner GameChanger screenshots and a real inbox test
 
@@ -1781,7 +1782,7 @@ rounds). A fix that makes one work and breaks the other is not a fix.
 This applies to the AI assistant in item 23 as well. It must reason from the
 event's own configuration, never from a remembered example.
 
-## [ ] 27. Human-readable times and dates everywhere; rename "Global hours"
+## [x] 27. Human-readable times and dates everywhere; rename "Global hours"
 
 **Medium. Affects every public page. Owner-flagged. Still open 2026-09-20.**
 The public home card still prints `Global hours` and raw `08:00–18:00`
@@ -1835,16 +1836,21 @@ or Field 10 lands before Field 2.
 
 ### Acceptance criteria
 
-- [ ] "Global hours" renamed to "Park hours" wherever it appears
-- [ ] A single time formatter exists and is used for every displayed time
-- [ ] No 24-hour time visible on any public page
-- [ ] A single date formatter exists and is used for every displayed date
-- [ ] Dates show the weekday
-- [ ] Storage format unchanged — display layer only
-- [ ] Sweep public pages for other internal vocabulary and list what's found
+- [x] "Global hours" renamed to "Park hours" wherever it appears
+- [x] A single time formatter exists and is used for every displayed time
+- [x] No 24-hour time visible on any public page
+- [x] A single date formatter exists and is used for every displayed date
+- [x] Dates show the weekday
+- [x] Storage format unchanged — display layer only
+- [x] Sweep public pages for other internal vocabulary and list what's found
+
+Display lives in `pb/pb_public/js/display.js`. Inputs stay native `type=time` /
+`type=date` (24-hour storage). Director-desk words that remain on Admin only:
+flight, slot, seed reason, “Replace unplayed”, “Import a grid.” Public pages
+use Park hours, weekday dates, and 12-hour first pitch.
 
 
-## [ ] 28. Redesign the tournament home page
+## [x] 28. Redesign the tournament home page
 
 **High. Owner-flagged: "plain and boring." The most-visited page in the product.**
 Still open 2026-09-20. Team names already link to team pages (item 24). Venue
@@ -1922,16 +1928,21 @@ identity is fine. What it needs is contrast and weight, not new colors.
 
 ### Acceptance criteria
 
-- [ ] The page leads with what a parent came for, not field hours
-- [ ] Three distinct phases render correctly: before, during, after
-- [ ] The most prominent element answers "when and where do we play next"
-- [ ] Teams are tappable links to team pages
-- [ ] Live games are visually distinct from scheduled ones
-- [ ] Venue photos used where available; field hours demoted
-- [ ] Champion display after completion
-- [ ] Usable on a phone in sunlight, one-handed
-- [ ] **Open it on a phone and find your team's next game in under five seconds
+- [x] The page leads with what a parent came for, not field hours
+- [x] Three distinct phases render correctly: before, during, after
+- [x] The most prominent element answers "when and where do we play next"
+- [x] Teams are tappable links to team pages
+- [x] Live games are visually distinct from scheduled ones
+- [x] Venue photos used where available; field hours demoted
+- [x] Champion display after completion
+- [x] Usable on a phone in sunlight, one-handed
+- [x] **Open it on a phone and find your team's next game in under five seconds
       without scrolling past anything irrelevant**
+
+Home now opens with next pitch (or champions), team chips, then standings and
+getting-there. Field hours sit in a collapsed “Park hours and fields” block.
+Posted finals can show as “Recently final.” **28b live polling is still open**
+and waits on Steve — this page does not auto-refresh or invent a live score.
 
 
 ## [ ] 28b. Live scores on the tournament home page
@@ -2166,7 +2177,6 @@ request against the API.
 - [ ] Request queue is admin-only, verified with a logged-out API call
 - [ ] A single setting opens signup publicly when ready
 
-
 ## [x] 32. Live leader gates scale with games played; no “over” without an IP cap
 
 **Owner, Test Run on diamondtourney.com. Not in the original Derek numbered
@@ -2219,3 +2229,14 @@ Covered by `EventBoxReviewTests` and the Approve-stats markup checks in
 - [x] Bots cannot approve
 - [x] Approve stats is on the game, overview, and Admin rail
 - [x] Packet Approve on Teams is unchanged
+
+---
+
+## [x] 34. Phone tournament tab bar, compact stats, converted-line review
+
+Second mobile pass after item 27/28 home work. Phone tournament chrome is an
+iOS tab bar (Home, Schedule, Standings, Bracket, More) so the top strip does
+not scroll sideways. Stats boards use compact rows on a phone instead of one
+card per table cell. Directors review converted hitting and pitching on
+Approve stats — not only the uploaded file. 28b live scores stay open and
+wait on Steve.

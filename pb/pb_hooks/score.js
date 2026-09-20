@@ -152,8 +152,8 @@ function applyBoxLines(app, event, game, hitting, pitching) {
 function boxJson(app, rec) {
   return {
     id: rec.id,
-    hitting: rec.get("hitting") || [],
-    pitching: rec.get("pitching") || [],
+    hitting: asList(rec.get("hitting")),
+    pitching: asList(rec.get("pitching")),
     source: rec.get("source") || "",
     status: rec.get("status") || "submitted",
     note: rec.get("note") || "",
@@ -408,6 +408,7 @@ function gameDetail(app, event, id, auth) {
     game: schedule.scheduleRow(app, rec, {
       can_score: canScore(app, event, rec, auth),
       has_box: !!box,
+      box_status: box ? (box.get("status") || "submitted") : "",
     }),
     box: box ? boxJson(app, box) : null,
     director: isDirector(auth, event, app),

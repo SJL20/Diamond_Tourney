@@ -1,4 +1,15 @@
 import { canAdminEvent, flashSaved, isDirector as recordIsDirector, isSiteAdmin, pageShell } from "./chrome.js";
+import { battingAverage, era, ipToOuts } from "./metrics.js";
+import {
+  asLineList,
+  formatDateDisplay,
+  formatHoursRange,
+  formatTimeDisplay,
+  formatWhen,
+  formatWeekendDates as formatWeekendDatesDisplay,
+  linePlayer,
+  stampDataTh,
+} from "./display.js";
 
 const eventRoot = () => document.getElementById("app");
 const eventPb = new PocketBase(location.origin);
@@ -9,9 +20,77 @@ function escapeHtml(s) {
   }[c]));
 }
 
-function table(headers, rows) {
-  return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
-    <tbody>${(rows || []).join("")}</tbody></table></div>`;
+function table(headers, rows, extras = {}) {
+  const cls = extras.className != null ? extras.className : "card-table";
+  const wrap = ["table-wrap", extras.wrapClass].filter(Boolean).join(" ");
+  const stamped = (rows || []).map((r) => stampDataTh(r, headers));
+  return `<div class="${wrap}"><table${cls ? ` class="${escapeHtml(cls)}"` : ""}><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+    <tbody>${stamped.join("")}</tbody></table></div>`;
+}
+
+function deskTable(headers, rows) {
+  return table(headers, rows, { className: "card-table desktop-table" });
+}
+
+function statList(items, extraClass = "phone-stat-list") {
+  if (!items || !items.length) return "";
+  return `<ul class="stat-list ${extraClass}">${items.join("")}</ul>`;
+}
+
+function statRow({ seed, name, meta, value, muted }) {
+  return `<li class="stat-row${muted ? " muted-row" : ""}">
+    ${seed != null ? `<span class="stat-seed">${escapeHtml(String(seed))}</span>` : ""}
+    <div class="stat-main">
+      <b class="stat-name">${name}</b>
+      ${meta ? `<span class="stat-meta">${meta}</span>` : ""}
+    </div>
+    <span class="stat-val">${value || "—"}</span>
+  </li>`;
+}
+
+function hitStatRow(r, nameHtml, extras = {}) {
+  const meta = [
+    extras.teamHtml || escapeHtml(r.team || ""),
+    r.ab != null && r.ab !== "" ? `${r.ab} AB` : "",
+    r.h != null && r.h !== "" ? `${r.h} H` : "",
+    r.rbi != null && r.rbi !== "" ? `${r.rbi} RBI` : "",
+  ].filter(Boolean).join(" · ");
+  let value = r.avg_display || r.avg;
+  if (!value && r.ab != null && r.ab !== "" && r.h != null && r.h !== "") {
+    const ab = Number(r.ab);
+    if (ab > 0) value = battingAverage(Number(r.h), ab);
+  }
+  if (!value) value = r.h != null && r.h !== "" ? String(r.h) : "—";
+  return statRow({
+    seed: extras.seed,
+    name: nameHtml || escapeHtml(linePlayer(r)),
+    meta,
+    value: escapeHtml(String(value)),
+    muted: r.q === false,
+  });
+}
+
+function pitStatRow(r, nameHtml, extras = {}) {
+  const k = r.k ?? r.so;
+  const ip = r.ip != null && r.ip !== "" ? r.ip : r.ip_outs;
+  const meta = [
+    extras.teamHtml || escapeHtml(r.team || ""),
+    ip != null && ip !== "" ? `${ip} IP` : "",
+    k != null && k !== "" ? `${k} K` : "",
+  ].filter(Boolean).join(" · ");
+  let value = r.era_display || r.era;
+  if (!value && r.er != null && r.er !== "" && (r.ip != null || r.ip_outs != null)) {
+    const outs = r.ip_outs != null ? Number(r.ip_outs) : ipToOuts(r.ip);
+    if (outs) value = era(Number(r.er), outs);
+  }
+  if (!value) value = ip != null && ip !== "" ? String(ip) : "—";
+  return statRow({
+    seed: extras.seed,
+    name: nameHtml || escapeHtml(linePlayer(r)),
+    meta,
+    value: escapeHtml(String(value)),
+    muted: r.q === false,
+  });
 }
 
 function goEvent(href) {
@@ -31,26 +110,7 @@ function isTeamScorer() {
 }
 
 function formatWeekendDates(start, end) {
-  const parse = (raw) => {
-    if (!raw) return null;
-    const d = new Date(raw);
-    return Number.isNaN(+d) ? null : d;
-  };
-  const a = parse(start);
-  const b = parse(end);
-  if (!a) return "";
-  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const day = (d) => months[d.getUTCMonth()] + " " + d.getUTCDate();
-  if (!b || a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10)) {
-    return day(a) + ", " + a.getUTCFullYear();
-  }
-  if (a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth()) {
-    return months[a.getUTCMonth()] + " " + a.getUTCDate() + "–" + b.getUTCDate() + ", " + a.getUTCFullYear();
-  }
-  if (a.getUTCFullYear() === b.getUTCFullYear()) {
-    return day(a) + " – " + day(b) + ", " + a.getUTCFullYear();
-  }
-  return day(a) + ", " + a.getUTCFullYear() + " – " + day(b) + ", " + b.getUTCFullYear();
+  return formatWeekendDatesDisplay(start, end);
 }
 
 function directorBoardActions(slug) {
@@ -107,10 +167,10 @@ function withFileToken(url, token) {
   return url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
 }
 
-function eventChrome(event, page, body) {
+function eventChrome(event, page, body, opts = {}) {
   currentEvent = event || null;
   const site = event ? "" : (page === "create" ? "create" : page);
-  return pageShell({ pb: eventPb, site, event, page, body });
+  return pageShell({ pb: eventPb, site, event, page, body, slim: !!opts.slim });
 }
 
 function rememberEvent(event) {
@@ -151,7 +211,7 @@ function fieldAvailDays(f = {}, i = 0, dates = [], globalStart = "08:00", global
     const row = byDate[d] || {};
     const on = row.available !== false;
     return `<div class="avail-day">
-      <label class="check"><input type="checkbox" name="field_day_${i}_${di}_on" ${on ? "checked" : ""}> ${escapeHtml(d)}</label>
+      <label class="check"><input type="checkbox" name="field_day_${i}_${di}_on" ${on ? "checked" : ""}> ${escapeHtml(formatDateDisplay(d) || d)}</label>
       <input type="hidden" name="field_day_${i}_${di}_date" value="${escapeHtml(d)}">
       <label>Open <input type="time" name="field_day_${i}_${di}_start" value="${escapeHtml(row.start || globalStart)}"></label>
       <label>Close <input type="time" name="field_day_${i}_${di}_end" value="${escapeHtml(row.end || globalEnd)}"></label>
@@ -297,7 +357,7 @@ function setupVenueFields(ev = {}, fields = []) {
       <label>Last day <input name="end" type="date" value="${dateInput(ev.end)}"></label>
     </div>
     <div class="hours-global">
-      <p class="muted">Global availability. Every diamond inherits this window unless you narrow a day below. A field that is closed Saturday will not get Saturday games.</p>
+      <p class="muted">Park hours. Applies to every diamond unless a diamond sets its own. A field that is closed Saturday will not get Saturday games.</p>
       <div class="form-grid two">
         <label>First pitch <input name="hours_start" type="time" value="${escapeHtml(hoursStart)}"></label>
         <label>No start after / last out <input name="hours_end" type="time" value="${escapeHtml(hoursEnd)}"></label>
@@ -355,26 +415,39 @@ function photoGallery(photos) {
   </section>`;
 }
 
-function fieldsBlock(ev, fields) {
+function fieldsBlock(ev, fields, opts = {}) {
   const list = fields || ev.fields || [];
   if (!list.length && !ev.address && !ev.venue) return "";
-  return `<section class="card facts">
-    <h2>Fields</h2>
+  const hours = (ev.hours_start || ev.hours_end)
+    ? formatHoursRange(ev.hours_start || "08:00", ev.hours_end || "18:00")
+    : "";
+  const body = `
     ${[
       ["Park", ev.venue],
       ["Address", ev.address],
     ].filter(([, v]) => v).map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}${ev.map_url && k === "Address" ? ` · <a href="${escapeHtml(ev.map_url)}" target="_blank" rel="noopener">Map</a>` : ""}</dd></div>`).join("")}
-    ${ev.hours_start || ev.hours_end ? `<div><dt>Global hours</dt><dd>${escapeHtml(ev.hours_start || "08:00")}–${escapeHtml(ev.hours_end || "18:00")}</dd></div>` : ""}
+    ${hours ? `<div><dt>Park hours</dt><dd>${escapeHtml(hours)}</dd></div>` : ""}
     ${list.length ? `<ul class="field-list">${list.map((f) => {
-      const hours = (f.windows || []).map((w) =>
-        w.available === false ? `${w.date} closed` : (w.inherited ? "" : `${w.date} ${w.start}–${w.end}`)
+      const fieldHours = (f.windows || []).map((w) =>
+        w.available === false
+          ? `${formatDateDisplay(w.date) || w.date} closed`
+          : (w.inherited ? "" : `${formatDateDisplay(w.date) || w.date} ${formatHoursRange(w.start, w.end)}`)
       ).filter(Boolean).join(" · ");
       return `<li>
       <b>${escapeHtml(f.name)}</b>
-      <span class="muted">${escapeHtml([f.surface, f.lights ? "lights" : "", f.status !== "open" ? f.status : "", hours].filter(Boolean).join(" · "))}</span>
+      <span class="muted">${escapeHtml([f.surface, f.lights ? "lights" : "", f.status !== "open" ? f.status : "", fieldHours].filter(Boolean).join(" · "))}</span>
       ${f.map_url ? `<a href="${escapeHtml(f.map_url)}" target="_blank" rel="noopener">Map</a>` : ""}
     </li>`;
-    }).join("")}</ul>` : ""}
+    }).join("")}</ul>` : ""}`;
+  if (opts.demote) {
+    return `<details class="card facts fields-block demoted">
+      <summary>Park hours and fields</summary>
+      ${body}
+    </details>`;
+  }
+  return `<section class="card facts fields-block">
+    <h2>Fields</h2>
+    ${body}
   </section>`;
 }
 
@@ -397,6 +470,21 @@ function bookMark(g) {
 
 function scoreCell(g) {
   return scoreText(g) + bookMark(g);
+}
+
+function boxState(g) {
+  const status = g?.box_status || "";
+  if (status === "approved") return { key: "approved", label: "Approved" };
+  if (status === "rejected") return { key: "rejected", label: "Rejected" };
+  if (status === "needs_review" || status === "submitted" || status === "queued" || g?.has_box) {
+    return { key: "needs_review", label: "Submitted" };
+  }
+  return { key: "none", label: "No box" };
+}
+
+function boxMark(g) {
+  const state = boxState(g);
+  return `<span class="badge ${state.key} box-mark">${escapeHtml(state.label)}</span>`;
 }
 
 function teamHref(eventSlug, teamSlug) {
@@ -438,6 +526,105 @@ function gameNo(g) {
 function gameNoCell(g) {
   const label = gameNo(g);
   return label ? `<span class="game-no">${escapeHtml(label)}</span>` : "—";
+}
+
+function whenLine(g) {
+  return formatWhen(g?.date, g?.time) || "TBD";
+}
+
+function gameHref(slug, g) {
+  if (g?.kind === "bracket") return `/t/${escapeHtml(slug)}/bracket`;
+  if (g?.id) return `/t/${escapeHtml(slug)}/games/${g.id}`;
+  return `/t/${escapeHtml(slug)}/overall`;
+}
+
+function gameKindLabel(g) {
+  if (g?.kind === "bracket") return ROUND_META[g.round]?.label || g.round || "Bracket";
+  if (g?.round) return g.round;
+  if (g?.pool) return "Pool " + g.pool;
+  return "Pool";
+}
+
+function sideRuns(g, side) {
+  if (g.score_source === "conflict" || g.book_state === "conflict") return "—";
+  if (g.home_runs == null && g.away_runs == null) return "";
+  const v = side === "home" ? g.home_runs : g.away_runs;
+  return v == null ? "—" : String(v);
+}
+
+function sideWins(g, side) {
+  if (g.home_runs == null || g.away_runs == null) return false;
+  if (g.score_source === "conflict" || g.book_state === "conflict") return false;
+  const home = Number(g.home_runs);
+  const away = Number(g.away_runs);
+  if (!Number.isFinite(home) || !Number.isFinite(away) || home === away) return false;
+  return side === "home" ? home > away : away > home;
+}
+
+function gameCard(g, slug, opts = {}) {
+  const kind = opts.kind || gameKindLabel(g);
+  const href = opts.href || gameHref(slug, g);
+  const delayed = g.delayed_from
+    ? ` <span class="muted">(was ${escapeHtml(formatTimeDisplay(g.delayed_from) || g.delayed_from)})</span>`
+    : "";
+  const openLabel = opts.openLabel || (g.kind === "bracket" ? "Bracket" : (g.can_score ? "Post score" : "Open"));
+  const when = opts.hideDate
+    ? (formatTimeDisplay(g.time) || (g.time ? String(g.time) : "TBD"))
+    : whenLine(g);
+  const homeScore = sideRuns(g, "home");
+  const awayScore = sideRuns(g, "away");
+  return `<article class="game-card${g.status === "live" ? " live" : ""}">
+    <div class="game-card-top">
+      <span class="game-card-ident">
+        ${gameNo(g) ? `<span class="game-no">${escapeHtml(gameNo(g))}</span>` : ""}
+        <span class="ov-kind ${escapeHtml(g.kind || "")}">${escapeHtml(kind)}</span>
+      </span>
+      ${boxMark(g)}
+    </div>
+    <p class="game-card-when">${escapeHtml(when)}${g.field ? ` · ${escapeHtml(g.field)}` : ""}${delayed}</p>
+    <div class="game-card-sides">
+      <div class="game-card-side${sideWins(g, "home") ? " winner" : ""}">
+        <span>${teamLink(slug, g.home_slug, g.home || "TBD")}</span>
+        ${homeScore !== "" ? `<b>${escapeHtml(homeScore)}</b>` : ""}
+      </div>
+      <div class="game-card-side${sideWins(g, "away") ? " winner" : ""}">
+        <span>${teamLink(slug, g.away_slug, g.away || "TBD")}</span>
+        ${awayScore !== "" ? `<b>${escapeHtml(awayScore)}</b>` : ""}
+      </div>
+    </div>
+    <p class="game-card-foot">
+      <span>${bookMark(g)}${escapeHtml(g.status || "")}</span>
+      ${g.id || href ? `<a data-link href="${href}">${escapeHtml(openLabel)}</a>` : ""}
+    </p>
+  </article>`;
+}
+
+function schedulePair(headers, rows, cards) {
+  return `${table(headers, rows, { className: "desktop-table", wrapClass: "desktop-table" })}
+    <div class="phone-schedule">${cards || ""}</div>`;
+}
+
+function scheduleCards(games, slug, opts = {}) {
+  const list = games || [];
+  if (!list.length) return "";
+  if (opts.groupBy !== "date") {
+    return `<div class="game-list">${list.map((g) => gameCard(g, slug, opts)).join("")}</div>`;
+  }
+  const groups = [];
+  const byDate = new Map();
+  for (const g of list) {
+    const key = g.date || "TBD";
+    if (!byDate.has(key)) {
+      byDate.set(key, []);
+      groups.push(key);
+    }
+    byDate.get(key).push(g);
+  }
+  return groups.map((key) => `
+    <section class="sched-day">
+      <h3>${escapeHtml(formatDateDisplay(key) || key)}</h3>
+      <div class="game-list">${byDate.get(key).map((g) => gameCard(g, slug, { ...opts, hideDate: true })).join("")}</div>
+    </section>`).join("");
 }
 
 function fieldSortParts(name) {
@@ -485,20 +672,24 @@ function scheduleByField(games, slug) {
     if (!groups[key]) groups[key] = [];
     groups[key].push(g);
   }
-  return Object.keys(groups).sort(compareFieldNames).map((name) => `
+  return Object.keys(groups).sort(compareFieldNames).map((name) => {
+    const rows = groups[name].slice().sort(compareGames);
+    return `
     <div class="sched-field">
       <h3>${escapeHtml(name)}</h3>
-      ${table(["Game", "When", "Pool", "Home", "Away", "Score", ""], groups[name].slice().sort(compareGames).map((g) => `<tr>
+      ${schedulePair(["Game", "When", "Pool", "Home", "Away", "Score", "Box", ""], rows.map((g) => `<tr>
         <td>${gameNoCell(g)}</td>
-        <td>${escapeHtml(g.date || "")} ${escapeHtml(g.time || "")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
+        <td>${escapeHtml(whenLine(g))}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(formatTimeDisplay(g.delayed_from) || g.delayed_from)})</span>` : ""}</td>
         <td>${escapeHtml(g.pool || "")}</td>
         <td>${teamLink(slug, g.home_slug, g.home)}</td><td>${teamLink(slug, g.away_slug, g.away)}</td>
         <td>${scoreCell(g)}</td>
-        <td>${escapeHtml(g.status)}${g.has_box ? " · box" : ""}
+        <td>${boxMark(g)}</td>
+        <td>${escapeHtml(g.status)}
           ${g.id ? ` · <a data-link href="/t/${escapeHtml(slug)}/games/${g.id}">${g.can_score ? "Post score" : "Open"}</a>` : ""}
         </td>
-      </tr>`))}
-    </div>`).join("");
+      </tr>`), scheduleCards(rows, slug))}
+    </div>`;
+  }).join("");
 }
 
 function setupGuidelinesFields(ev = {}) {
@@ -630,12 +821,18 @@ function standingsBlock(standings, eventSlug) {
     <div class="card">
       <h2>${pool.name === "All teams" ? "Pool standings" : "Pool " + escapeHtml(pool.name)}</h2>
       ${pool.note ? `<p class="muted">${escapeHtml(pool.note)}</p>` : ""}
-      ${table(["#", "Team", "W", "L", "T", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
+      ${deskTable(["#", "Team", "W", "L", "T", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
         <td>${t.seed != null ? t.seed : "—"}</td>
         <td>${teamLink(eventSlug, t.slug, t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
         <td>${t.w}</td><td>${t.l}</td><td>${t.t || 0}</td>
         <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
+      ${statList((pool.teams || []).map((t) => statRow({
+        seed: t.seed != null ? t.seed : "—",
+        name: `${teamLink(eventSlug, t.slug, t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}`,
+        meta: `RS ${t.rs} · RA ${t.ra} · ${t.diff > 0 ? "+" : ""}${t.diff}`,
+        value: `${t.w}-${t.l}${t.t ? "-" + t.t : ""}`,
+      })))}
       ${(pool.teams || []).some((t) => t.seed_reason) ? `<ul class="seed-why">${pool.teams.filter((t) => t.seed_reason).map((t) =>
         `<li><b>Seed ${t.seed} ${teamLink(eventSlug, t.slug, t.name)}</b> — ${escapeHtml(t.seed_reason)}</li>`).join("")}</ul>` : ""}
       <p class="muted">Tiebreak: ${escapeHtml(pool.tiebreak_label || "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored")}.</p>
@@ -843,7 +1040,7 @@ function matchCard(g, roster = [], plan = null) {
   const homeWin = !tie && g.status === "final" && g.winner && g.winner === g.home;
   const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
   const fieldLabel = g.field || "—";
-  const timeLabel = g.time || "—";
+  const timeLabel = formatTimeDisplay(g.time) || g.time || "—";
   const meta = [gameNo(g), g.game_id, tie ? "Tie" : g.status === "final" ? "Final" : "Scheduled"].filter(Boolean);
   const def = plan?.defaults.get(g.id) || {};
   const chosenField = g.field || def.field || "";
@@ -1078,17 +1275,88 @@ function rosterBlock(teams, eventSlug) {
   </section>`;
 }
 
+function teamChips(teams, eventSlug) {
+  if (!teams || !teams.length) {
+    return `<section class="empty">No teams signed up yet. A team can join with or without GameChanger.</section>`;
+  }
+  return `<section class="card">
+    <h2>Teams</h2>
+    <div class="chips scroll-chips">${teams.map((t) =>
+      `<a class="chip" data-link href="${escapeHtml(teamHref(eventSlug, t.slug))}">${escapeHtml(t.name)}${t.pool ? ` · ${escapeHtml(t.pool)}` : ""}</a>`
+    ).join("")}</div>
+  </section>`;
+}
+
+function homeGettingThere(ev, photos) {
+  const list = (photos || []).filter((p) => p.public && p.url);
+  if (!ev.address && !ev.venue && !ev.map_url && !list.length) return "";
+  return `<section class="card">
+    <h2>Getting there</h2>
+    ${ev.venue ? `<p><b>${escapeHtml(ev.venue)}</b></p>` : ""}
+    ${ev.address ? `<p>${escapeHtml(ev.address)}${ev.map_url ? ` · <a href="${escapeHtml(ev.map_url)}" target="_blank" rel="noopener">Map</a>` : ""}</p>` : ""}
+    ${list.length ? `<div class="photo-grid">${list.slice(0, 3).map((p) => `<figure>
+      <img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.caption || p.kind || "Field")}">
+      ${p.caption ? `<figcaption>${escapeHtml(p.caption)}</figcaption>` : ""}
+    </figure>`).join("")}</div>` : ""}
+  </section>`;
+}
+
+function upcomingFromBoard(board) {
+  return (board.overall || []).filter((g) => g.home && g.away && g.status !== "final" && g.status !== "postponed").slice().sort(compareGames);
+}
+
+function homePhaseBlock(board) {
+  const ev = board.event;
+  const upcoming = upcomingFromBoard(board);
+  const finals = (board.overall || []).filter((g) => g.status === "final");
+  const during = finals.length > 0 && upcoming.length > 0;
+  if (upcoming.length) {
+    const next = upcoming[0];
+    const more = upcoming.slice(1, 4);
+    const recent = during
+      ? finals.slice().sort(compareGames).slice(-2).reverse()
+      : [];
+    return `<section class="next-game home-phase" data-phase="${during ? "during" : "before"}">
+      <p class="kicker">${during ? "Up next" : "First pitch"}</p>
+      <p class="next-when">${escapeHtml(formatTimeDisplay(next.time) || "TBD")}${next.field ? ` · ${escapeHtml(next.field)}` : ""}</p>
+      <p class="next-vs">${teamLink(ev.slug, next.home_slug, next.home || "TBD")} vs ${teamLink(ev.slug, next.away_slug, next.away || "TBD")}</p>
+      <p class="muted">${escapeHtml([formatDateDisplay(next.date), gameNo(next), next.round || next.pool].filter(Boolean).join(" · "))}</p>
+    </section>
+    ${recent.length ? `<section class="card"><h2>Recently final</h2>
+      <div class="home-next-list">${recent.map((g) => gameCard(g, ev.slug, { openLabel: "Open" })).join("")}</div>
+    </section>` : ""}
+    ${more.length ? `<section class="card"><h2>Coming up</h2>
+      <div class="home-next-list">${more.map((g) => gameCard(g, ev.slug)).join("")}</div>
+      <p class="actions">
+        <a class="btn" data-link href="/t/${ev.slug}/overall">Weekend schedule</a>
+        <a class="btn ghost" data-link href="/t/${ev.slug}/bracket">Bracket</a>
+      </p>
+    </section>` : ""}`;
+  }
+  if (finals.length) {
+    return `<section class="next-game empty home-phase" data-phase="after">
+      <p class="kicker">Weekend</p>
+      <p>Pool and bracket games that are still open are posted on Schedule.</p>
+    </section>`;
+  }
+  return `<section class="next-game empty home-phase" data-phase="before">
+    <p class="kicker">Schedule</p>
+    <p>The weekend grid is not posted yet. Check back closer to first pitch.</p>
+  </section>`;
+}
+
 export async function eventHome(slug) {
   const board = await fetchBoard(slug);
   const ev = board.event;
   const packet = board.packet || ev.packet;
   const champ = packet?.champion;
   const hero = board.header_photo;
+  const dateLine = formatWeekendDates(ev.start, ev.end) || ev.dates || packet?.dates || "";
   eventRoot().innerHTML = eventChrome(ev, "home", `
     ${hero && hero.url ? `<figure class="event-hero"><img src="${escapeHtml(hero.url)}" alt="${escapeHtml(hero.caption || ev.venue || "Field")}">${hero.caption ? `<figcaption>${escapeHtml(hero.caption)}</figcaption>` : ""}</figure>` : ""}
     <section class="page-head">
       <p class="lede">${escapeHtml(ev.status_note || packet?.status || "Live standings. The bracket fills when scores are final.")}</p>
-      <p class="muted">${escapeHtml([ev.dates || packet?.dates, ev.format_label, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
+      <p class="muted">${escapeHtml([dateLine, ev.venue, ev.format_label, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
       <div class="actions">
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
         <a class="btn ghost" data-link href="/t/${ev.slug}/overall">Weekend schedule</a>
@@ -1098,15 +1366,18 @@ export async function eventHome(slug) {
       </div>
     </section>
     ${rainBanner(ev)}
-    ${fieldsBlock(ev, board.fields)}
     ${champ ? `<section class="champ-banner">
       <div class="k">Champions</div>
       <div class="t">${escapeHtml(champ.team)}</div>
       <p>${escapeHtml(champ.record || "")}${champ.line ? " — " + escapeHtml(champ.line) : ""}</p>
       ${packet?.runner_up ? `<div class="ru"><span>Runner-up</span><b>${escapeHtml(packet.runner_up.team)}</b> ${escapeHtml(packet.runner_up.record || "")}</div>` : ""}
     </section>` : ""}
-    <section class="grid two">${standingsBlock(board.standings, ev.slug)}</section>
-    ${rosterBlock(board.roster, ev.slug)}
+    ${homePhaseBlock(board)}
+    ${teamChips(board.roster, ev.slug)}
+    ${(board.standings || []).some((p) => (p.teams || []).length)
+      ? `<section class="grid two">${standingsBlock(board.standings, ev.slug)}</section>` : ""}
+    ${homeGettingThere(ev, board.photos || [])}
+    ${fieldsBlock(ev, board.fields, { demote: true })}
   `);
 }
 
@@ -1211,16 +1482,14 @@ export async function eventOverall(slug) {
       <p class="muted">Every game this weekend — pool play and the bracket — sorted by date, first pitch, and field.</p>
     </section>
     ${rainBanner(board.event)}
-    <section class="card">
-      ${rows.length ? table(["Game", "When", "Field", "Round", "Home", "Away", "Score"], rows.map((g) => {
-        const when = [g.date, g.time].filter(Boolean).join(" ");
+    ${rows.length ? `<div class="sched-board">${schedulePair(["Game", "When", "Field", "Round", "Home", "Away", "Score", "Box"], rows.map((g) => {
         const kind = g.kind === "bracket" ? (ROUND_META[g.round]?.label || g.round || "Bracket") : (g.round || "Pool");
         const href = g.kind === "pool" && g.id
           ? `/t/${escapeHtml(slug)}/games/${g.id}`
           : `/t/${escapeHtml(slug)}/bracket`;
         return `<tr>
           <td>${gameNoCell(g)}</td>
-          <td>${escapeHtml(when || "TBD")}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(g.delayed_from)})</span>` : ""}</td>
+          <td>${escapeHtml(whenLine(g))}${g.delayed_from ? ` <span class="muted">(was ${escapeHtml(formatTimeDisplay(g.delayed_from) || g.delayed_from)})</span>` : ""}</td>
           <td>${escapeHtml(g.field || "—")}</td>
           <td><span class="ov-kind ${escapeHtml(g.kind || "")}">${escapeHtml(kind)}</span></td>
           <td>${teamLink(slug, g.home_slug, g.home || "TBD")}</td>
@@ -1228,9 +1497,9 @@ export async function eventOverall(slug) {
           <td>${scoreCell(g)} · ${escapeHtml(g.status || "")}
             ${g.id ? ` · <a data-link href="${href}">${g.kind === "pool" ? (g.can_score ? "Post score" : "Open") : "Bracket"}</a>` : ""}
           </td>
+          <td>${boxMark(g)}</td>
         </tr>`;
-      })) : tabEmpty(board.event, slug, "schedule")}
-    </section>
+      }), scheduleCards(rows, slug, { groupBy: "date" }))}</div>` : `<section class="card">${tabEmpty(board.event, slug, "schedule")}</section>`}
   `);
 }
 
@@ -1264,13 +1533,13 @@ export async function eventGame(slug, id) {
   eventRoot().innerHTML = eventChrome(ev, "schedule", `
     <section class="page-head">
       <h1>${gameNo(g) ? `${escapeHtml(gameNo(g))} · ` : ""}${teamLink(slug, g.home_slug, g.home)} vs ${teamLink(slug, g.away_slug, g.away)}</h1>
-      <p class="muted">${escapeHtml([g.date, g.time, g.field, g.pool ? "Pool " + g.pool : ""].filter(Boolean).join(" · "))}</p>
+      <p class="muted">${escapeHtml([whenLine(g) !== "TBD" ? whenLine(g) : "", g.field, g.pool ? "Pool " + g.pool : ""].filter(Boolean).join(" · "))}</p>
       <p><a data-link href="/t/${escapeHtml(slug)}/schedule">Back to games</a></p>
     </section>
     ${detail.director && boxWaiting(box) ? `<section class="card approve-banner">
       <h2>Approve stats</h2>
-      <p class="muted">${escapeHtml(box.source || "box")} · ${escapeHtml(box.status)}. Approve publishes this game’s hitting and pitching on the public board.</p>
-      ${approveStatsButtons(box.id)}
+      <p class="muted">${escapeHtml(box.source || "box")} · ${escapeHtml(box.status)}. Review the converted lines, then approve to publish. Reject leaves them off the public board.</p>
+      ${boxReviewCard(box, slug, { hideGameLink: true, showActions: true, title: `${g.home} vs ${g.away}` })}
     </section>` : ""}
     <section class="card">
       <h2>Score</h2>
@@ -1297,12 +1566,11 @@ export async function eventGame(slug, id) {
     <section class="card">
       <h2>How this game’s stats get here</h2>
       <p class="muted">Four doors. A Grok bot may poll the public GameChanger URL a coach stored (about every 5 minutes during a live weekend) and post readable lines. A PDF upload still works. Nothing is invented from a picture or a blank page.</p>
-      ${box ? `<p class="stats-now">
-        ${box.gc_url ? `<a href="${escapeHtml(box.gc_url)}" target="_blank" rel="noopener">GameChanger box</a> · ` : ""}
-        ${box.url ? `<a href="${escapeHtml(box.url)}" target="_blank" rel="noopener">${escapeHtml(box.original_name || "Uploaded PDF")}</a> · ` : ""}
-        ${escapeHtml(box.source || "box")} · ${escapeHtml(box.status)}
-        ${box.note ? " · " + escapeHtml(box.note) : ""}
-      </p>` : `<p class="empty">No PDF, GameChanger link, or bot lines on this game yet.</p>`}
+      ${detail.director && boxWaiting(box)
+        ? `<p class="muted">Converted lines are in the Approve stats card above.</p>`
+        : box
+          ? boxReviewCard(box, slug, { hideGameLink: true, showActions: false })
+          : `<p class="empty">No PDF, GameChanger link, or bot lines on this game yet.</p>`}
       ${can ? `
       <details class="setup-block" open>
         <summary>1. GameChanger mobile PDF</summary>
@@ -1442,20 +1710,28 @@ export async function eventLeaders(slug) {
     ${approveBanner}
     <section class="grid two">
       <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${minAb} AB · ${hitRank}</p>
-        ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS"], hit)}</div>
+        ${deskTable(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS"], hit)}
+        ${statList((publishedHit.length ? publishedHit : board.leaders.hitting).map((r) => hitStatRow(r, escapeHtml(r.player || r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</div>
       <div class="card"><h2>Pitching leaders</h2><p class="muted">Min ${minIp} IP · ERA as published</p>
-        ${table(["Player", "Team", "IP", "K", "ERA"], pit)}</div>
+        ${deskTable(["Player", "Team", "IP", "K", "ERA"], pit)}
+        ${statList((publishedPit.length ? publishedPit : board.leaders.pitching).map((r) => pitStatRow(r, escapeHtml(r.player || r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</div>
     </section>
     ${full.length ? `<section class="card"><h2>Full published hitting board</h2>
       <p class="muted">Every published line. Qualifiers first.</p>
-      ${table(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], full.map((r) => `<tr>
+      ${deskTable(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], full.map((r) => `<tr>
         <td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
         <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
         <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
-      </tr>`))}</section>` : ""}
+      </tr>`))}
+      ${statList(full.map((r) => hitStatRow(r, escapeHtml(r.player), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</section>` : ""}
     <section class="card"><h2>Pitching counts</h2>
       <p class="muted">${cap ? `Weekend limit ${board.event.pitch_limit_ip}.0 IP. Tracked in one place, not forty texts.` : "No posted weekend inning cap. IP used is tracked here."}</p>
-      ${table(cap ? ["Player", "Team", "IP used", "Limit", ""] : ["Player", "Team", "IP used"], counts)}
+      ${deskTable(cap ? ["Player", "Team", "IP used", "Limit", ""] : ["Player", "Team", "IP used"], counts)}
+      ${statList((board.leaders.pitch_counts || []).map((r) => statRow({
+        name: escapeHtml(r.name_key),
+        meta: `${teamNameLink(slug, board.roster, r.team)}${cap && r.limit_ip != null ? ` · cap ${r.limit_ip}.0` : ""}`,
+        value: escapeHtml(String(r.ip ?? "—")),
+      })))}
     </section>`);
 }
 
@@ -1470,14 +1746,16 @@ export async function eventAwards(slug) {
     </section>
     <section class="grid two">
       <div class="card"><h2>Hitters</h2>
-        ${table(["Player", "Team", "AVG", "RBI"], at.hitters.map((r) => `<tr>
+        ${deskTable(["Player", "Team", "AVG", "RBI"], at.hitters.map((r) => `<tr>
           <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
           <td>${r.avg_display}</td><td>${r.rbi}</td></tr>`))}
+        ${statList(at.hitters.map((r) => hitStatRow(r, escapeHtml(r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}
       </div>
       <div class="card"><h2>Pitchers</h2>
-        ${table(["Player", "Team", "IP", "ERA"], at.pitchers.map((r) => `<tr>
+        ${deskTable(["Player", "Team", "IP", "ERA"], at.pitchers.map((r) => `<tr>
           <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
           <td>${r.ip}</td><td>${r.era_display}</td></tr>`))}
+        ${statList(at.pitchers.map((r) => pitStatRow(r, escapeHtml(r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}
       </div>
     </section>
     <p class="muted">Print Sunday at the field while everybody is still there.</p>
@@ -1499,7 +1777,7 @@ export async function eventList() {
       <li>
         <div>
           <b>${escapeHtml(ev.name)}</b>
-          <span class="muted">${escapeHtml([ev.ages, ev.venue, sourceLabel(ev)].filter(Boolean).join(" · "))}</span>
+          <span class="muted">${escapeHtml([formatWeekendDates(ev.start, ev.end), ev.ages, ev.venue, sourceLabel(ev)].filter(Boolean).join(" · "))}</span>
         </div>
         <div class="list-actions"><a class="btn" data-link href="/t/${ev.slug}">Open board</a></div>
       </li>`).join("")}</ul>`
@@ -1611,7 +1889,7 @@ export async function eventStats(slug) {
         <button class="tab active" type="button" data-stats-tab="hit">Hitting</button>
         <button class="tab" type="button" data-stats-tab="pit">Pitching</button>
       </div>
-      <div class="chips" id="stats-chips">
+      <div class="chips scroll-chips" id="stats-chips">
         <button class="chip on" type="button" data-team="">All teams</button>
         ${teams.map((t) => `<button class="chip" type="button" data-team="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("")}
       </div>
@@ -1632,17 +1910,17 @@ export async function eventStats(slug) {
       return;
     }
     if (state.tab === "hit") {
-      box.innerHTML = table(["#", "Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+      box.innerHTML = deskTable(["#", "Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
         <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
         <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
         <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
-      </tr>`));
+      </tr>`)) + statList(rows.map((r, i) => hitStatRow(r, escapeHtml(r.player), { seed: i + 1, teamHtml: teamNameLink(slug, board.roster, r.team) })));
     } else {
-      box.innerHTML = table(["#", "Player", "Team", "IP", "K", "ERA", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+      box.innerHTML = deskTable(["#", "Player", "Team", "IP", "K", "ERA", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
         <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
         <td>${r.ip}</td><td>${r.k}</td><td>${r.era}</td>
         <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
-      </tr>`));
+      </tr>`)) + statList(rows.map((r, i) => pitStatRow(r, escapeHtml(r.player), { seed: i + 1, teamHtml: teamNameLink(slug, board.roster, r.team) })));
     }
   };
   eventRoot().querySelectorAll("[data-stats-tab]").forEach((btn) => {
@@ -2181,6 +2459,54 @@ function approveStatsButtons(boxId) {
   </div>`;
 }
 
+function boxFileLinks(box) {
+  const bits = [];
+  if (box.gc_url) bits.push(`<a href="${escapeHtml(box.gc_url)}" target="_blank" rel="noopener">GameChanger box</a>`);
+  if (box.url) bits.push(`<a href="${escapeHtml(box.url)}" target="_blank" rel="noopener">${escapeHtml(box.original_name || "Uploaded file")}</a>`);
+  return bits;
+}
+
+function boxReviewCard(box, slug, opts = {}) {
+  if (!box) return "";
+  const hit = asLineList(box.hitting);
+  const pit = asLineList(box.pitching);
+  const game = box.game || {};
+  const title = opts.title || (game.home && game.away ? `${game.home} vs ${game.away}` : (game.home || "Converted lines"));
+  const files = boxFileLinks(box);
+  const waiting = boxWaiting(box);
+  const showActions = opts.showActions !== false && waiting && box.id;
+  return `<article class="box-review-card">
+    <header class="box-review-head">
+      <div>
+        <h3>${escapeHtml(title)}</h3>
+        <p class="muted">${escapeHtml(box.source || "box")} · <span class="badge ${escapeHtml(box.status || "")}">${escapeHtml(box.status || "")}</span>${box.note ? " · " + escapeHtml(box.note) : ""}</p>
+      </div>
+      ${!opts.hideGameLink && box.schedule_id ? `<a data-link href="/t/${escapeHtml(slug)}/games/${escapeHtml(box.schedule_id)}">Open game</a>` : ""}
+    </header>
+    <div class="box-review-cols">
+      <div>
+        <p class="kicker">Hitting</p>
+        ${hit.length
+          ? `<ul class="stat-list box-review-lines">${hit.map((r) => hitStatRow(r)).join("")}</ul>`
+          : `<p class="empty box-review-empty">No converted hitting lines yet.</p>`}
+      </div>
+      <div>
+        <p class="kicker">Pitching</p>
+        ${pit.length
+          ? `<ul class="stat-list box-review-lines">${pit.map((r) => pitStatRow(r)).join("")}</ul>`
+          : `<p class="empty box-review-empty">No converted pitching lines yet.</p>`}
+      </div>
+    </div>
+    ${files.length ? `<p class="box-review-files muted">${files.join(" · ")}</p>` : `<p class="muted box-review-files">No file or GameChanger link on this box.</p>`}
+    ${showActions ? approveStatsButtons(box.id) : ""}
+  </article>`;
+}
+
+function boxReviewList(boxes, slug, opts = {}) {
+  if (!boxes || !boxes.length) return `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`;
+  return `<div class="box-review-list">${boxes.map((b) => boxReviewCard(b, slug, opts)).join("")}</div>`;
+}
+
 function bindBoxReview(slug, reload, showErr) {
   eventRoot().querySelectorAll("[data-box-review]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -2231,7 +2557,7 @@ function adminPaneFromHash() {
 }
 
 function bindAdminRail(root) {
-  const setPane = (id) => {
+  const setPane = (id, opts = {}) => {
     const pane = ["overview", "setup", "venue", "scheduler", "rain", "teams", "stats", "boxes", "assist"].includes(id) ? id : "overview";
     root.querySelectorAll("[data-admin-pane]").forEach((el) => {
       el.hidden = el.dataset.adminPane !== pane;
@@ -2239,11 +2565,19 @@ function bindAdminRail(root) {
     root.querySelectorAll("[data-admin-go]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.adminGo === pane);
     });
+    const sel = root.querySelector("#admin-desk-select");
+    if (sel && sel.value !== pane) sel.value = pane;
     const next = "#admin-" + pane;
     if (location.hash !== next) history.replaceState({}, "", location.pathname + next);
+    if (opts.scroll) {
+      root.querySelector(`[data-admin-pane="${pane}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
   };
   root.querySelectorAll("[data-admin-go]").forEach((btn) => {
-    btn.addEventListener("click", () => setPane(btn.dataset.adminGo));
+    btn.addEventListener("click", () => setPane(btn.dataset.adminGo, { scroll: true }));
+  });
+  root.querySelector("#admin-desk-select")?.addEventListener("change", (evnt) => {
+    setPane(evnt.target.value, { scroll: true });
   });
   setPane(adminPaneFromHash());
 }
@@ -2355,22 +2689,22 @@ function importFieldOptions(fields, selected) {
 function customBracketDesk(ev, teams, games) {
   const locked = (g) => g.status === "final";
   const rows = (games || []).map((g) => `<tr data-bk-custom="${escapeHtml(g.id || "")}">
-    <td>${flightSelect(g.flight || "", locked(g))}</td>
-    <td>${roundSelect(g.round || "QF", locked(g))}</td>
-    <td><input name="slot" type="number" min="1" value="${escapeHtml(String(g.slot || 1))}" style="width:4rem" ${locked(g) ? "readonly" : ""}></td>
-    <td><select name="side" ${locked(g) ? "disabled" : ""}>
+    <td data-th="Flight">${flightSelect(g.flight || "", locked(g))}</td>
+    <td data-th="Round">${roundSelect(g.round || "QF", locked(g))}</td>
+    <td data-th="Slot"><input name="slot" type="number" min="1" value="${escapeHtml(String(g.slot || 1))}" style="width:4rem" ${locked(g) ? "readonly" : ""}></td>
+    <td data-th="Side"><select name="side" ${locked(g) ? "disabled" : ""}>
       ${[["championship", "Championship"], ["losers", "Losers"], ["consolation", "Consolation"]].map(([v, l]) =>
         `<option value="${v}" ${gameSide(g) === v || g.side === v ? "selected" : ""}>${l}</option>`).join("")}
     </select></td>
-    <td>${teamSelect(teams, "home_id", g.home_id, { disabled: locked(g) })}</td>
-    <td>${teamSelect(teams, "away_id", g.away_id, { disabled: locked(g) })}</td>
-    <td>${locked(g) ? "Final" : `<label class="check"><input type="checkbox" name="delete"> Remove</label>`}</td>
+    <td data-th="Home">${teamSelect(teams, "home_id", g.home_id, { disabled: locked(g) })}</td>
+    <td data-th="Away">${teamSelect(teams, "away_id", g.away_id, { disabled: locked(g) })}</td>
+    <td data-th="">${locked(g) ? "Final" : `<label class="check"><input type="checkbox" name="delete"> Remove</label>`}</td>
   </tr>`).join("");
   return `
     <h3>Custom bracket builder</h3>
     <p class="muted">Home and away are the registered teams only. Finals stay. Flight is gold, silver, platinum, or one tree.</p>
     <form class="form wide" id="custom-bracket-form">
-      <div class="table-wrap"><table>
+      <div class="table-wrap"><table class="card-table sched-edit">
         <thead><tr><th>Flight</th><th>Round</th><th>Slot</th><th>Side</th><th>Home</th><th>Away</th><th></th></tr></thead>
         <tbody id="custom-bracket-rows">${rows || ""}</tbody>
       </table></div>
@@ -2380,17 +2714,17 @@ function customBracketDesk(ev, teams, games) {
       </div>
     </form>
     <template id="custom-bracket-row">${`<tr data-bk-custom="">
-      <td>${flightSelect("", false)}</td>
-      <td>${roundSelect("QF", false)}</td>
-      <td><input name="slot" type="number" min="1" value="1" style="width:4rem"></td>
-      <td><select name="side">
+      <td data-th="Flight">${flightSelect("", false)}</td>
+      <td data-th="Round">${roundSelect("QF", false)}</td>
+      <td data-th="Slot"><input name="slot" type="number" min="1" value="1" style="width:4rem"></td>
+      <td data-th="Side"><select name="side">
         <option value="championship">Championship</option>
         <option value="losers">Losers</option>
         <option value="consolation">Consolation</option>
       </select></td>
-      <td>${teamSelect(teams, "home_id", "")}</td>
-      <td>${teamSelect(teams, "away_id", "")}</td>
-      <td><label class="check"><input type="checkbox" name="delete"> Remove</label></td>
+      <td data-th="Home">${teamSelect(teams, "home_id", "")}</td>
+      <td data-th="Away">${teamSelect(teams, "away_id", "")}</td>
+      <td data-th=""><label class="check"><input type="checkbox" name="delete"> Remove</label></td>
     </tr>`}</template>
   `;
 }
@@ -2766,7 +3100,13 @@ export async function eventAdmin(slug) {
     <div class="admin-desk">
       <aside class="admin-rail" aria-label="Director sections">
         <p class="kicker">Desk</p>
-        <nav>
+        <label class="admin-desk-pick">Section
+          <select id="admin-desk-select">
+            ${rail.map(([id, label, badge]) =>
+              `<option value="${escapeHtml(id)}">${escapeHtml(label)}${badge ? ` (${escapeHtml(badge)})` : ""}</option>`).join("")}
+          </select>
+        </label>
+        <nav class="admin-rail-nav">
           ${rail.map(([id, label, badge]) =>
             `<button type="button" data-admin-go="${id}">${escapeHtml(label)}${badge ? ` <span class="rail-count">${escapeHtml(badge)}</span>` : ""}</button>`).join("")}
         </nav>
@@ -2793,16 +3133,8 @@ export async function eventAdmin(slug) {
           </ul>
           ${pending.length ? `<div class="approve-banner">
             <h3>Approve stats</h3>
-            <p class="muted">${pending.length} box${pending.length === 1 ? "" : "es"} waiting. This list is here — not on the public Stats tab.</p>
-            ${table(["Game", "Door", "Status", ""], pending.map((b) => {
-              const waiting = boxWaiting(b);
-              return `<tr>
-              <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
-              <td>${escapeHtml(b.source || "")}${b.schedule_id ? ` · <a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open game</a>` : ""}</td>
-              <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
-              <td>${waiting && b.id ? approveStatsButtons(b.id) : ""}</td>
-            </tr>`;
-            }))}
+            <p class="muted">${pending.length} box${pending.length === 1 ? "" : "es"} waiting. Review converted hitting and pitching here — not only the file.</p>
+            ${boxReviewList(pending, ev.slug)}
           </div>` : ""}
           ${isSiteAdmin(eventPb.authStore.record) ? `
           <div class="danger-zone">
@@ -2831,7 +3163,7 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="venue" hidden>
           <h2>Venue setups</h2>
-          <p class="muted">Park, street address, global hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
+          <p class="muted">Park, street address, park hours, then each diamond’s hours by date. A field that is closed Saturday will not get Saturday games.</p>
           <form class="form wide" id="fields-form">
             ${setupVenueFields(ev, fields.length ? fields : [{}])}
             <button class="btn" type="submit">Save venue</button>
@@ -2911,7 +3243,7 @@ export async function eventAdmin(slug) {
               <button class="btn ghost" type="button" data-delete-game="${g.id}">Remove</button>
               ${escapeHtml(g.status)}
             </td>
-          </tr>`)) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
+          </tr>`), { className: "card-table sched-edit" }) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
           <form class="form wide" id="add-game-form">
             <h3>Add one game</h3>
             <p class="muted">Home and away are the registered teams only. Type a new club on Teams or signup first.</p>
@@ -3013,19 +3345,8 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="stats" hidden>
           <h2>Approve stats</h2>
-          <p class="muted">PDFs and public GameChanger box links waiting on a bot or on you. Approve publishes the lines. Reject leaves them off the public board. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
-          ${pending.length ? table(["Game", "Door", "Status", ""], pending.map((b) => {
-            const waiting = boxWaiting(b);
-            return `<tr>
-            <td>${escapeHtml(b.game ? (b.game.home + " vs " + b.game.away) : "Game")}</td>
-            <td>${escapeHtml(b.source || "")}${b.gc_url ? ` · <a href="${escapeHtml(b.gc_url)}" target="_blank" rel="noopener">GC</a>` : ""}${b.url ? ` · <a href="${escapeHtml(b.url)}" target="_blank" rel="noopener">file</a>` : ""}</td>
-            <td><span class="badge ${escapeHtml(b.status || "")}">${escapeHtml(b.status || "")}</span></td>
-            <td>
-              ${b.schedule_id ? `<a data-link href="/t/${ev.slug}/games/${b.schedule_id}">Open game</a>` : ""}
-              ${waiting && b.id ? approveStatsButtons(b.id) : ""}
-            </td>
-          </tr>`;
-          })) : `<p class="empty">Nothing queued. Managers paste a GC box URL or PDF; you can upload a director PDF from any game.</p>`}
+          <p class="muted">Converted hitting and pitching from the upload or GameChanger link. Approve publishes those lines. Reject leaves them off the public board. File and GC links stay secondary. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
+          ${boxReviewList(pending, ev.slug)}
         </section>
         <section class="card" data-admin-pane="boxes" hidden>
           <h2>Box scores</h2>
@@ -3555,9 +3876,9 @@ function nextGameCard(eventSlug, team, g) {
   const oppSlug = g.home === team.name || g.home_id === team.id ? g.away_slug : g.home_slug;
   return `<section class="next-game">
     <p class="kicker">Next game</p>
-    <p class="next-when">${escapeHtml(g.time || "TBD")}${g.field ? ` · ${escapeHtml(g.field)}` : ""}</p>
+    <p class="next-when">${escapeHtml(formatTimeDisplay(g.time) || "TBD")}${g.field ? ` · ${escapeHtml(g.field)}` : ""}</p>
     <p class="next-vs">vs ${teamLink(eventSlug, oppSlug, opp)}</p>
-    <p class="muted">${escapeHtml([g.date, gameNo(g), g.round || g.pool].filter(Boolean).join(" · "))}</p>
+    <p class="muted">${escapeHtml([formatDateDisplay(g.date), gameNo(g), g.round || g.pool].filter(Boolean).join(" · "))}</p>
   </section>`;
 }
 
@@ -3588,19 +3909,37 @@ export async function eventTeamPage(eventSlug, teamSlug) {
       ${nextGameCard(ev.slug, team, page.next)}
       <section class="card">
         <h2>Schedule</h2>
-        ${(page.schedule || []).length ? table(["Game", "When", "Field", "Opponent", "Result"], page.schedule.map((g) => {
+        ${(page.schedule || []).length ? schedulePair(["Game", "When", "Field", "Opponent", "Result", "Box"], page.schedule.map((g) => {
           const usHome = g.home === team.name || g.home_id === team.id;
           const opp = usHome ? g.away : g.home;
           const oppSlug = usHome ? g.away_slug : g.home_slug;
           const past = g.status === "final" || g.score_source === "one_book" || g.score_source === "verified";
           return `<tr>
             <td>${gameNoCell(g)}</td>
-            <td>${escapeHtml([g.date, g.time].filter(Boolean).join(" ") || "TBD")}</td>
+            <td>${escapeHtml(whenLine(g))}</td>
             <td>${escapeHtml(g.field || "—")}</td>
             <td>${teamLink(ev.slug, oppSlug, opp || "TBD")}</td>
             <td>${past ? scoreCell(g) : "—"}</td>
+            <td>${boxMark(g)}</td>
           </tr>`;
-        })) : `<p class="empty">No games posted for this team yet.</p>`}
+        }), `<div class="game-list">${page.schedule.map((g) => {
+          const usHome = g.home === team.name || g.home_id === team.id;
+          const opp = usHome ? g.away : g.home;
+          const oppSlug = usHome ? g.away_slug : g.home_slug;
+          const past = g.status === "final" || g.score_source === "one_book" || g.score_source === "verified";
+          return `<article class="game-card${g.status === "live" ? " live" : ""}">
+            <div class="game-card-top">
+              <span class="game-card-ident">
+                ${gameNo(g) ? `<span class="game-no">${escapeHtml(gameNo(g))}</span>` : ""}
+                <span class="ov-kind">${escapeHtml(g.round || g.pool || "")}</span>
+              </span>
+              ${boxMark(g)}
+            </div>
+            <p class="game-card-when">${escapeHtml(whenLine(g))}${g.field ? ` · ${escapeHtml(g.field)}` : ""}</p>
+            <p class="game-card-match">${usHome ? "vs" : "@"} ${teamLink(ev.slug, oppSlug, opp || "TBD")}</p>
+            <p class="game-card-foot"><span>${past ? scoreCell(g) : "—"}</span></p>
+          </article>`;
+        }).join("")}</div>`) : `<p class="empty">No games posted for this team yet.</p>`}
       </section>
       <section class="card">
         <h2>Record</h2>
@@ -3614,12 +3953,12 @@ export async function eventTeamPage(eventSlug, teamSlug) {
       </section>
       ${(page.hitting || []).length || (page.pitching || []).length ? `<section class="card">
         <h2>Team stats</h2>
-        ${(page.hitting || []).length ? table(["Player", "AB", "H", "RBI", "AVG"], page.hitting.map((r) => `<tr>
+        ${(page.hitting || []).length ? deskTable(["Player", "AB", "H", "RBI", "AVG"], page.hitting.map((r) => `<tr>
           <td>${escapeHtml(r.player || r.name_key)}</td><td>${r.ab ?? ""}</td><td>${r.h ?? ""}</td>
-          <td>${r.rbi ?? ""}</td><td>${r.avg || r.avg_display || ""}</td></tr>`)) : ""}
-        ${(page.pitching || []).length ? table(["Player", "IP", "K", "ERA"], page.pitching.map((r) => `<tr>
+          <td>${r.rbi ?? ""}</td><td>${r.avg || r.avg_display || ""}</td></tr>`)) + statList(page.hitting.map((r) => hitStatRow(r))) : ""}
+        ${(page.pitching || []).length ? deskTable(["Player", "IP", "K", "ERA"], page.pitching.map((r) => `<tr>
           <td>${escapeHtml(r.player || r.name_key)}</td><td>${r.ip ?? ""}</td>
-          <td>${r.k ?? r.so ?? ""}</td><td>${r.era || r.era_display || ""}</td></tr>`)) : ""}
+          <td>${r.k ?? r.so ?? ""}</td><td>${r.era || r.era_display || ""}</td></tr>`)) + statList(page.pitching.map((r) => pitStatRow(r))) : ""}
       </section>` : ""}
       ${(page.bracket_path || []).length ? `<section class="card">
         <h2>Bracket path</h2>
@@ -3630,7 +3969,7 @@ export async function eventTeamPage(eventSlug, teamSlug) {
             <td>${gameNoCell(g)}</td>
             <td>${escapeHtml(g.round || "")}</td>
             <td>${escapeHtml(opp)}</td>
-            <td>${escapeHtml([g.date, g.time, g.field].filter(Boolean).join(" ") || "TBD")}</td>
+            <td>${escapeHtml([whenLine(g) !== "TBD" ? whenLine(g) : "", g.field].filter(Boolean).join(" · ") || "TBD")}</td>
           </tr>`;
         }))}
       </section>` : ""}
@@ -3648,9 +3987,7 @@ export async function boxUploadPage(token) {
       <h1>Upload this team's book</h1>
       <p class="muted">${escapeHtml(view.event?.name || "")} · Game ${view.game?.game_number || "?"} · ${escapeHtml(view.team?.name || "")}</p>
       <p>${escapeHtml(view.game?.home || "")} vs ${escapeHtml(view.game?.away || "")}
-         ${view.game?.date ? " · " + escapeHtml(view.game.date) : ""}
-         ${view.game?.time ? " · " + escapeHtml(view.game.time) : ""}
-         ${view.game?.field ? " · " + escapeHtml(view.game.field) : ""}</p>
+         ${view.game ? " · " + escapeHtml([whenLine(view.game) !== "TBD" ? whenLine(view.game) : "", view.game.field].filter(Boolean).join(" · ")) : ""}</p>
     </section>
     ${view.expired ? `<section class="card empty">This upload link is expired.</section>`
       : view.submitted ? `<section class="card"><p>This book is already in. Thank you.</p>
@@ -3672,7 +4009,7 @@ export async function boxUploadPage(token) {
         <p><a data-link href="/help/box-score">Help: how to send a box score</a>
            · <a data-link href="/box/${escapeHtml(token)}/stop">Stop asking about this tournament</a></p>
       </section>`}
-  `);
+  `, { slim: true });
   const form = document.getElementById("box-token-form");
   if (!form) return;
   form.addEventListener("submit", async (evnt) => {
@@ -3705,14 +4042,14 @@ export async function boxStopPage(token) {
         <p class="error" id="box-stop-err" hidden></p>
       </form>
     </section>
-  `);
+  `, { slim: true });
   document.getElementById("box-stop-form").addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
     try {
       const out = await fetch("/api/box/" + encodeURIComponent(token) + "/unsubscribe", { method: "POST" });
       if (!out.ok) throw new Error(await out.text());
       flashSaved("Stopped");
-      eventRoot().innerHTML = eventChrome(null, "box", `<section class="card"><p>This team will not get more box-score mail for this weekend.</p></section>`);
+      eventRoot().innerHTML = eventChrome(null, "box", `<section class="card"><p>This team will not get more box-score mail for this weekend.</p></section>`, { slim: true });
     } catch (ex) {
       const err = document.getElementById("box-stop-err");
       err.hidden = false;
@@ -3738,5 +4075,5 @@ export async function boxHelpPage() {
       <p>A clear photo of the scorebook page is enough. A Grok bot types the lines. Nothing is invented from a blurry picture.</p>
       <p class="muted">Help version: doors only, 2026-09-19. Screenshots wait on the owner — GameChanger changes its UI and stale shots are worse than none.</p>
     </section>
-  `);
+  `, { slim: true });
 }

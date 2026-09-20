@@ -138,6 +138,14 @@ direct unit tests for the hook modules.
 
 ### Closed
 
+- ~~**Phone Schedule showed a 7-column table that wrapped letter-by-letter.**~~
+  `schedulePair` put `desktop-table` on the wrapper only, so
+  `table.desktop-table` never matched and the table stayed visible under the
+  iOS tab bar. The hide rule now targets `.table-wrap.desktop-table` as well.
+  Phone Schedule is date-grouped game cards (home/away stacked with the
+  posted score); desktop keeps the table. Same pair is used on Games and the
+  team sheet. Covered by `MobileDisplayTests`.
+
 - ~~**`POST /api/bot/event-update` inserted a new `event_boxes` row every
   time.**~~ It now upserts via `attachUpdateBox` (same schedule_row), sets
   `event`, and applies stored lines. Covered by `PressureBotTests`.
@@ -198,14 +206,73 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
-### 2026-09-20 — BACKLOG statuses match `main` through PR #31
+### 2026-09-20 — Box chip: No box / Submitted / Approved
 
-`docs/BACKLOG.md` now has a status board and a pending list checked against
-`main` `1b094a8`. Items 1–24 stay as they were (1 still `[~]` for Fly SMTP).
-Item 25 is recorded as done (Gold/Silver *labels* persist; not 8/6 sizing).
-Items 26–31 stay open. Shipped owner requests that had no heading are **32**
-(dynamic live gates / no “over” without an IP cap, PR #30) and **33** (Approve
-stats findable, PRs #29 + #31). BACKLOG 29/30/31 are not those GitHub PRs.
+Schedule cards only said “box” or nothing, so a director could not tell a
+posted scorebook from an approved one. The board now carries `box_status`
+from `event_boxes` (queued / submitted / needs_review / approved / rejected).
+Phone cards put a chip on the right: **No box**, **Submitted**, **Approved**,
+or **Rejected**. Desktop adds a Box column. Public JSON has no emails.
+
+Covered by `EventBoxReviewTests` (anonymous board before and after Approve)
+and `MobileDisplayTests` (`boxMark`).
+
+### 2026-09-20 — Phone Schedule no longer letter-wraps
+
+Live Test Run Schedule on a phone still showed Game / When / Field / Round /
+Home / Away / Score as a squeezed table. The prior mobile pass already built
+game cards, but `desktop-table` was on `.table-wrap` and the CSS only hid
+`table.desktop-table`, so the table stayed on top and wrapped Field into
+F-i-e-l-d.
+
+Phone now hides `.table-wrap.desktop-table` and lists date-grouped cards:
+game number, round, time, field, home and away on their own lines with the
+posted score, then status and one action. Desktop still uses the table.
+Games-by-field and the team sheet use the same hide rule. No stats invented;
+scores still come from the posted box.
+
+Covered by `MobileDisplayTests` (`scheduleCards`, `.table-wrap.desktop-table`).
+
+### 2026-09-20 — iOS tournament tab bar, compact stats, box review
+
+Phone still had a top tournament strip that scrolled sideways (Home through
+Admin). Apple HIG wants three to five bottom tabs with labels, 44px targets,
+and overflow in More — not a hidden extra page. Phone now uses Home,
+Schedule, Standings, Bracket, and More (Games, Stats, Info, Sign up, Admin).
+Desktop keeps the full top row, wrapping instead of scrolling.
+
+Stats / leaders / standings / year / season hitting no longer explode into
+one labeled box per cell. Phone shows iOS-style rows: name, a secondary
+line, and one primary number. Desktop tables stay.
+
+Approve stats was file/GC links only even though `listPendingBoxes` already
+returns converted `hitting` / `pitching`. Directors now see those lines on
+Admin → Approve stats, Overview, and the game page before they tap Approve.
+Empty is honest: “No converted hitting lines yet.” File and GC stay
+secondary. Bots still cannot Approve. BACKLOG 28b stays open.
+
+Covered by `MobileDisplayTests`, `test_display.mjs` (`asLineList`), and
+`EventBoxReviewTests` asserting pending boxes carry converted names.
+
+### 2026-09-20 — One-PR mobile pass (chrome, cards, times, home)
+
+Phone review on Harbor Eight (390×844) showed the Admin rail stretching the
+page (~970px) and tables hiding Home/Away/Score behind a nested swipe. This
+PR contains the whole list: sticky chrome height vars, 44px taps, safe-area,
+toast under the site bar, Admin desk `<select>` under 800px, 12-hour times and
+weekday dates from `display.js`, Park hours, schedule/team game cards,
+card-table labels for standings/stats/books, stacked bracket rounds, and a
+parent home that leads with next pitch and team chips. Field hours are
+collapsed. Live-score polling (BACKLOG 28b) is not in this PR.
+
+### 2026-09-20 — BACKLOG statuses match `main` through PR #36
+
+`docs/BACKLOG.md` has a status board and a pending list. Items 1–25 stay as
+they were (1 still `[~]` for Fly SMTP). Items 26–26i stay open. 27 and 28
+are done; **28b** live scores stays open. Shipped owner requests that had no
+heading are **32** (dynamic live gates, PR #30), **33** (Approve stats
+findable, PRs #29 + #31), and **34** (iOS tab bar / compact stats / review,
+PR #35). BACKLOG 29/30/31 are not those GitHub PRs.
 
 Next product build is still **26 + 26i**. Do not invent GameChanger menu names
 to close 21/22. GitHub issue #7 stays open (same as item 1).

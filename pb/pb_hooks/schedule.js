@@ -481,23 +481,43 @@ function scheduleRow(app, rec, extras) {
     delayed_from: rec.get("delayed_from") || "",
     can_score: false,
     has_box: false,
+    box_status: "",
   };
   if (extras) {
     if (extras.can_score) row.can_score = true;
-    if (extras.has_box) row.has_box = true;
+    if (extras.box_status) {
+      row.box_status = extras.box_status;
+      row.has_box = true;
+    } else if (extras.has_box) {
+      row.has_box = true;
+    }
   }
   return row;
 }
 
+function boxStatusRank(status) {
+  if (status === "approved") return 4;
+  if (status === "needs_review" || status === "submitted") return 3;
+  if (status === "queued") return 2;
+  if (status === "rejected") return 1;
+  return 0;
+}
+
 function boxesForEvent(app, eventId) {
   const map = {};
+  function add(rows) {
+    for (const b of rows) {
+      const key = b.get("schedule_row");
+      if (!key) continue;
+      const status = b.get("status") || "submitted";
+      if (!map[key] || boxStatusRank(status) > boxStatusRank(map[key])) map[key] = status;
+    }
+  }
   try {
-    const rows = app.findRecordsByFilter("event_boxes", "event = {:e}", "", 200, 0, { e: eventId });
-    for (const b of rows) map[b.get("schedule_row")] = true;
+    add(app.findRecordsByFilter("event_boxes", "event = {:e}", "", 200, 0, { e: eventId }));
   } catch (err) {
     try {
-      const rows = app.findRecordsByFilter("event_boxes", "", "", 200, 0);
-      for (const b of rows) map[b.get("schedule_row")] = true;
+      add(app.findRecordsByFilter("event_boxes", "", "", 200, 0));
     } catch (miss) {}
   }
   return map;
@@ -514,6 +534,7 @@ function listSchedule(app, eventId, auth) {
     return scheduleRow(app, r, {
       can_score: !!(auth && event && score.canScore(app, event, r, auth)),
       has_box: !!boxes[r.id],
+      box_status: boxes[r.id] || "",
     });
   });
   rows.sort(require(__hooks + "/diamond.js").compareWeekendGames);
