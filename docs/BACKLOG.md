@@ -1690,7 +1690,7 @@ rounds). A fix that makes one work and breaks the other is not a fix.
 This applies to the AI assistant in item 23 as well. It must reason from the
 event's own configuration, never from a remembered example.
 
-## [ ] 27. Human-readable times and dates everywhere; rename "Global hours"
+## [x] 27. Human-readable times and dates everywhere; rename "Global hours"
 
 **Medium. Affects every public page. Owner-flagged.**
 
@@ -1742,16 +1742,21 @@ or Field 10 lands before Field 2.
 
 ### Acceptance criteria
 
-- [ ] "Global hours" renamed to "Park hours" wherever it appears
-- [ ] A single time formatter exists and is used for every displayed time
-- [ ] No 24-hour time visible on any public page
-- [ ] A single date formatter exists and is used for every displayed date
-- [ ] Dates show the weekday
-- [ ] Storage format unchanged — display layer only
-- [ ] Sweep public pages for other internal vocabulary and list what's found
+- [x] "Global hours" renamed to "Park hours" wherever it appears
+- [x] A single time formatter exists and is used for every displayed time
+- [x] No 24-hour time visible on any public page
+- [x] A single date formatter exists and is used for every displayed date
+- [x] Dates show the weekday
+- [x] Storage format unchanged — display layer only
+- [x] Sweep public pages for other internal vocabulary and list what's found
+
+Display lives in `pb/pb_public/js/display.js`. Inputs stay native `type=time` /
+`type=date` (24-hour storage). Director-desk words that remain on Admin only:
+flight, slot, seed reason, “Replace unplayed”, “Import a grid.” Public pages
+use Park hours, weekday dates, and 12-hour first pitch.
 
 
-## [ ] 28. Redesign the tournament home page
+## [x] 28. Redesign the tournament home page
 
 **High. Owner-flagged: "plain and boring." The most-visited page in the product.**
 
@@ -1827,16 +1832,21 @@ identity is fine. What it needs is contrast and weight, not new colors.
 
 ### Acceptance criteria
 
-- [ ] The page leads with what a parent came for, not field hours
-- [ ] Three distinct phases render correctly: before, during, after
-- [ ] The most prominent element answers "when and where do we play next"
-- [ ] Teams are tappable links to team pages
-- [ ] Live games are visually distinct from scheduled ones
-- [ ] Venue photos used where available; field hours demoted
-- [ ] Champion display after completion
-- [ ] Usable on a phone in sunlight, one-handed
-- [ ] **Open it on a phone and find your team's next game in under five seconds
+- [x] The page leads with what a parent came for, not field hours
+- [x] Three distinct phases render correctly: before, during, after
+- [x] The most prominent element answers "when and where do we play next"
+- [x] Teams are tappable links to team pages
+- [x] Live games are visually distinct from scheduled ones
+- [x] Venue photos used where available; field hours demoted
+- [x] Champion display after completion
+- [x] Usable on a phone in sunlight, one-handed
+- [x] **Open it on a phone and find your team's next game in under five seconds
       without scrolling past anything irrelevant**
+
+Home now opens with next pitch (or champions), team chips, then standings and
+getting-there. Field hours sit in a collapsed “Park hours and fields” block.
+Posted finals can show as “Recently final.” **28b live polling is still open**
+and waits on Steve — this page does not auto-refresh or invent a live score.
 
 
       ## [ ] 28b. Live scores on the tournament home page

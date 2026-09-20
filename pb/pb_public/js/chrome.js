@@ -121,8 +121,8 @@ export function teamBar(team, page = "", pb = null) {
     </div>`;
 }
 
-export function pageShell({ pb, site = "", event = null, team = null, page = "", body = "", footer = "" }) {
-  const shell = event ? "event" : team ? "team" : "site";
+export function pageShell({ pb, site = "", event = null, team = null, page = "", body = "", footer = "", slim = false }) {
+  const shell = slim ? "slim" : event ? "event" : team ? "team" : "site";
   document.body.dataset.shell = shell;
   const who = pb.authStore.record;
   const foot = footer || (event
@@ -132,8 +132,8 @@ export function pageShell({ pb, site = "", event = null, team = null, page = "",
       : (who ? who.email : "Signed out") + " · Profiles are teams. Email is a login.");
   return `
     ${siteBar(pb, site)}
-    ${event ? eventBar(event, page, pb) : ""}
-    ${team ? teamBar(team, page, pb) : ""}
+    ${!slim && event ? eventBar(event, page, pb) : ""}
+    ${!slim && team ? teamBar(team, page, pb) : ""}
     <main id="main" class="wrap page">${body}</main>
     <footer class="wrap footer">${escapeText(foot)}</footer>
   `;
@@ -159,4 +159,34 @@ export function flashSaved(message = "Saved") {
   host.classList.add("show");
   clearTimeout(host._hide);
   host._hide = setTimeout(() => host.classList.remove("show"), 2800);
+}
+
+let chromeWatch = null;
+
+function writeChromeVars() {
+  const root = document.documentElement;
+  const site = document.querySelector(".site-bar");
+  const event = document.querySelector(".event-bar");
+  const siteH = site ? Math.round(site.getBoundingClientRect().height) : 52;
+  const eventH = event ? Math.round(event.getBoundingClientRect().height) : 0;
+  root.style.setProperty("--site-h", siteH + "px");
+  root.style.setProperty("--event-bar-h", eventH + "px");
+  root.style.setProperty("--chrome-h", (siteH + eventH) + "px");
+  return { site, event };
+}
+
+export function measureChrome() {
+  const { site, event } = writeChromeVars();
+  if (typeof ResizeObserver === "undefined") return;
+  if (chromeWatch) chromeWatch.disconnect();
+  chromeWatch = new ResizeObserver(() => writeChromeVars());
+  if (site) chromeWatch.observe(site);
+  if (event) chromeWatch.observe(event);
+}
+
+export function collapseSetupOnPhone() {
+  if (!window.matchMedia || !window.matchMedia("(max-width: 720px)").matches) return;
+  document.querySelectorAll("details.setup-block[open]").forEach((el, i) => {
+    if (i > 0) el.open = false;
+  });
 }

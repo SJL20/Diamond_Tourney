@@ -92,6 +92,29 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("ensure-pocketbase.sh", src)
 
 
+class MobileDisplayTests(unittest.TestCase):
+    def test_display_formatters(self):
+        import subprocess
+        out = subprocess.check_output(
+            ["node", str(ROOT / "scripts/test_display.mjs")],
+            text=True,
+        )
+        self.assertIn("display.js ok", out)
+
+    def test_phone_chrome_markers(self):
+        event = (ROOT / "pb/pb_public/js/event.js").read_text()
+        css = (ROOT / "pb/pb_public/css/app.css").read_text()
+        self.assertIn("id=\"admin-desk-select\"", event)
+        self.assertIn("function gameCard", event)
+        self.assertIn("homePhaseBlock", event)
+        self.assertIn("teamChips", event)
+        self.assertIn('data-phase="', event)
+        self.assertIn(".desktop-table", css)
+        self.assertIn(".card-table td::before", css)
+        self.assertIn(".game-list", css)
+        self.assertIn(".admin-rail nav.admin-rail-nav", css)
+
+
 class TournamentUiTests(unittest.TestCase):
     def test_standings_tab_game_numbers_and_save_toast(self):
         chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
@@ -125,6 +148,17 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Check back closer to the weekend", event)
         self.assertIn("No pool results yet", event)
         self.assertIn("function formatWeekendDates", event)
+        self.assertIn("from \"./display.js\"", event)
+        self.assertIn("formatTimeDisplay", event)
+        self.assertIn("formatDateDisplay", event)
+        self.assertIn("admin-desk-select", event)
+        self.assertIn("class=\"game-card", event)
+        self.assertIn("Park hours", event)
+        self.assertNotIn("Global hours", event)
+        self.assertIn("overflow-x: clip", css)
+        self.assertIn(".admin-desk-pick", css)
+        self.assertIn("export function measureChrome", chrome)
+        self.assertIn("measureChrome", app)
         self.assertIn("function tabEmpty", event)
         self.assertIn("function compareGames", event)
         self.assertIn("Import a bracket CSV", event)
@@ -2707,6 +2741,8 @@ class BacklogOpenTests(unittest.TestCase):
     def test_info_dates_come_from_event_not_keystone_literal(self):
         src = (ROOT / "pb/pb_public/js/event.js").read_text()
         self.assertIn("function formatWeekendDates", src)
+        self.assertNotIn("Global hours", src)
+        self.assertIn("Park hours", src)
         self.assertNotIn('packet?.dates || "September 11', src)
         self.assertIn("function parkingMapView", src)
         self.assertIn("isKeystoneParkingAsset", src)
