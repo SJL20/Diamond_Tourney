@@ -408,6 +408,7 @@ function gameDetail(app, event, id, auth) {
     game: schedule.scheduleRow(app, rec, {
       can_score: canScore(app, event, rec, auth),
       has_box: !!box,
+      box_status: box ? (box.get("status") || "submitted") : "",
     }),
     box: box ? boxJson(app, box) : null,
     director: isDirector(auth, event, app),

@@ -825,6 +825,7 @@ function listOverall(schedule, bracket) {
       delayed_from: g.delayed_from || "",
       can_score: !!g.can_score,
       has_box: !!g.has_box,
+      box_status: g.box_status || "",
     });
   }
   for (let i = 0; i < bracket.length; i++) {

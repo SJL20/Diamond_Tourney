@@ -106,6 +106,8 @@ class MobileDisplayTests(unittest.TestCase):
         css = (ROOT / "pb/pb_public/css/app.css").read_text()
         self.assertIn("id=\"admin-desk-select\"", event)
         self.assertIn("function gameCard", event)
+        self.assertIn("function boxMark", event)
+        self.assertIn("No box", event)
         self.assertIn("function scheduleCards", event)
         self.assertIn('className: "desktop-table"', event)
         self.assertIn('groupBy: "date"', event)
@@ -117,6 +119,7 @@ class MobileDisplayTests(unittest.TestCase):
         self.assertIn(".phone-schedule", css)
         self.assertIn(".card-table td::before", css)
         self.assertIn(".game-list", css)
+        self.assertIn(".box-mark", css)
         self.assertIn(".admin-rail nav.admin-rail-nav", css)
         self.assertIn(".tourney-tabbar", css)
         self.assertIn(".phone-stat-list", css)
@@ -1324,6 +1327,7 @@ class ScheduleTests(unittest.TestCase):
         scored = next(g for g in board["schedule"] if g["id"] == mine["id"])
         self.assertTrue(scored["can_score"])
         self.assertTrue(scored["has_box"])
+        self.assertEqual(scored["box_status"], "submitted")
         self.assertEqual(scored["status"], "final")
 
     def test_four_stats_upload_routes(self):
@@ -3585,6 +3589,12 @@ class EventBoxReviewTests(unittest.TestCase):
         posted = self._bot_review_box(bot, slug, game_id)
         self.assertEqual(posted["box"]["status"], "needs_review")
         box_id = posted["box"]["id"]
+        public = request(BASE, "GET", f"/api/event/{slug}/board")
+        waiting = next(g for g in public["schedule"] if g["id"] == game_id)
+        self.assertEqual(waiting["box_status"], "needs_review")
+        self.assertTrue(waiting["has_box"])
+        overall_wait = next(g for g in public["overall"] if g["id"] == game_id)
+        self.assertEqual(overall_wait["box_status"], "needs_review")
         plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
         pending = next(b for b in plan.get("pending_boxes", []) if b["id"] == box_id)
         self.assertEqual(pending["hitting"][0]["name"], "Maeve D")
@@ -3598,6 +3608,10 @@ class EventBoxReviewTests(unittest.TestCase):
         })
         self.assertEqual(approved["box"]["status"], "approved")
         self.assertEqual(self._hitting_count(td, game_id), hits_before)
+        after = request(BASE, "GET", f"/api/event/{slug}/board")
+        done = next(g for g in after["schedule"] if g["id"] == game_id)
+        self.assertEqual(done["box_status"], "approved")
+        self.assertTrue(done["has_box"])
         plan2 = request(BASE, "GET", f"/api/events/{slug}/plan", td)
         self.assertFalse(any(b["id"] == box_id for b in plan2.get("pending_boxes", [])))
 
@@ -3607,6 +3621,10 @@ class EventBoxReviewTests(unittest.TestCase):
         self.assertTrue(again.get("already"))
 
         slug2, game2 = self._weekend_with_game(td)
+        empty = request(BASE, "GET", f"/api/event/{slug2}/board")
+        none = next(g for g in empty["schedule"] if g["id"] == game2)
+        self.assertEqual(none.get("box_status") or "", "")
+        self.assertFalse(none["has_box"])
         posted2 = self._bot_review_box(bot, slug2, game2, "alignment messy")
         reject_id = posted2["box"]["id"]
         hits2 = self._hitting_count(td, game2)

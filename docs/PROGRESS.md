@@ -206,6 +206,17 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-20 — Box chip: No box / Submitted / Approved
+
+Schedule cards only said “box” or nothing, so a director could not tell a
+posted scorebook from an approved one. The board now carries `box_status`
+from `event_boxes` (queued / submitted / needs_review / approved / rejected).
+Phone cards put a chip on the right: **No box**, **Submitted**, **Approved**,
+or **Rejected**. Desktop adds a Box column. Public JSON has no emails.
+
+Covered by `EventBoxReviewTests` (anonymous board before and after Approve)
+and `MobileDisplayTests` (`boxMark`).
+
 ### 2026-09-20 — Phone Schedule no longer letter-wraps
 
 Live Test Run Schedule on a phone still showed Game / When / Field / Round /

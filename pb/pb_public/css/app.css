@@ -1011,10 +1011,22 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .game-card-top {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   margin: 0 0 6px;
 }
+.game-card-ident {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.box-mark {
+  flex: 0 0 auto;
+  letter-spacing: 0.02em;
+}
+.badge.none { background: #eee; color: var(--muted); }
 .game-card-kicker {
   margin: 0 0 4px;
   font-size: 0.72rem;
