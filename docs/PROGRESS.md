@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 103 unit/integration cases + 13 acceptance checks |
+| Tests | 108 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -205,6 +205,27 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-20 — Flexible brackets: count, name, custom split
+
+Derek’s Claude note listed Scarecrow as blocked on 25 / 26a / 26d / 30 / 26i.
+Item 25 was already on `eventJson` / `/plan` / `/board` (Claude grepped the
+wrong file). This PR adds `events.bracket_plan` and a director flow of
+**how many brackets → name each → custom split for each**. There is no
+automatic even split. A Gold / Silver key without sizes now refuses to draw
+and tells the director to assign a size, a seed range, or teams.
+
+Byes are `status=bye` records: no game number, field, time, schedule row, or
+coach email. Six teams in an eight-slot tree give byes to seeds 1 and 2.
+Custom builder seats accept `seed:N`, `winner:G1`, `loser:G3`, a registered
+team, or TBD — the same tokens as CSV import. Labels are scoped per flight
+(both may have G1). A round that does not fit one slot spans times; the top
+seed’s half plays later when that preference is on. Per-flight format,
+fields, pairing, consolation, and if-necessary are stored on the plan.
+
+Scarecrow 8/6 and Keystone 8-team 4GG DE (14 games) are test shapes, not
+hardcoded product. 28b / 29 / 31 stay open. Covered by `brackets.js` node
+tests and `FlexibleBracketTests`.
 
 ### 2026-09-20 — Box chip: No box / Submitted / Approved
 

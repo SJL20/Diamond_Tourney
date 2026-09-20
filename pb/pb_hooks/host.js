@@ -364,6 +364,10 @@ function eventJson(rec, app, auth, opts) {
     format: format,
     format_label: FORMAT_LABELS[format] || format,
     bracket_flights: rec.get("bracket_flights") || "none",
+    bracket_plan: (function () {
+      try { return require(__hooks + "/brackets.js").planFromInputs(rec, {}); }
+      catch (err) { return { flights: [] }; }
+    })(),
     bracket_mode: rec.get("bracket_mode") || "standings",
     start: dateStr(rec.get("start")),
     end: dateStr(rec.get("end")),
@@ -588,6 +592,7 @@ function createEvent(app, body, auth) {
   rec.set("format", body.format && body.format !== "imported" ? body.format : "pool-to-bracket");
   rec.set("bracket_flights", body.bracket_flights || "none");
   rec.set("bracket_mode", body.bracket_mode || "standings");
+  try { require(__hooks + "/schedule.js").persistBracketPlan(app, rec, body); } catch (err) {}
   rec.set("source", source);
   rec.set("signup_open", body.signup_open !== false);
   rec.set("auto_sync", true);
@@ -1250,6 +1255,7 @@ function duplicateEvent(app, source, body, auth) {
   rec.set("format", source.get("format") || "pool-to-bracket");
   rec.set("bracket_flights", source.get("bracket_flights") || "none");
   rec.set("bracket_mode", source.get("bracket_mode") || "standings");
+  rec.set("bracket_plan", source.get("bracket_plan") || null);
   rec.set("source", "native");
   rec.set("signup_open", true);
   rec.set("auto_sync", true);
@@ -1393,7 +1399,12 @@ function applySettings(app, event, body, auth) {
   if (body.start) event.set("start", body.start);
   if (body.end) event.set("end", body.end);
   if (body.format && body.format !== "imported") event.set("format", body.format);
-  if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
+  if (body.bracket_flights != null || body.bracket_plan != null) {
+    try { require(__hooks + "/schedule.js").persistBracketPlan(app, event, body); }
+    catch (err) {
+      if (body.bracket_flights != null) event.set("bracket_flights", body.bracket_flights || "none");
+    }
+  }
   if (body.bracket_mode != null) event.set("bracket_mode", body.bracket_mode || "standings");
   applyGuidelines(event, body);
   try {

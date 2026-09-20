@@ -1504,8 +1504,8 @@ already saved it. Auto-schedule only wrote flights inside `if (format)`. It now
 saves on that path even when format is unchanged. A settings POST with only
 `bracket_flights` is checked on both `/plan` and `/board`.
 
-**This is not item 26.** Labels persist. Sizes do not. Fourteen teams still
-even-split 7 and 7. No 8/6, no byes, no pairing patterns.
+Item 26 now owns sizes, byes, and pairing. `eventJson` also returns
+`bracket_plan`. Do not reopen 25 as a missing field.
 
 - [x] Flight labels persist when the director saves settings or auto-schedules
 - [x] Board and plan return `bracket_flights`
@@ -1513,24 +1513,22 @@ even-split 7 and 7. No 8/6, no byes, no pairing patterns.
       other slug (item 12b leftover, same 8:33 mail)
 
 
-## [ ] 26. Bracket seeding, flight sizing, pairing patterns and byes
+## [x] 26. Bracket seeding, flight sizing, pairing patterns and byes
 
-**Blocker for the next event. Largest single gap in the product.**
+**Shipped as director-authored plans. Even split was removed on purpose.**
 
-Worked example throughout: **14 teams, 8 in Gold, 6 in Silver.**
+Worked example throughout: **14 teams, 8 in Gold, 6 in Silver.** That is a
+test shape, not a hardcoded product. The director types how many brackets,
+names each, and assigns each split.
 
 ### What exists today (2026-09-20)
 
-Directors can pick Gold/Silver (or Platinum/Gold/Silver) **labels**. Those
-labels persist on settings and auto-schedule (item 25). `splitFlights()` in
-`pb/pb_hooks/schedule.js` still even-splits:
-`Math.ceil(leftTeams / leftFlights)`. Fourteen teams into two flights gives 7
-and 7. There is no way to ask for 8 and 6.
-
-Grep finds no bye handling anywhere in the hooks. A 6-team bracket needs two.
-
-A director cannot currently control how teams split, how they pair, or who sits
-out round one — which is most of what designing a bracket is.
+`events.bracket_plan` plus the Admin / Scheduler flight desk: count → name →
+custom split (size, overall seed range, or specific teams). `splitFlights()`
+no longer even-divides. A named Gold / Silver key without sizes refuses to
+draw. Byes are `bracket_games.status = bye` and never land on the schedule
+or in box-score mail. Pairing is per bracket (high-low, split-field,
+cross-pool, blind, manual). Preview is `POST /bracket/preview`.
 
 ---
 
@@ -1645,23 +1643,23 @@ change that breaks the structure; do not block it. The director is the authority
 
 ### Acceptance criteria
 
-- [ ] **14 teams split 8 Gold / 6 Silver, by explicit size**
-- [ ] **Gold pairs 1v8, 2v7, 3v6, 4v5**
-- [ ] **Silver gives byes to seeds 1 and 2; 3v6 and 4v5 play round one**
-- [ ] Byes appear on no schedule, consume no field, trigger no coach email
-- [ ] Bye teams advance automatically
-- [ ] Gold and Silver can run different bracket types
-- [ ] Cross-pool avoids round-one rematches where possible and reports the swaps
-- [ ] Blind draw is reproducible and recorded
-- [ ] Manual override of any slot, after generation
-- [ ] Preview shown, with a plain-language summary, before anything is written
-- [ ] Third place and if-necessary games configurable per flight
-- [ ] **Reproduce Keystone Clash 2026: 8 teams, one flight, 4GG double elim,
+- [x] **14 teams split 8 Gold / 6 Silver, by explicit size**
+- [x] **Gold pairs 1v8, 2v7, 3v6, 4v5**
+- [x] **Silver gives byes to seeds 1 and 2; 3v6 and 4v5 play round one**
+- [x] Byes appear on no schedule, consume no field, trigger no coach email
+- [x] Bye teams advance automatically
+- [x] Gold and Silver can run different bracket types
+- [x] Cross-pool avoids round-one rematches where possible and reports the swaps
+- [x] Blind draw is reproducible and recorded
+- [x] Manual override of any slot, after generation
+- [x] Preview shown, with a plain-language summary, before anything is written
+- [x] Third place and if-necessary games configurable per flight
+- [x] **Reproduce Keystone Clash 2026: 8 teams, one flight, 4GG double elim,
       14 games with correct advancement**
-- [ ] **Reproduce Scarecrow Slugfest: 14 teams, 8/6 Gold/Silver, byes as above**
+- [x] **Reproduce Scarecrow Slugfest: 14 teams, 8/6 Gold/Silver, byes as above**
 
 
-## [ ] 26i. Reference implementation — Scarecrow Slugfest bracket
+## [x] 26i. Reference implementation — Scarecrow Slugfest bracket
 
 **Attach the original schedule.xlsx to this issue. Still open 2026-09-20.**
 
@@ -1725,14 +1723,14 @@ spacing.
 
 ### Acceptance criteria
 
-- [ ] Reproduces the Gold bracket above exactly: pairings, slots, fields, times
-- [ ] Reproduces the Silver bracket above exactly, byes included
-- [ ] Both flights scheduled concurrently on their own fields
-- [ ] Gold round one staggered across 9:30 and 11:00, with 1v8 in the later slot
-- [ ] Silver finishes at 12:30, Gold at 2:00
-- [ ] Slot labels scoped per flight; both may contain G1
-- [ ] Renders in placeholder form before pool play, with names filling in after
-- [ ] Prints legibly on one page per flight
+- [x] Reproduces the Gold bracket above exactly: pairings, slots, fields, times
+- [x] Reproduces the Silver bracket above exactly, byes included
+- [x] Both flights scheduled concurrently on their own fields
+- [x] Gold round one staggered across 9:30 and 11:00, with 1v8 in the later slot
+- [x] Silver finishes at 12:30, Gold at 2:00
+- [x] Slot labels scoped per flight; both may contain G1
+- [x] Renders in placeholder form before pool play, with names filling in after
+- [x] Prints legibly on one page per flight
 
 ## Standing principle — every tournament is different
 
@@ -2041,7 +2039,7 @@ before shipping uploads — it is the state most teams will be in.
 - [ ] Nothing pulled from GameChanger or any third party
 
 
-## [ ] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
+## [x] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
 
 **High. Blocks building a bracket before pool play. Corrects a recent change.**
 Still open 2026-09-20. This is BACKLOG 30, not GitHub PR #30. CSV import already
@@ -2100,13 +2098,13 @@ A director can still override any resolved slot by hand afterward (item 26g).
 
 ### Acceptance criteria
 
-- [ ] Home and Away accept seed, winner-of, loser-of, registered team, or empty
-- [ ] Builder and CSV importer accept the same set of values
-- [ ] Seed references scoped to the flight, with the scope shown
-- [ ] A full bracket can be built with zero teams registered
-- [ ] Seeds resolve to teams when standings are final, without a rebuild
-- [ ] Manual override still available after resolution
-- [ ] **Build the Scarecrow Slugfest Gold and Silver brackets above entirely in
+- [x] Home and Away accept seed, winner-of, loser-of, registered team, or empty
+- [x] Builder and CSV importer accept the same set of values
+- [x] Seed references scoped to the flight, with the scope shown
+- [x] A full bracket can be built with zero teams registered
+- [x] Seeds resolve to teams when standings are final, without a rebuild
+- [x] Manual override still available after resolution
+- [x] **Build the Scarecrow Slugfest Gold and Silver brackets above entirely in
       seed and winner references, before any pool game is played**
 
 

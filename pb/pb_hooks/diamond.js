@@ -583,19 +583,31 @@ function applyImportedFeeds(app, event, games) {
   const byLabel = {};
   for (let i = 0; i < games.length; i++) {
     const label = normGameLabel(games[i].get("game_id"));
-    if (label) byLabel[label] = games[i];
+    const fl = String(games[i].get("flight") || "").toLowerCase();
+    if (label) {
+      byLabel[label] = games[i];
+      if (fl) byLabel[fl + ":" + label] = games[i];
+    }
+  }
+  function lookup(label, flight) {
+    const lab = normGameLabel(label);
+    if (!lab) return null;
+    const fl = String(flight || "").toLowerCase();
+    return (fl && byLabel[fl + ":" + lab]) || byLabel[lab] || null;
   }
   for (let i = 0; i < keys.length; i++) {
-    const from = byLabel[normGameLabel(keys[i])];
     const feed = feeds[keys[i]] || {};
+    const from = lookup(keys[i], feed.flight) || byLabel[normGameLabel(keys[i])];
     if (!from || from.get("status") !== "final") continue;
     const winner = from.get("winner") || "";
     const loser = loserId(from);
-    if (feed.winner_to && byLabel[normGameLabel(feed.winner_to)] && byLabel[normGameLabel(feed.winner_to)].get("status") !== "final") {
-      if (fillSeat(byLabel[normGameLabel(feed.winner_to)], winner)) app.save(byLabel[normGameLabel(feed.winner_to)]);
+    const destW = lookup(feed.winner_to, feed.flight || from.get("flight"));
+    const destL = lookup(feed.loser_to, feed.flight || from.get("flight"));
+    if (destW && destW.get("status") !== "final") {
+      if (fillSeat(destW, winner)) app.save(destW);
     }
-    if (feed.loser_to && byLabel[normGameLabel(feed.loser_to)] && byLabel[normGameLabel(feed.loser_to)].get("status") !== "final") {
-      if (fillSeat(byLabel[normGameLabel(feed.loser_to)], loser)) app.save(byLabel[normGameLabel(feed.loser_to)]);
+    if (destL && destL.get("status") !== "final") {
+      if (fillSeat(destL, loser)) app.save(destL);
     }
   }
 }
@@ -830,6 +842,7 @@ function listOverall(schedule, bracket) {
   }
   for (let i = 0; i < bracket.length; i++) {
     const g = bracket[i];
+    if (g.status === "bye" || g.is_bye) continue;
     rows.push({
       kind: "bracket",
       id: g.id,
@@ -874,9 +887,14 @@ function publicBoard(app, event, auth) {
       const hr = Number(g.get("home_runs") || 0);
       const ar = Number(g.get("away_runs") || 0);
       const label = normGameLabel(g.get("game_id"));
-      const feed = feeds[label] || feeds[g.get("game_id")] || {};
+      const fl = String(g.get("flight") || "").toLowerCase();
+      const feed = feeds[(fl ? fl + ":" : "") + label] || feeds[label] || feeds[g.get("game_id")] || {};
       const homeName = teamName(g.get("home_team"));
       const awayName = teamName(g.get("away_team"));
+      const br = require(__hooks + "/brackets.js");
+      const homeRef = g.get("home_ref") || feed.home_ref || "";
+      const awayRef = g.get("away_ref") || feed.away_ref || "";
+      const isBye = g.get("status") === "bye";
       const source = g.get("score_source") || "";
       const conflict = source === "conflict";
       return {
@@ -888,8 +906,11 @@ function publicBoard(app, event, auth) {
         flight: g.get("flight") || "",
         bracket_kind: g.get("bracket_kind") || "",
         side: inferSide(round, g.get("side")),
-        home: homeName || feed.home_ref || "",
-        away: awayName || feed.away_ref || "",
+        home: homeName || br.displayRef(homeRef, g.get("flight")) || "",
+        away: isBye ? "Bye" : (awayName || br.displayRef(awayRef, g.get("flight")) || ""),
+        home_ref: homeRef,
+        away_ref: awayRef,
+        is_bye: isBye,
         home_id: g.get("home_team") || "",
         away_id: g.get("away_team") || "",
         home_slug: (function () { try { return app.findRecordById("event_teams", g.get("home_team")).get("slug"); } catch (err) { return ""; } })(),

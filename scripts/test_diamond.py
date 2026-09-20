@@ -216,8 +216,11 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Custom bracket builder", event)
         self.assertIn("pool-double-elim", event)
         self.assertIn("round-robin", event)
-        self.assertIn("gold-silver", event)
-        self.assertIn("platinum-gold-silver", event)
+        self.assertIn("How many brackets", event)
+        self.assertIn("function flightPlanDesk", event)
+        self.assertIn("function readFlightPlan", event)
+        self.assertIn("bracket_plan", event)
+        self.assertNotIn("split by overall ranking", event)
         self.assertIn("fields.length ? fields : [{}]", event)
         self.assertIn("Start with one diamond", event)
         self.assertIn("function teamSelect", event)
@@ -252,6 +255,10 @@ class TournamentUiTests(unittest.TestCase):
         custom = event.split("function customBracketDesk", 1)[1].split("function bindCustomBracket", 1)[0]
         self.assertIn("flightSelect", custom)
         self.assertIn("roundSelect", custom)
+        self.assertIn("seatSelect", custom)
+        self.assertIn("seed:", custom)
+        self.assertIn("winner:", custom)
+        self.assertIn("loser:", custom)
         self.assertNotIn('placeholder="gold"', custom)
         self.assertNotIn("<input name=\"flight\"", custom)
         self.assertNotIn("<input name=\"round\"", custom)
@@ -2298,19 +2305,37 @@ class AdminTeamsBracketsTests(unittest.TestCase):
                 "status": "final",
                 "confirm": True,
             })
+        refuse = None
+        try:
+            request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+                "replace": True,
+                "format": "pool-to-bracket",
+                "bracket_flights": "gold-silver",
+                "consolation": False,
+                "confirm": True,
+            })
+        except RuntimeError as err:
+            refuse = str(err)
+        self.assertIsNotNone(refuse)
+        self.assertIn("no automatic even split", refuse.lower())
         drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
             "replace": True,
             "format": "pool-to-bracket",
-            "bracket_flights": "gold-silver",
             "consolation": False,
             "confirm": True,
+            "bracket_plan": {
+                "flights": [
+                    {"id": "gold", "name": "Gold", "size": 4, "format": "single-elim"},
+                    {"id": "silver", "name": "Silver", "size": 4, "format": "single-elim"},
+                ],
+            },
         })
         self.assertGreaterEqual(drawn["games"], 2)
         flights = {row["flight"]: row["seeds"] for row in drawn.get("flights") or []}
-        self.assertIn("gold", flights)
-        self.assertIn("silver", flights)
+        self.assertEqual(flights.get("gold"), 4)
+        self.assertEqual(flights.get("silver"), 4)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
-        labels = {g.get("flight") for g in board["bracket"]}
+        labels = {g.get("flight") for g in board["bracket"] if g.get("status") != "bye"}
         self.assertEqual(labels, {"gold", "silver"})
 
     def test_custom_bracket_builder(self):
@@ -3711,6 +3736,215 @@ class PressureBotTests(unittest.TestCase):
     def test_two_bots_pressure_weekend(self):
         from scripts.pressure_test_bots import main as pressure_main
         self.assertEqual(pressure_main(), 0)
+
+
+class FlexibleBracketTests(unittest.TestCase):
+    """Director-authored flights, byes that are not games, seed/winner seats."""
+
+    def test_brackets_js_pairings_and_no_even_split(self):
+        import subprocess
+        out = subprocess.check_output(
+            ["node", str(ROOT / "scripts/test_brackets.mjs")],
+            text=True,
+        )
+        self.assertIn("brackets.js ok", out)
+
+    def test_eventjson_returns_bracket_plan(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "plan-audit-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Plan Audit Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        saved = request(BASE, "POST", f"/api/events/{slug}/settings", td, {
+            "bracket_plan": {
+                "flights": [
+                    {"name": "Championship", "size": 8, "fields": ["Field 1"]},
+                    {"name": "Consolation", "size": 6, "fields": ["Field 2"]},
+                ],
+            },
+        })
+        self.assertEqual(saved["event"]["bracket_flights"], "custom")
+        names = [f["name"] for f in saved["event"]["bracket_plan"]["flights"]]
+        self.assertEqual(names, ["Championship", "Consolation"])
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual([f["name"] for f in board["event"]["bracket_plan"]["flights"]], names)
+        plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
+        self.assertEqual(plan["event"]["bracket_plan"]["flights"][0]["size"], 8)
+
+    def test_custom_builder_accepts_seed_and_winner_refs(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "refs-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Ref Bracket Classic",
+            "slug": slug,
+            "format": "single-elim",
+        })
+        out = request(BASE, "POST", f"/api/events/{slug}/bracket/custom", td, {
+            "games": [
+                {
+                    "flight": "gold",
+                    "game_id": "G1",
+                    "round": "QF",
+                    "slot": 1,
+                    "side": "championship",
+                    "home_ref": "seed:2",
+                    "away_ref": "seed:7",
+                },
+                {
+                    "flight": "gold",
+                    "game_id": "G5",
+                    "round": "SF",
+                    "slot": 1,
+                    "side": "championship",
+                    "home_ref": "winner:G1",
+                    "away_ref": "loser:G1",
+                },
+            ],
+        })
+        self.assertEqual(out["mode"], "custom")
+        self.assertEqual(len(out["bracket"]), 2)
+        qf = next(g for g in out["bracket"] if g.get("game_id") == "G1")
+        sf = next(g for g in out["bracket"] if g.get("game_id") == "G5")
+        self.assertIn(qf["home"], ("2nd", "2nd (gold)", "Seed 2"))
+        self.assertIn("7", qf["away"])
+        self.assertTrue(sf["home"].startswith("W") or "winner" in sf["home"].lower() or sf["home"] == "WG1")
+        self.assertFalse(qf.get("home_id"))
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertEqual(len(board["bracket"]), 2)
+
+    def test_scarecrow_shape_without_hardcoding_and_byes_are_not_games(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "flex-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Flexible Classic",
+            "slug": slug,
+            "format": "single-elim",
+            "start": "2026-10-11",
+            "end": "2026-10-11",
+            "hours_start": "09:30",
+            "fields": [
+                {"name": "Field 6"},
+                {"name": "Field 1"},
+                {"name": "Field 2"},
+                {"name": "Field 4"},
+            ],
+        })
+        for i in range(14):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": f"Flex {i + 1:02d}",
+                "pool": "A",
+                "as_director": True,
+            })
+        plan = {
+            "flights": [
+                {
+                    "id": "gold",
+                    "name": "Gold",
+                    "size": 8,
+                    "format": "single-elim",
+                    "pairing": "high-low",
+                    "fields": ["Field 6", "Field 1"],
+                    "start_time": "09:30",
+                    "slot_minutes": 90,
+                    "later_slot_for_top_seeds": True,
+                },
+                {
+                    "id": "silver",
+                    "name": "Silver",
+                    "size": 6,
+                    "format": "single-elim",
+                    "pairing": "high-low",
+                    "fields": ["Field 2", "Field 4"],
+                    "start_time": "09:30",
+                    "slot_minutes": 90,
+                    "later_slot_for_top_seeds": True,
+                },
+            ],
+        }
+        preview = request(BASE, "POST", f"/api/events/{slug}/bracket/preview", td, {
+            "empty": True,
+            "format": "single-elim",
+            "bracket_plan": plan,
+            "consolation": False,
+        })
+        self.assertTrue(preview.get("preview"))
+        self.assertGreaterEqual(preview["games"], 10)
+        self.assertEqual(len(preview.get("byes") or []), 2)
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "empty": True,
+            "replace": True,
+            "format": "single-elim",
+            "bracket_plan": plan,
+            "consolation": False,
+        })
+        self.assertFalse(drawn.get("preview"))
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        playable = [g for g in board["bracket"] if g.get("status") != "bye"]
+        byes = [g for g in board["bracket"] if g.get("status") == "bye"]
+        self.assertEqual(len(byes), 2)
+        for bye in byes:
+            self.assertFalse(bye.get("field"))
+            self.assertFalse(bye.get("time"))
+            self.assertFalse(bye.get("game_number"))
+            self.assertEqual(bye.get("away"), "Bye")
+        overall = board.get("overall") or []
+        self.assertFalse(any(g.get("status") == "bye" for g in overall))
+        gold = [g for g in playable if g.get("flight") == "gold"]
+        silver = [g for g in playable if g.get("flight") == "silver"]
+        self.assertTrue(gold)
+        self.assertTrue(silver)
+        gold_ids = {g.get("game_id") for g in gold if g.get("game_id")}
+        silver_ids = {g.get("game_id") for g in silver if g.get("game_id")}
+        self.assertIn("G1", gold_ids)
+        self.assertIn("G1", silver_ids)
+        gold_qf = [g for g in gold if g.get("round") == "QF"]
+        times = {g.get("time") for g in gold_qf}
+        self.assertIn("09:30", times)
+        self.assertIn("11:00", times)
+        gold_fields = {g.get("field") for g in gold_qf}
+        self.assertTrue(gold_fields <= {"Field 6", "Field 1"})
+        silver_fields = {g.get("field") for g in silver if g.get("field")}
+        self.assertTrue(silver_fields <= {"Field 2", "Field 4"})
+
+    def test_keystone_shape_one_flight_double_elim(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "one-de-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "One Flight DE",
+            "slug": slug,
+            "format": "double-elim",
+            "fields": [{"name": "Diamond 1"}, {"name": "Diamond 2"}],
+        })
+        for name in ("Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name, "as_director": True,
+            })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "empty": True,
+            "replace": True,
+            "format": "double-elim",
+            "bracket_plan": {
+                "flights": [{
+                    "name": "Main",
+                    "size": 8,
+                    "format": "double-elim",
+                    "if_necessary": True,
+                }],
+            },
+        })
+        self.assertEqual(drawn["games"], 14)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        rounds = {g["round"] for g in board["bracket"] if g.get("status") != "bye"}
+        self.assertIn("QF", rounds)
+        self.assertIn("LF", rounds)
+        self.assertIn("IFN", rounds)
 
 
 if __name__ == "__main__":
