@@ -206,6 +206,15 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-20 — BACKLOG vs Derek’s 22:20 Scarecrow mail
+
+Derek’s latest Claude mail said 25 / 26a / 26d / 30 were still at zero on the
+pre-#37 `main`. Those four plus 26i extras are on `main` as `4b7a769`.
+`docs/BACKLOG.md` now matches: 26a–26h headings are `[x]`, leftover product
+is 28b / 29 / 31, leftover 26 extras are drag-reorder / re-seed-between-rounds
+/ field-hours warn, leftover ops are SMTP, Keystone CSV E2E, scarecrow
+empty-bracket clear, and owner GameChanger screenshots.
+
 ### 2026-09-20 — Flexible brackets: count, name, custom split
 
 Derek’s Claude note listed Scarecrow as blocked on 25 / 26a / 26d / 30 / 26i.
