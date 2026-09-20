@@ -224,6 +224,11 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Add another bracket", event)
         self.assertIn("data-add-flight", event)
         self.assertIn("data-remove-flight", event)
+        self.assertLess(
+            event.find("data-add-flight>Add another bracket"),
+            event.find("data-flight-cards"),
+            "Add another must sit above the cards so a phone does not bury it",
+        )
         self.assertIn("function flightPlanDesk", event)
         self.assertIn("function readFlightPlan", event)
         self.assertIn("function defaultFlightRows", event)

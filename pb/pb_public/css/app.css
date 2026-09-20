@@ -666,14 +666,9 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
     width: 100%;
     min-height: 44px;
     justify-content: center;
-    position: sticky;
-    top: calc(var(--chrome-h, 52px) + 6px);
-    z-index: 6;
-    background: var(--surface);
-    box-shadow: 0 8px 12px -8px rgba(18, 38, 61, 0.18);
   }
   .flight-card {
-    scroll-margin-top: calc(var(--chrome-h, 52px) + 58px);
+    scroll-margin-top: calc(var(--chrome-h, 52px) + 8px);
   }
   .flight-card-head {
     width: 100%;

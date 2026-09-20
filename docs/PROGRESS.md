@@ -213,10 +213,10 @@ Item 25 was already on `eventJson` / `/plan` / `/board` (Claude grepped the
 wrong file). This PR adds `events.bracket_plan` and a director flow of
 **one bracket by default, then add more → name each → custom split for each**.
 On a phone the card shows name and size first; pairing, byes, and diamonds
-sit under More settings. Add another sits above the cards and stays sticky
-under the event bar so it is not lost after a second tree or under the tab
-bar. Remove is a 44px control inside the card, not a fieldset legend on the
-border. Inputs are 16px. There is no automatic even split. A Gold / Silver key without sizes now
+sit under More settings. Add another sits above the cards so the first tree
+does not bury it. Remove is a 44px control inside the card, not a fieldset
+legend on the dashed border. Inputs are 16px. There is no automatic even
+split. A Gold / Silver key without sizes now
 refuses to draw and tells the director to assign a size, a seed range, a
 pool-finish range, or teams. Each card also sets seed mode (reseed vs keep overall), pairing,
 bye mode (top seeds or picked seeds), fields, and format.
