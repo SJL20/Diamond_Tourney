@@ -74,6 +74,29 @@ export function stampDataTh(rowHtml, headers) {
   });
 }
 
+export function asLineList(raw) {
+  if (!raw) return [];
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  }
+  return Array.isArray(raw) ? raw : [];
+}
+
+export function linePlayer(row) {
+  if (!row || typeof row !== "object") return "—";
+  const named = row.player || row.name_key || row.name;
+  if (named) return String(named);
+  if (row.jersey) return "#" + String(row.jersey);
+  return "—";
+}
+
 export function formatWeekendDates(start, end) {
   const a = parseDateParts(start);
   if (!a) return "";

@@ -113,6 +113,19 @@ class MobileDisplayTests(unittest.TestCase):
         self.assertIn(".card-table td::before", css)
         self.assertIn(".game-list", css)
         self.assertIn(".admin-rail nav.admin-rail-nav", css)
+        self.assertIn(".tourney-tabbar", css)
+        self.assertIn(".phone-stat-list", css)
+        self.assertIn(".box-review-card", css)
+        chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
+        self.assertIn("tourney-tabbar", chrome)
+        self.assertIn("tourney-more-sheet", chrome)
+        self.assertIn("event-nav-desk", chrome)
+        self.assertIn("export function bindEventChrome", chrome)
+        self.assertIn("export function eventDestinations", chrome)
+        self.assertIn("No converted hitting lines yet", event)
+        self.assertIn("function boxReviewCard", event)
+        self.assertIn("function deskTable", event)
+        self.assertIn("phone-stat-list", event)
 
 
 class TournamentUiTests(unittest.TestCase):
@@ -260,7 +273,7 @@ class TournamentUiTests(unittest.TestCase):
         self.assertNotIn("Qualifying minimums are 8 at-bats and 5 innings", event)
         inbox = event.split('data-admin-pane="stats"', 1)[1].split('data-admin-pane="boxes"', 1)[0]
         self.assertIn("<h2>Approve stats</h2>", inbox)
-        self.assertIn("approveStatsButtons(b.id)", inbox)
+        self.assertIn("boxReviewList(pending", inbox)
         self.assertIn("data-box-review", event)
         self.assertIn(">Approve stats<", event)
         self.assertIn(">Reject<", event)
@@ -3566,7 +3579,10 @@ class EventBoxReviewTests(unittest.TestCase):
         self.assertEqual(posted["box"]["status"], "needs_review")
         box_id = posted["box"]["id"]
         plan = request(BASE, "GET", f"/api/events/{slug}/plan", td)
-        self.assertTrue(any(b["id"] == box_id for b in plan.get("pending_boxes", [])))
+        pending = next(b for b in plan.get("pending_boxes", []) if b["id"] == box_id)
+        self.assertEqual(pending["hitting"][0]["name"], "Maeve D")
+        self.assertEqual(pending["pitching"][0]["name"], "Sam P")
+        self.assertEqual(int(pending["hitting"][0]["h"]), 2)
         hits_before = self._hitting_count(td, game_id)
         self.assertGreaterEqual(hits_before, 1)
 

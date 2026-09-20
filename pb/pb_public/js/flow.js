@@ -355,9 +355,25 @@ export async function yearPage(year) {
   </tr>`);
   function table(headers, rows) {
     const stamped = (rows || []).map((r) => stampDataTh(r, headers));
-    return `<div class="table-wrap"><table class="card-table"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+    return `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
       <tbody>${stamped.join("") || `<tr><td colspan="${headers.length}" class="empty">No qualifying lines yet.</td></tr>`}</tbody></table></div>`;
   }
+  const teamList = (board.teams || []).map((t) => `<li class="stat-row">
+    <span class="stat-seed">${t.rank}</span>
+    <div class="stat-main"><b class="stat-name">${escapeHtml(t.name)}</b>
+      <span class="stat-meta">RS ${t.rs} · RA ${t.ra} · ${t.diff > 0 ? "+" : ""}${t.diff} · ${t.events} weekends</span></div>
+    <span class="stat-val">${t.w}-${t.l}</span>
+  </li>`);
+  const hitList = (board.hitting || []).map((r) => `<li class="stat-row">
+    <div class="stat-main"><b class="stat-name">${escapeHtml(r.name_key)}</b>
+      <span class="stat-meta">${escapeHtml(r.team)} · ${r.ab} AB · ${r.h} H</span></div>
+    <span class="stat-val">${escapeHtml(String(r.avg_display || "—"))}</span>
+  </li>`);
+  const pitList = (board.pitching || []).map((r) => `<li class="stat-row">
+    <div class="stat-main"><b class="stat-name">${escapeHtml(r.name_key)}</b>
+      <span class="stat-meta">${escapeHtml(r.team)} · ${r.ip} IP · ${r.so} K</span></div>
+    <span class="stat-val">${escapeHtml(String(r.era_display || "—"))}</span>
+  </li>`);
   flowRoot().innerHTML = gateChrome("year", `
     <section class="page-head">
       <h1>${escapeHtml(year)} series board</h1>
@@ -368,12 +384,15 @@ export async function yearPage(year) {
       <h2>Team standings</h2>
       <p class="muted">Wins, then losses, then runs allowed, then runs scored. Events column is how many weekends that club appeared.</p>
       ${table(["#", "Club", "W", "L", "RS", "RA", "Diff", "Events", ""], teams)}
+      ${teamList.length ? `<ul class="stat-list phone-stat-list">${teamList.join("")}</ul>` : ""}
     </section>
     <section class="grid two">
       <div class="card"><h2>Hitting</h2><p class="muted">Min 8 AB across the year</p>
-        ${table(["Player", "Team", "AB", "H", "RBI", "AVG"], hit)}</div>
+        ${table(["Player", "Team", "AB", "H", "RBI", "AVG"], hit)}
+        ${hitList.length ? `<ul class="stat-list phone-stat-list">${hitList.join("")}</ul>` : ""}</div>
       <div class="card"><h2>Pitching</h2><p class="muted">Min 3.0 IP · youth ERA base 7</p>
-        ${table(["Player", "Team", "IP", "ER", "SO", "ERA"], pit)}</div>
+        ${table(["Player", "Team", "IP", "ER", "SO", "ERA"], pit)}
+        ${pitList.length ? `<ul class="stat-list phone-stat-list">${pitList.join("")}</ul>` : ""}</div>
     </section>
   `);
 }

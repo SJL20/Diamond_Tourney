@@ -2072,3 +2072,14 @@ request against the API.
 - [ ] Team signup for a tournament still works without a director account
 - [ ] Request queue is admin-only, verified with a logged-out API call
 - [ ] A single setting opens signup publicly when ready
+
+---
+
+## [x] 34. Phone tournament tab bar, compact stats, converted-line review
+
+Second mobile pass after item 27/28 home work. Phone tournament chrome is an
+iOS tab bar (Home, Schedule, Standings, Bracket, More) so the top strip does
+not scroll sideways. Stats boards use compact rows on a phone instead of one
+card per table cell. Directors review converted hitting and pitching on
+Approve stats — not only the uploaded file. 28b live scores stay open and
+wait on Steve.

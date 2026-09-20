@@ -1,9 +1,11 @@
 import {
+  asLineList,
   formatDateDisplay,
   formatHoursRange,
   formatTimeDisplay,
   formatWhen,
   formatWeekendDates,
+  linePlayer,
   parseDateParts,
   stampDataTh,
 } from "../pb/pb_public/js/display.js";
@@ -29,4 +31,12 @@ const stamped = stampDataTh("<tr><td>x</td><td>y</td></tr>", ["When", "Field"]);
 if (!stamped.includes('data-th="When"') || !stamped.includes('data-th="Field"')) {
   throw new Error("stampDataTh missed headers: " + stamped);
 }
+if (asLineList(null).length !== 0) throw new Error("asLineList null");
+if (asLineList("").length !== 0) throw new Error("asLineList empty");
+const parsed = asLineList('[{"name":"Maeve D","ab":3,"h":2}]');
+if (parsed.length !== 1 || parsed[0].name !== "Maeve D") throw new Error("asLineList json");
+if (asLineList([{ name_key: "Sam P #7" }]).length !== 1) throw new Error("asLineList array");
+eq(linePlayer({ player: "Evelynn M #17" }), "Evelynn M #17", "line player");
+eq(linePlayer({ jersey: "4" }), "#4", "line jersey");
+eq(linePlayer({}), "—", "line empty");
 console.log("display.js ok");

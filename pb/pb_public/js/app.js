@@ -6,7 +6,7 @@ import {
   startTournament,
 } from "./event.js";
 import { accountHome, adminEvents, adminTeams, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
-import { collapseSetupOnPhone, flashSaved, isSiteAdmin, measureChrome, pageShell } from "./chrome.js";
+import { bindEventChrome, collapseSetupOnPhone, flashSaved, isSiteAdmin, measureChrome, pageShell } from "./chrome.js";
 import { formatDateDisplay, stampDataTh } from "./display.js";
 
 const pb = new PocketBase(location.origin);
@@ -103,9 +103,10 @@ function chrome(team, page, body) {
   return pageShell({ pb, team, page, body });
 }
 
-function table(headers, rows, totals) {
+function table(headers, rows, totals, extras = {}) {
+  const cls = extras.className || "card-table";
   const stamped = (rows || []).map((r) => stampDataTh(r, headers));
-  return `<div class="table-wrap"><table class="card-table"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+  return `<div class="table-wrap"><table class="${cls}"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
     <tbody>${stamped.join("")}</tbody>
     ${totals ? `<tfoot><tr class="total">${stampDataTh(totals, headers)}</tr></tfoot>` : ""}
   </table></div>`;
@@ -242,10 +243,17 @@ async function hitting(slug) {
     <td>${r.ab}</td><td>${r.r}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.bb}</td><td>${r.so}</td>
     <td>${battingAverage(r.h, r.ab)}</td><td>${contactPct(r.ab, r.so)}</td>
   </tr>`);
+  const compact = rolled.map((r) => `<li class="stat-row">
+    <div class="stat-main"><b class="stat-name">${escapeHtml(r.player?.display_name || "")}</b>
+      <span class="stat-meta">${r.ab} AB · ${r.h} H · ${r.rbi} RBI</span></div>
+    <span class="stat-val">${battingAverage(r.h, r.ab)}</span>
+  </li>`).join("");
   app.innerHTML = chrome(team, "hitting", `<section class="card"><h2>Hitting</h2>
     <p class="muted">Approved games only. BA to three decimals. Contact% = (AB − SO) / AB.</p>
     ${table(["#", "Player", "AB", "R", "H", "RBI", "BB", "SO", "BA", "Contact%"], rows,
-      `<td colspan="2">Team</td><td>${totals.ab}</td><td>${totals.r}</td><td>${totals.h}</td><td>${totals.rbi}</td><td>${totals.bb}</td><td>${totals.so}</td><td>${battingAverage(totals.h, totals.ab)}</td><td>${contactPct(totals.ab, totals.so)}</td>`)}
+      `<td colspan="2">Team</td><td>${totals.ab}</td><td>${totals.r}</td><td>${totals.h}</td><td>${totals.rbi}</td><td>${totals.bb}</td><td>${totals.so}</td><td>${battingAverage(totals.h, totals.ab)}</td><td>${contactPct(totals.ab, totals.so)}</td>`,
+      { className: "card-table desktop-table" })}
+    ${compact ? `<ul class="stat-list phone-stat-list">${compact}</ul>` : ""}
   </section>`);
 }
 
@@ -263,10 +271,17 @@ async function pitching(slug) {
     <td>${r.pitches || "—"}</td><td>${r.strikes || "—"}</td>
     <td>${era(r.er, r.ip_outs)}</td><td>${strikePct(r.strikes, r.pitches)}</td>
   </tr>`);
+  const compact = rolled.map((r) => `<li class="stat-row">
+    <div class="stat-main"><b class="stat-name">${escapeHtml(r.player?.display_name || "")}</b>
+      <span class="stat-meta">${outsToIp(r.ip_outs)} IP · ${r.so} K</span></div>
+    <span class="stat-val">${era(r.er, r.ip_outs)}</span>
+  </li>`).join("");
   app.innerHTML = chrome(team, "pitching", `<section class="card"><h2>Pitching</h2>
     <p class="muted">IP stored as outs. Youth ERA = (ER × 7) / IP.</p>
     ${table(["#", "Player", "IP", "H", "R", "ER", "BB", "SO", "P", "S", "ERA", "Strike%"], rows,
-      `<td colspan="2">Team</td><td>${outsToIp(totals.ip_outs)}</td><td>${totals.h}</td><td>${totals.r}</td><td>${totals.er}</td><td>${totals.bb}</td><td>${totals.so}</td><td>${totals.pitches}</td><td>${totals.strikes}</td><td>${era(totals.er, totals.ip_outs)}</td><td>${strikePct(totals.strikes, totals.pitches)}</td>`)}
+      `<td colspan="2">Team</td><td>${outsToIp(totals.ip_outs)}</td><td>${totals.h}</td><td>${totals.r}</td><td>${totals.er}</td><td>${totals.bb}</td><td>${totals.so}</td><td>${totals.pitches}</td><td>${totals.strikes}</td><td>${era(totals.er, totals.ip_outs)}</td><td>${strikePct(totals.strikes, totals.pitches)}</td>`,
+      { className: "card-table desktop-table" })}
+    ${compact ? `<ul class="stat-list phone-stat-list">${compact}</ul>` : ""}
   </section>`);
 }
 
@@ -430,6 +445,7 @@ async function render() {
       app.innerHTML = chrome(null, "", `<section class="card error"><p>Could not load this page.</p><pre>${escapeHtml(msg)}</pre></section>`);
     }
   } finally {
+    bindEventChrome();
     measureChrome();
     collapseSetupOnPhone();
   }
