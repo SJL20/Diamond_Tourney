@@ -46,7 +46,7 @@ function listFollowing(app, auth) {
   requireUser(auth);
   let rows = [];
   try {
-    rows = app.findRecordsByFilter("follows", "user = {:u}", "-created", 200, 0, { u: auth.id });
+    rows = app.findRecordsByFilter("follows", "user = {:u}", "", 200, 0, { u: auth.id });
   } catch (err) {
     rows = [];
   }
