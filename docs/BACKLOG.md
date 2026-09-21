@@ -9,15 +9,19 @@ proposing an alternative.
 
 Status: `[ ]` open, `[x]` done, `[~]` in progress.
 
-Checked against `main` after PRs #31–#36. BACKLOG numbers
-**29 / 30 / 31** are these owner items (logos, custom-bracket seeds, invite-only
-signup). They are **not** GitHub PRs #29 / #30 / #31.
+Checked against `main` after PR **#37** (`4b7a769`). Derek’s 22:20 mail
+(2026-09-20) said items **25 / 26a / 26d / 30** were still at zero on the old
+`main`. Those four plus the 26i concurrent-shape extras shipped in #37. Do not
+reopen them from that mail.
 
-There is no open heading **25** in the original Derek list. Claude’s 8:33 mail
-called the Gold/Silver persist leftover “item 25.” That leftover is shipped;
-the heading is recorded below as `[x] 25` so the next agent does not reopen it
-as missing. Item **26** is director-authored flights: count, name, custom split.
-There is no automatic even split.
+BACKLOG numbers **29 / 30 / 31** are these owner items (logos, custom-bracket
+seeds, invite-only signup). They are **not** GitHub PRs #29 / #30 / #31.
+
+There is no original Derek heading **25**. Claude’s earlier mail called the
+Gold/Silver persist leftover “item 25.” That leftover is shipped; the heading
+stays `[x] 25`. Item **26** is director-authored flights: one bracket by
+default, then Add another → name each → custom split. There is no automatic
+even split.
 
 GitHub issue still open: **#7** (signup email) — same work as item 1. Agents
 cannot close issues (403).
@@ -35,8 +39,8 @@ cannot close issues (403).
 | 21 | `[x]` | Verified GameChanger export steps + live coach-email E2E (needs item 1 SMTP and owner screenshots). Do not invent iOS/Android menu names. |
 | 22 | `[x]` | GameChanger screenshots on the help page and in the upload email (owner supplies) |
 | 23–25 | `[x]` | — |
-| 26 | `[x]` | Director names N brackets and assigns each split. No even-split. |
-| 26i | `[x]` | Scarecrow 8/6 concurrent shape is a test, not a hardcoded product |
+| 26 | `[x]` | Director names brackets and assigns each split. No even-split. Shipped in #37. |
+| 26i | `[x]` | Scarecrow 8/6 concurrent shape is a test, not a hardcoded product. Shipped in #37. |
 | 27 | `[x]` | Park hours + 12-hour times + weekday dates |
 | 28 | `[x]` | Home-page redesign |
 | 28b | `[ ]` | Live scores. Coordinate with Steve. |
@@ -52,12 +56,25 @@ cannot close issues (403).
 Do not reorder without asking the owner. Item 23’s old “park until 1–22” note
 was overridden; assist is already shipped.
 
+**Product (code still to write)**
+
 1. **28b** — live scores (ask Steve before building)
 2. **29** — team logos
 3. **31** — invite-only director signup
-4. **Ops leftovers** (do not write fake product code to tick these): item 1 SMTP,
-   item 11 Keystone CSV weekend, item 16 scarecrow leftover bracket, item 21/22
-   owner GameChanger screenshots and a real inbox test
+
+**Inside shipped 26 (nice-to-have, not Scarecrow blockers)**
+
+4. **26b** drag-to-reorder seeds (reseed vs keep-overall already works)
+5. **26f** re-seed between rounds (third / consolation / if-necessary already work)
+6. **26h** warn when a flight does not fit its fields and hours (do not block)
+
+**Ops leftovers** (do not write fake product code to tick these)
+
+7. **1** — Fly SMTP + SPF/DKIM + a real inbox test
+8. **11** — live Keystone pool-CSV → standings → 8-team DE
+9. **16** — clear leftover scarecrow-slugfest empty-standings bracket if it is still on the live site
+10. **21 / 22** — owner GameChanger screenshots and a live coach-email E2E
+11. **26i** — attach the original Scarecrow `schedule.xlsx` to this item (owner file)
 
 Out of scope unless the owner asks: Finding 2 (Keystone stored zeros), two-bot
 pressure-test engineering, wiping Fly `/data`, isolated leftover `:8097` Harbor
@@ -1531,7 +1548,7 @@ and bye mode are per bracket. Preview is `POST /bracket/preview`.
 
 ---
 
-## 26a. Flight sizing
+## [x] 26a. Flight sizing
 
 The director sets the size of each flight. Not derived, not even.
 
@@ -1550,7 +1567,7 @@ The director sets the size of each flight. Not derived, not even.
 Flight names configurable beyond Gold / Silver / Platinum — directors use
 Championship / Consolation, Upper / Lower, A / B.
 
-## 26b. Seeding within a flight
+## [x] 26b. Seeding within a flight
 
 Once a team is in a flight, what is its seed there?
 
@@ -1558,11 +1575,15 @@ Once a team is in a flight, what is its seed there?
   Usually what directors mean.
 - **Keep overall seed** — Silver holds seeds 9–14. Matters for display and for
   pool-avoidance rules.
-- **Manual reorder** — drag to set seed order directly.
+- **Manual reorder** — drag to set seed order directly. **Still open.** Reseed
+  vs keep-overall is shipped; there is no drag list yet.
 
 Show both numbers where they differ: "Smash — Silver 2 (overall 10)."
 
-## 26c. Pairing patterns
+- [x] Reseed 1…n inside the bracket, or keep overall seed numbers
+- [ ] Drag to set seed order by hand
+
+## [x] 26c. Pairing patterns
 
 The core request. First-round matchups from a seed list:
 
@@ -1580,9 +1601,11 @@ The core request. First-round matchups from a seed list:
 Whichever pattern is picked, show the resulting pairings for approval before
 writing any games.
 
-## 26d. Byes
+## [x] 26d. Byes
 
-No bye handling exists. It is required: 6 teams in an 8-slot bracket needs two.
+**Shipped in #37.** A bye is `bracket_games.status = bye`: no game number, field,
+time, schedule row, or coach email. Six teams in an eight-slot tree give byes
+to seeds 1 and 2 (or the director’s picked seeds).
 
 - **Automatic to the top seeds** — the standard. 6 teams: seeds 1 and 2 have
   byes, 3v6 and 4v5 play. This is exactly the example the owner gave.
@@ -1602,7 +1625,7 @@ Requirements:
   the losers bracket shape. Handle it explicitly rather than assuming the single
   elim rule carries over.
 
-## 26e. Bracket type per flight
+## [x] 26e. Bracket type per flight
 
 Gold and Silver need not match. Gold double elim, Silver single elim is common —
 the top flight is worth more games, the lower flight has to finish earlier.
@@ -1611,16 +1634,21 @@ Per flight: single elim, double elim, or 4GG double elim. Weekend format is
 pool-then-bracket / pool only / round robin / bracket only. Single vs double
 is not chosen on the weekend format.
 
-## 26f. Per-flight options
+## [x] 26f. Per-flight options
 
-- **Third place game** — on or off, per flight
-- **Consolation side** — on or off, default off. Never added unless the director checks it.
+- **Third place game** — on or off, per flight. **Shipped.**
+- **Consolation side** — on or off, default off. Never added unless the director
+  checks it. **Shipped.** Manual consolation games also go in the custom
+  builder (Side = Consolation) or a bracket CSV.
 - **If-necessary game** in double elim, where the losers-bracket winner must beat
-  the winners-bracket team twice
+  the winners-bracket team twice. **Shipped.**
 - **Re-seed between rounds** vs a fixed bracket. Fixed is standard in youth
-  softball; re-seeding exists and some directors want it.
+  softball; re-seeding exists and some directors want it. **Still open.**
 
-## 26g. Preview and manual override
+- [x] Third place, consolation, and if-necessary per bracket
+- [ ] Re-seed between rounds (optional; default stays a fixed tree)
+
+## [x] 26g. Preview and manual override
 
 Nothing writes until the director has seen the bracket and approved it.
 
@@ -1629,17 +1657,26 @@ plain-language summary of what was applied: "Gold, 8 teams, standard high-low,
 double elimination with consolation. Silver, 6 teams, two byes to seeds 1 and 2,
 single elimination."
 
-After generation the director can still drag any team into any slot. Warn on a
-change that breaks the structure; do not block it. The director is the authority.
+After generation the director can still move any team into any slot (custom
+builder and Edit game / swap — not a drag handle). Warn on a change that breaks
+the structure; do not block it. The director is the authority.
 
-## 26h. Validation
+## [x] 26h. Validation
 
-- Flight sizes total the team count
-- No team appears in two flights
+Shipped: remainder line as the director types; refuse a draw when a named
+bracket has no size, seed range, pool finish, or team list; warn when a team
+is on two cards; bye count is next-power-of-two minus team count.
+
+- Flight sizes total the team count (remainder; over-roster is allowed if meant)
+- No team appears in two flights (warning)
 - No team appears twice in round one
 - Bye count matches bracket size minus team count
 - Every game feeds somewhere except the final
-- Flights fit the available fields and hours; warn, do not block
+- Flights fit the available fields and hours; warn, do not block. **Still open.**
+
+- [x] Remainder + refuse a draw with no assigned split
+- [x] Warning when the same team is checked on two cards
+- [ ] Warn when a flight does not fit its diamonds and hours (do not block)
 
 ---
 
@@ -1664,7 +1701,8 @@ change that breaks the structure; do not block it. The director is the authority
 
 ## [x] 26i. Reference implementation — Scarecrow Slugfest bracket
 
-**Attach the original schedule.xlsx to this issue. Still open 2026-09-20.**
+**Code shipped in #37.** Attach the original `schedule.xlsx` is owner ops, not
+missing product. See Still pending.
 
 The director's own bracket, built by hand. This is the target output. Anything
 that cannot reproduce it exactly is not finished.
@@ -1785,9 +1823,9 @@ event's own configuration, never from a remembered example.
 
 ## [x] 27. Human-readable times and dates everywhere; rename "Global hours"
 
-**Medium. Affects every public page. Owner-flagged. Still open 2026-09-20.**
-The public home card still prints `Global hours` and raw `08:00–18:00`
-(`event.js`). No shared 12-hour time or weekday date formatter.
+**Medium. Affects every public page. Owner-flagged. Shipped.**
+Display lives in `pb/pb_public/js/display.js`. The old home card printed
+`Global hours` and raw `08:00–18:00`; that copy is gone.
 
 ### 27a. "Global hours" is engineer language
 
@@ -1854,8 +1892,9 @@ use Park hours, weekday dates, and 12-hour first pitch.
 ## [x] 28. Redesign the tournament home page
 
 **High. Owner-flagged: "plain and boring." The most-visited page in the product.**
-Still open 2026-09-20. Team names already link to team pages (item 24). Venue
-photos already upload (item 10). The home hierarchy has not been rebuilt.
+Shipped (home hierarchy + phone pass). Team names already link to team pages
+(item 24). Venue photos already upload (item 10). **28b live polling is still
+open** and waits on Steve.
 
 Do not treat this as a styling pass. The page is dull because the hierarchy is
 wrong — it opens with field hours, which almost nobody came for.
@@ -2044,9 +2083,10 @@ before shipping uploads — it is the state most teams will be in.
 
 ## [x] 30. Custom bracket builder must accept seeds and winner references, not only registered teams
 
-**Shipped.** Custom builder seats accept `seed:N`, `winner:G1`, `loser:G3`, a
-registered team, or TBD. CSV import already did. This is BACKLOG 30, not GitHub
-PR #30.
+**Shipped in #37.** Custom builder seats accept `seed:N`, `winner:G1`,
+`loser:G3`, a registered team, or TBD. CSV import already did. This is BACKLOG
+30, not GitHub PR #30. Derek’s 22:20 mail listed this as still blocked; it is
+not.
 
 The custom bracket builder restricts Home and Away to registered teams
 (`pb/pb_public/js/event.js` line 2230, tightened by the commit "Require
