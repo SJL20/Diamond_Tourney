@@ -48,12 +48,18 @@ function statRow({ seed, name, meta, value, muted }) {
   </li>`;
 }
 
+function countBit(row, key, label) {
+  if (!row || !Object.prototype.hasOwnProperty.call(row, key)) return "";
+  if (row[key] == null || row[key] === "") return "— " + label;
+  return row[key] + " " + label;
+}
+
 function hitStatRow(r, nameHtml, extras = {}) {
   const meta = [
     extras.teamHtml || escapeHtml(r.team || ""),
-    r.ab != null && r.ab !== "" ? `${r.ab} AB` : "",
-    r.h != null && r.h !== "" ? `${r.h} H` : "",
-    r.rbi != null && r.rbi !== "" ? `${r.rbi} RBI` : "",
+    countBit(r, "ab", "AB"),
+    countBit(r, "h", "H"),
+    countBit(r, "rbi", "RBI"),
   ].filter(Boolean).join(" · ");
   let value = r.avg_display || r.avg;
   if (!value && r.ab != null && r.ab !== "" && r.h != null && r.h !== "") {
@@ -83,6 +89,7 @@ function pitStatRow(r, nameHtml, extras = {}) {
     const outs = r.ip_outs != null ? Number(r.ip_outs) : ipToOuts(r.ip);
     if (outs) value = era(Number(r.er), outs);
   }
+  if (!value && Object.prototype.hasOwnProperty.call(r, "er") && (r.er == null || r.er === "")) value = "—";
   if (!value) value = ip != null && ip !== "" ? String(ip) : "—";
   return statRow({
     seed: extras.seed,
@@ -1879,7 +1886,7 @@ export async function eventGame(slug, id) {
     </section>
     <section class="card">
       <h2>How this game’s stats get here</h2>
-      <p class="muted">Four doors. A Grok bot may poll the public GameChanger URL a coach stored (about every 5 minutes during a live weekend) and post readable lines. A PDF upload still works. Nothing is invented from a picture or a blank page.</p>
+      <p class="muted">Four doors. A PDF with a text layer is read into Approve stats on upload. A blank cell stays blank. A Grok bot still polls a public GameChanger URL a coach stored, about every 5 minutes during a live weekend. A photo or a scan with no text stays queued.</p>
       ${detail.director && boxWaiting(box)
         ? `<p class="muted">Converted lines are in the Approve stats card above.</p>`
         : box
@@ -1888,7 +1895,7 @@ export async function eventGame(slug, id) {
       ${can ? `
       <details class="setup-block" open>
         <summary>1. GameChanger mobile PDF</summary>
-        <p class="muted">From the GC app: share / export the box as PDF, then drop it here. Team managers use this after the game.</p>
+        <p class="muted">From the GC app: share / export the box as PDF, then drop it here. A text layer is read into Approve stats. A blank cell stays blank. A scan with no text stays queued.</p>
         <form class="form wide" id="gc-pdf-form" data-autosave-box>
           <input type="hidden" name="source" value="gc_pdf">
           <label>GameChanger PDF <input name="file" type="file" accept=".pdf,application/pdf" required data-autosave-box></label>
@@ -1913,11 +1920,11 @@ export async function eventGame(slug, id) {
       </details>
       ${detail.director ? `<details class="setup-block" open>
         <summary>4. Director PDF</summary>
-        <p class="muted">Your upload as the tournament director. Use a GC export or a scorebook scan. Check the box if this file is the book of record and a bot does not need to type it.</p>
+        <p class="muted">Your upload as the tournament director. A PDF with batting or pitching headers is read into Approve stats and still needs Approve. Check the box only for a scan with no text layer, to mark that file as the book of record.</p>
         <form class="form wide" id="td-pdf-form" data-autosave-box>
           <input type="hidden" name="source" value="director_pdf">
           <label>PDF or photo <input name="file" type="file" accept=".pdf,image/jpeg,image/png,image/webp" required data-autosave-box></label>
-          <label class="check"><input type="checkbox" name="approve_file"> Official book — do not wait on a bot</label>
+          <label class="check"><input type="checkbox" name="approve_file"> Scan with no text — this file is the book of record</label>
           <label>Note <input name="note" placeholder="TD copy from the plate meeting"></label>
           <p class="muted">Choosing a file saves it. You do not need another click.</p>
           <p class="error" id="td-pdf-err" hidden></p>
@@ -1962,7 +1969,7 @@ export async function eventGame(slug, id) {
     flashSaved(savedMsg || "Box score saved");
     eventGame(slug, id);
   };
-  [["gc-pdf-form", "gc-pdf-err", "GameChanger PDF queued"], ["gc-url-form", "gc-url-err", "GameChanger link saved"], ["td-pdf-form", "td-pdf-err", "Director box saved"]].forEach(([fid, eid, ok]) => {
+  [["gc-pdf-form", "gc-pdf-err", "GameChanger PDF saved"], ["gc-url-form", "gc-url-err", "GameChanger link saved"], ["td-pdf-form", "td-pdf-err", "Director box saved"]].forEach(([fid, eid, ok]) => {
     const form = document.getElementById(fid);
     if (!form) return;
     form.addEventListener("submit", async (evnt) => {
@@ -2034,7 +2041,7 @@ export async function eventLeaders(slug) {
       <p class="muted">Every published line. Qualifiers first.</p>
       ${deskTable(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], full.map((r) => `<tr>
         <td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-        <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
+        <td>${r.ab ?? "—"}</td><td>${r.h ?? "—"}</td><td>${r.rbi ?? "—"}</td><td>${r.avg ?? "—"}</td><td>${r.ops ?? "—"}</td>
         <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
       </tr>`))}
       ${statList(full.map((r) => hitStatRow(r, escapeHtml(r.player), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</section>` : ""}
@@ -3813,7 +3820,7 @@ export async function eventAdmin(slug) {
         </section>
         <section class="card" data-admin-pane="stats" hidden>
           <h2>Approve stats</h2>
-          <p class="muted">Converted hitting and pitching from the upload or GameChanger link. Approve publishes those lines. Reject leaves them off the public board. File and GC links stay secondary. Four doors: team GC PDF, GC box URL, Grok bot POST, director PDF.</p>
+          <p class="muted">A GameChanger PDF with a text layer is read on upload. Approve publishes those lines. A blank cell stays blank. Reject leaves them off the public board. File and GC links stay secondary.</p>
           ${boxReviewList(pending, ev.slug)}
         </section>
         <section class="card" data-admin-pane="boxes" hidden>
@@ -4307,7 +4314,7 @@ export async function directorImport() {
 function boxHelpCopy() {
   return `
     <ol>
-      <li>Upload a GameChanger mobile PDF on this page.</li>
+      <li>Upload a GameChanger mobile PDF on this page. A text layer is read into the director’s Approve stats list. A blank cell stays blank.</li>
       <li>Paste a public GameChanger box-score URL (web.gc.com …/box-score).</li>
       <li>Upload a photo of the paper scorebook.</li>
     </ol>

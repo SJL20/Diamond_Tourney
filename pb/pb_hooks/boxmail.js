@@ -440,6 +440,13 @@ function submitToken(app, token, body, files) {
         existing.set("status", "queued");
         existing.set("note", "token upload");
         app.save(existing);
+        // Schedule games only. A bracket row has no event_boxes home, so that
+        // file stays on the submission until it is tied to a schedule game.
+        try {
+          const pdfbox = require(__hooks + "/pdfbox.js");
+          const extracted = pdfbox.extractBoxFile(app, existing, game);
+          if (extracted) pdfbox.applyExtract(app, existing, extracted);
+        } catch (err) {}
       }
     } catch (err) {}
   }
