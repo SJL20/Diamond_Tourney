@@ -2811,6 +2811,18 @@ export async function eventSignup(slug) {
   const ev = roster.event;
   rememberEvent(ev);
   const director = isDirector(ev);
+  const me = eventPb.authStore.record;
+  let home = null;
+  if (me && eventPb.authStore.token) {
+    const res = await fetch("/api/account/home", { headers: authHeader() });
+    if (res.ok) home = await res.json();
+  }
+  let masterTeams = [];
+  if (director && eventPb.authStore.token) {
+    const res = await fetch("/api/teams", { headers: authHeader() });
+    if (res.ok) masterTeams = (await res.json()).teams || [];
+  }
+  const mine = home && home.user && home.user.team;
   const req = ev.required_docs || [];
   const labels = {
     insurance: "Certificate of insurance",
@@ -2819,17 +2831,67 @@ export async function eventSignup(slug) {
     waiver: "Waiver / medical release",
     coach_cert: "Coach certification / background",
   };
+  const ages = ["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"];
+  const masterAges = ["6U", "8U", "10U", "12U", "14U", "16U", "18U"];
+  const loginCard = `<section class="card">
+    <h2>Create the team first</h2>
+    <p>A team is one record. Create it on an account, then sign that same team up for a weekend. This form does not invent a second team.</p>
+    <p><a class="btn" data-link href="/login" id="signup-login">Log in</a></p>
+  </section>`;
+  const createOnAccount = `<section class="card">
+    <h2>Create your team first</h2>
+    <p>This login does not have a team yet. Create it on your account page, then come back and join with that team.</p>
+    <p><a class="btn" data-link href="/account">Create your team</a></p>
+  </section>`;
+  const confirmCard = `<section class="card">
+    <h2>Confirm your email first</h2>
+    <p>Team setup and event signup stay closed until this address is confirmed.</p>
+    <p><a class="btn" data-link href="/account">Open your account</a></p>
+  </section>`;
+  let gate = "";
+  if (ev.signup_open) {
+    if (!me) gate = loginCard;
+    else if (director) gate = "";
+    else if (home && home.user && home.user.verified === false) gate = confirmCard;
+    else if (!mine) gate = createOnAccount;
+  }
+  const teamPicker = director
+    ? `<label>Team
+        <select name="team_id" required>
+          <option value="">Create the team first</option>
+          ${masterTeams.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}${t.age_group ? " · " + escapeHtml(t.age_group) : ""}</option>`).join("")}
+        </select>
+      </label>`
+    : (mine ? `<input type="hidden" name="team_id" value="${escapeHtml(mine.id)}">
+        <p><b>${escapeHtml(mine.name)}</b> <span class="muted">${escapeHtml(mine.age_group || "")}</span></p>
+        <p class="muted">This is the team on your account. The weekend entry points at that record.</p>` : "");
+  const directorCreate = director ? `<section class="card">
+    <h2>Create a team</h2>
+    <p class="muted">Save the team here before adding it to this weekend. The same team can enter another event later without a second copy.</p>
+    <form class="form wide" id="create-master">
+      <label>Team name <input name="name" required placeholder="Hawks 10U"></label>
+      <label>Age group
+        <select name="age_group">
+          <option value="">—</option>
+          ${masterAges.map((a) => `<option value="${a}">${a}</option>`).join("")}
+        </select>
+      </label>
+      <button class="btn" type="submit">Save team</button>
+      <p class="error" id="create-master-err" hidden></p>
+    </form>
+  </section>` : "";
   eventRoot().innerHTML = eventChrome(ev, "signup", `
     <section class="page-head">
       <h1>Sign a team up</h1>
       <p>${ev.signup_open
-        ? `GameChanger is optional. ${req.length ? "Upload the required packet below." : "The director did not require a team packet."}`
+        ? `The team must already exist. GameChanger is optional. ${req.length ? "Upload the required packet below." : "The director did not require a team packet."}`
         : "Signup is closed."}</p>
     </section>
     ${guidelinesBlock(ev)}
-    ${ev.signup_open ? `<section class="card">
+    ${ev.signup_open ? directorCreate : ""}
+    ${ev.signup_open && !gate ? `<section class="card">
       <form class="form wide" id="signup-form">
-        <label>Team name <input name="team_name" required placeholder="Hawks 10U"></label>
+        ${teamPicker}
         <label>Pool (optional) <input name="pool" placeholder="A"></label>
         <label>GameChanger team URL (optional)
           <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…">
@@ -2837,10 +2899,10 @@ export async function eventSignup(slug) {
         <label>Contact name <input name="contact_name" ${director ? "" : "required"}></label>
         <label>Contact email <input name="contact_email" type="email"></label>
         <label>Contact phone <input name="coach_phone" type="text" inputmode="tel" placeholder="412-555-0100"></label>
-        <label>Age group
+        <label>Age group for this weekend
           <select name="age_group">
             <option value="">—</option>
-            ${["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"].map((a) => `<option value="${a}">${a}</option>`).join("")}
+            ${ages.map((a) => `<option value="${a}">${a}</option>`).join("")}
           </select>
         </label>
         <fieldset class="setup-block">
@@ -2859,14 +2921,46 @@ export async function eventSignup(slug) {
         <button class="btn" type="submit">Join the tournament</button>
         <p class="error" id="signup-err" hidden></p>
       </form>
-    </section>` : `<section class="card empty">The director closed signup.</section>`}
+    </section>` : (ev.signup_open ? gate : `<section class="card empty">The director closed signup.</section>`)}
     ${rosterBlock(roster.teams, ev.slug)}
   `);
+  const login = document.getElementById("signup-login");
+  if (login) {
+    login.addEventListener("click", () => {
+      try { sessionStorage.setItem("dt-after-login", location.pathname); } catch (err) {}
+    });
+  }
+  const createForm = document.getElementById("create-master");
+  if (createForm) {
+    createForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const err = document.getElementById("create-master-err");
+      const body = Object.fromEntries(new FormData(evnt.target));
+      const res = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        err.hidden = false;
+        err.textContent = await res.text();
+        return;
+      }
+      flashSaved("Team saved");
+      eventSignup(slug);
+    });
+  }
   const form = document.getElementById("signup-form");
   if (!form) return;
   form.addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
     const fd = new FormData(evnt.target);
+    if (!fd.get("team_id")) {
+      const err = document.getElementById("signup-err");
+      err.hidden = false;
+      err.textContent = "Create the team before signing up for an event.";
+      return;
+    }
     if (director && fd.get("as_director")) fd.set("as_director", "true");
     const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/signup", {
       method: "POST",

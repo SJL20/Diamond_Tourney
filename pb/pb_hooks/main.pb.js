@@ -167,6 +167,26 @@ routerAdd("GET", "/api/account/home", (e) => {
   return e.json(200, host.accountHome(e.app, e.auth));
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/teams", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireVerified(sb.requireRole(e, ["region_admin", "event_td"]));
+  return e.json(200, { teams: host.listMasterTeams(e.app) });
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/teams", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("Log in before creating a team.");
+  sb.requireVerified(e.auth);
+  try {
+    return e.json(200, host.createMasterTeam(e.app, e.requestInfo().body || {}, e.auth));
+  } catch (err) {
+    if (err && err.status) throw err;
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
+}, $apis.requireAuth());
+
 routerAdd("GET", "/api/account/following", (e) => {
   if (!e.auth) throw new UnauthorizedError("login required");
   return e.json(200, require(__hooks + "/follow.js").listFollowing(e.app, e.auth));

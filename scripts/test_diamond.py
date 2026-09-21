@@ -637,20 +637,45 @@ class HostedSignupTests(unittest.TestCase):
         self.assertTrue(created["event"]["signup_open"])
         self.assertEqual(created["event"]["source"], "native")
 
-        paper = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-            "team_name": "Orphans",
-        })
-        self.assertFalse(paper["team"]["gc_linked"])
-
-        with self.assertRaises(RuntimeError) as bad:
+        with self.assertRaises(RuntimeError) as anon:
             request(BASE, "POST", f"/api/events/{slug}/signup", None, {
                 "team_name": "Orphans",
+            })
+        self.assertIn("create your team", str(anon.exception).lower())
+
+        with self.assertRaises(RuntimeError) as bare:
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {"as_director": True})
+        self.assertIn("create the team", str(bare.exception).lower())
+
+        paper_master = request(BASE, "POST", "/api/teams", td, {"name": "Orphans", "age_group": "10U"})
+        paper = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_id": paper_master["id"],
+            "as_director": True,
+        })
+        self.assertFalse(paper["team"]["gc_linked"])
+        self.assertEqual(paper["team"]["team"], paper_master["id"])
+
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_id": paper_master["id"],
+                "as_director": True,
                 "gamechanger_url": "https://example.com/not-gc",
             })
         self.assertIn("GameChanger", str(bad.exception))
 
-        joined = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-            "team_name": "Northside 10U",
+        coach_email = f"kim.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": coach_email,
+            "password": "CoachKim123!",
+            "passwordConfirm": "CoachKim123!",
+            "display_name": "Coach Kim",
+            "intent": "team",
+        })
+        confirm_account(coach_email)
+        coach = auth(BASE, coach_email, "CoachKim123!")
+        north = request(BASE, "POST", "/api/teams", coach, {"name": "Northside 10U", "age_group": "10U"})
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", coach, {
+            "team_id": north["id"],
             "pool": "A",
             "gamechanger_url": "https://web.gc.com/team/northside-10u",
             "contact_name": "Coach Kim",
@@ -658,14 +683,21 @@ class HostedSignupTests(unittest.TestCase):
         })
         self.assertTrue(joined["team"]["gc_linked"])
         self.assertEqual(joined["team"]["signed_up_by"], "team")
+        self.assertEqual(joined["team"]["team"], north["id"])
 
+        west = request(BASE, "POST", "/api/teams", td, {"name": "West End 10U"})
         director_add = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
-            "team_name": "West End 10U",
+            "team_id": west["id"],
             "pool": "B",
             "gamechanger_url": "https://gc.com/team/west-end-10u",
             "as_director": True,
         })
         self.assertEqual(director_add["team"]["signed_up_by"], "director")
+        self.assertEqual(director_add["team"]["team"], west["id"])
+
+        with self.assertRaises(RuntimeError) as stolen:
+            request(BASE, "POST", f"/api/events/{slug}/signup", coach, {"team_id": west["id"]})
+        self.assertIn("this account", str(stolen.exception).lower())
 
         roster = request(BASE, "GET", f"/api/events/{slug}/roster")
         names = [t["name"] for t in roster["teams"]]
@@ -683,9 +715,11 @@ class HostedSignupTests(unittest.TestCase):
 
         closed = request(BASE, "POST", f"/api/events/{slug}/settings", td, {"signup_open": False})
         self.assertFalse(closed["event"]["signup_open"])
+        late = request(BASE, "POST", "/api/teams", td, {"name": "Late Team"})
         with self.assertRaises(RuntimeError) as shut:
-            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-                "team_name": "Late Team",
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_id": late["id"],
+                "as_director": True,
                 "gamechanger_url": "https://gc.com/team/late",
             })
         self.assertIn("closed", str(shut.exception).lower())
@@ -730,9 +764,20 @@ class HostedSignupTests(unittest.TestCase):
         self.assertIn("roster", created["event"]["required_docs"])
         self.assertNotIn("birth_certs", created["event"]["required_docs"])
 
+        packet_email = f"packet.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": packet_email,
+            "password": "PacketCoach1!",
+            "passwordConfirm": "PacketCoach1!",
+            "display_name": "Coach Packet",
+            "intent": "team",
+        })
+        confirm_account(packet_email)
+        packet_coach = auth(BASE, packet_email, "PacketCoach1!")
+        no_packet = request(BASE, "POST", "/api/teams", packet_coach, {"name": "No Packet 10U", "age_group": "10U"})
         with self.assertRaises(RuntimeError) as missing:
-            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-                "team_name": "No Packet 10U",
+            request(BASE, "POST", f"/api/events/{slug}/signup", packet_coach, {
+                "team_id": no_packet["id"],
                 "contact_name": "Coach",
             })
         self.assertIn("insurance", str(missing.exception).lower())
@@ -744,9 +789,20 @@ class HostedSignupTests(unittest.TestCase):
         self.assertEqual(director_later["team"]["signed_up_by"], "director")
         self.assertFalse(director_later["team"]["packet"]["complete"])
 
+        file_email = f"files.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": file_email,
+            "password": "PacketFiles1!",
+            "passwordConfirm": "PacketFiles1!",
+            "display_name": "Coach Files",
+            "intent": "team",
+        })
+        confirm_account(file_email)
+        file_coach = auth(BASE, file_email, "PacketFiles1!")
+        hawks_packet = request(BASE, "POST", "/api/teams", file_coach, {"name": "Hawks Packet 10U", "age_group": "10U"})
         pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
-        joined = request_multipart(BASE, f"/api/events/{slug}/signup", None, {
-            "team_name": "Hawks Packet 10U",
+        joined = request_multipart(BASE, f"/api/events/{slug}/signup", file_coach, {
+            "team_id": hawks_packet["id"],
             "contact_name": "Coach Kim",
         }, {
             "insurance": ("insurance.pdf", pdf, "application/pdf"),
@@ -1271,9 +1327,10 @@ class AccountAndYearTests(unittest.TestCase):
             "slug": "paper-book-open",
         })
         slug = ev["event"]["slug"]
-        joined = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
             "team_name": "Clipboards 10U",
             "contact_name": "Coach Lee",
+            "as_director": True,
         })
         self.assertFalse(joined["team"]["gc_linked"])
         self.assertTrue(joined["team"]["club"])
@@ -1819,8 +1876,10 @@ class PacketPrivacyTests(unittest.TestCase):
             "require_birth_certs": True,
         })
         pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
-        request_multipart(BASE, f"/api/events/{cls.slug}/signup", None, {
-            "team_name": "Privacy 10U",
+        master = request(BASE, "POST", "/api/teams", cls.td, {"name": "Privacy 10U", "age_group": "10U"})
+        request_multipart(BASE, f"/api/events/{cls.slug}/signup", cls.td, {
+            "team_id": master["id"],
+            "as_director": "true",
             "contact_name": "Coach Parent",
             "contact_email": cls.family_email,
         }, {"birth_certs": ("birth_certs.pdf", pdf, "application/pdf")})

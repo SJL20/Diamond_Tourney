@@ -323,8 +323,10 @@ function commit(app, event, body, auth) {
       updated.push(applyMapped(app, event, team, mapped, auth));
       continue;
     }
+    const master = host.findOrCreateMasterTeam(app, mapped.name, auth);
     const team = host.upsertEventTeam(app, event, {
-      name: mapped.name,
+      name: master.get("name") || mapped.name,
+      team: master.id,
       pool: mapped.pool || "",
       gamechanger_url: mapped.gamechanger_url || "",
       contact_name: mapped.coach_name || "",

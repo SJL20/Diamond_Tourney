@@ -212,6 +212,25 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-21 — Master team before event signup
+
+`teams` is the one team record. A coach creates it on the account page
+(`POST /api/teams`) after the email is confirmed. A director creates it, then
+picks it, on the event signup page. `event_teams.team` points at that row.
+Signup with no master id is refused. CSV import writes the master row first,
+then the weekend row. The map of every collection, including the unused ones
+(`inquiries`, `orgs`, `seasons`), is `docs/DATABASE.md`.
+
+`club_teams` is still the year-board and follow target for weekends that have
+no master link. Old Keystone and Harbor rows were not guessed onto a master
+team. `/admin/teams` still edits `club_teams`.
+
+Proved by the diamond suite (121 cases) and acceptance checks. A browser pass
+on a new weekend refused signup until a team existed: the director saved
+Harbor Lights 10U and then picked it, and a coach saved Coach Lights 10U on
+the account page and joined with that record. Both board rows store
+`event_teams.team`.
+
 ### 2026-09-21 — Stats sort and follow a team or tournament
 
 The full stats board (`/t/{slug}/stats`) and the Keystone popup stats page

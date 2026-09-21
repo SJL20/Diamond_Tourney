@@ -6,6 +6,24 @@ import urllib.request
 
 
 def request(base: str, method: str, path: str, token: str | None = None, body=None):
+    # Event signup cannot invent a team. Tests that still pass team_name
+    # create the master row first, then send its id.
+    if (
+        method == "POST"
+        and isinstance(path, str)
+        and path.rstrip("/").endswith("/signup")
+        and token
+        and isinstance(body, dict)
+        and not body.get("team_id")
+        and not body.get("team_slug")
+        and (body.get("team_name") or body.get("name"))
+    ):
+        master = request(base, "POST", "/api/teams", token, {
+            "name": body.get("team_name") or body.get("name"),
+            "age_group": body.get("age_group") or "",
+        })
+        body = dict(body)
+        body["team_id"] = master["id"]
     data = None
     headers = {"Content-Type": "application/json"}
     if token:

@@ -452,11 +452,20 @@ function eventJson(rec, app, auth, opts) {
   return out;
 }
 
-function teamJson(rec) {
+function teamJson(rec, app) {
+  const masterId = rec.get("team") || "";
+  let name = rec.get("name");
+  if (app && masterId) {
+    try {
+      const master = app.findRecordById("teams", masterId);
+      if (master.get("name")) name = master.get("name");
+    } catch (err) {}
+  }
   return {
     id: rec.id,
-    name: rec.get("name"),
+    name: name,
     slug: rec.get("slug"),
+    team: masterId,
     club: rec.get("club") || "",
     pool: rec.get("pool") || "",
     seed: rec.get("seed") || 0,
@@ -535,21 +544,124 @@ function writeLog(app, eventId, kind, ok, detail) {
   app.save(rec);
 }
 
+function uniqueTeamSlug(app, base) {
+  let slug = base || "team";
+  let n = 2;
+  while (true) {
+    try {
+      app.findFirstRecordByData("teams", "slug", slug);
+      slug = (base || "team") + "-" + n;
+      n++;
+    } catch (err) {
+      return slug;
+    }
+  }
+}
+
+const MASTER_AGES = { "6U": 1, "8U": 1, "10U": 1, "12U": 1, "14U": 1, "16U": 1, "18U": 1 };
+
+function masterTeamJson(rec) {
+  return {
+    id: rec.id,
+    name: rec.get("name") || "",
+    slug: rec.get("slug") || "",
+    age_group: rec.get("age_group") || "",
+  };
+}
+
+function createMasterTeam(app, body, auth) {
+  if (!auth) throw new UnauthorizedError("Log in before creating a team.");
+  const sb = require(__hooks + "/softball.js");
+  if (!sb.isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before creating a team.");
+  }
+  const name = String((body && (body.name || body.team_name)) || "").trim();
+  if (!name) throw new BadRequestError("Team name is required");
+  const role = auth.get("role") || "";
+  const siteAdmin = sb.isSiteAdmin(auth);
+  const director = role === "event_td" || siteAdmin;
+  const coach = role === "team_coach";
+  if (!director && !coach) {
+    throw new ForbiddenError("A director or team account can create a team.");
+  }
+  if (coach && !director && auth.get("team")) {
+    let existing = null;
+    try { existing = app.findRecordById("teams", auth.get("team")); } catch (err) {}
+    const label = existing ? existing.get("name") : "this account";
+    throw new BadRequestError("This account already has a team: " + label + ". Sign that team up for an event.");
+  }
+  const rec = new Record(app.findCollectionByNameOrId("teams"));
+  rec.set("name", name);
+  rec.set("slug", uniqueTeamSlug(app, slugify(name)));
+  const age = String((body && body.age_group) || "").toUpperCase();
+  if (MASTER_AGES[age]) rec.set("age_group", age);
+  if (coach && !director) rec.set("coach_name", auth.get("display_name") || "");
+  rec.set("public_record_wins", 0);
+  rec.set("public_record_losses", 0);
+  rec.set("public_record_ties", 0);
+  app.save(rec);
+  if (coach && !director && !auth.get("team")) {
+    const fresh = app.findRecordById("users", auth.id);
+    fresh.set("team", rec.id);
+    app.save(fresh);
+  }
+  return masterTeamJson(rec);
+}
+
+function findOrCreateMasterTeam(app, name, auth) {
+  const base = slugify(name);
+  try {
+    return app.findFirstRecordByData("teams", "slug", base);
+  } catch (err) {}
+  const created = createMasterTeam(app, { name: name }, auth);
+  return app.findRecordById("teams", created.id);
+}
+
+function loadMasterTeam(app, body) {
+  const id = String((body && body.team_id) || "").trim();
+  const slug = String((body && body.team_slug) || "").trim();
+  if (!id && !slug) {
+    throw new BadRequestError("Create the team before signing up for an event.");
+  }
+  try {
+    if (id) return app.findRecordById("teams", id);
+    return app.findFirstRecordByData("teams", "slug", slug);
+  } catch (err) {
+    throw new BadRequestError("That team does not exist yet. Create it before signing up for an event.");
+  }
+}
+
+function listMasterTeams(app) {
+  return app.findRecordsByFilter("teams", "", "name", 500, 0).map(masterTeamJson);
+}
+
 function upsertEventTeam(app, event, data) {
   const slug = slugify(data.name);
   let rec;
   let existing = false;
-  try {
-    rec = app.findFirstRecordByFilter(
-      "event_teams",
-      "event = {:e} && slug = {:s}",
-      { e: event.id, s: slug },
-    );
-    existing = true;
-  } catch (err) {
-    rec = new Record(app.findCollectionByNameOrId("event_teams"));
-    rec.set("event", event.id);
-    rec.set("slug", slug);
+  if (data.team) {
+    try {
+      rec = app.findFirstRecordByFilter(
+        "event_teams",
+        "event = {:e} && team = {:t}",
+        { e: event.id, t: data.team },
+      );
+      existing = true;
+    } catch (err) {}
+  }
+  if (!existing) {
+    try {
+      rec = app.findFirstRecordByFilter(
+        "event_teams",
+        "event = {:e} && slug = {:s}",
+        { e: event.id, s: slug },
+      );
+      existing = true;
+    } catch (err) {
+      rec = new Record(app.findCollectionByNameOrId("event_teams"));
+      rec.set("event", event.id);
+      rec.set("slug", slug);
+    }
   }
   if (existing) {
     const ownerId = rec.get("account") || "";
@@ -559,11 +671,13 @@ function upsertEventTeam(app, event, data) {
     const incomingEmail = String(data.contact_email || "").trim().toLowerCase();
     const claim = !ownerId && incoming && data.verified && storedEmail && storedEmail === incomingEmail;
     const directorFill = data.signed_up_by === "director" && !ownerId;
-    if (!sameOwner && !claim && !directorFill) {
+    const sameMaster = !!(data.team && rec.get("team") === data.team);
+    if (!sameOwner && !claim && !directorFill && !sameMaster) {
       throw new BadRequestError("That team is already signed up for this tournament.");
     }
   }
   rec.set("name", data.name);
+  if (data.team) rec.set("team", data.team);
   if (data.pool) rec.set("pool", data.pool);
   rec.set("gamechanger_url", data.gamechanger_url || "");
   rec.set("gc_team_ref", gcRef(data.gamechanger_url));
@@ -642,24 +756,34 @@ function createEvent(app, body, auth) {
 
 function signupTeam(app, event, body, auth) {
   if (!event.get("signup_open")) throw new BadRequestError("Signup is closed for this event");
-  const name = (body.team_name || body.name || "").trim();
-  if (!name) throw new BadRequestError("Team name is required");
+  if (!auth) {
+    throw new UnauthorizedError("Log in and create your team before signing up for an event.");
+  }
+  const sb = require(__hooks + "/softball.js");
+  if (!sb.isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before signing up a team.");
+  }
+  const master = loadMasterTeam(app, body);
   const gcUrl = (body.gamechanger_url || "").trim();
   if (gcUrl && !isGameChangerUrl(gcUrl)) {
     throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
   }
-  const director = require(__hooks + "/softball.js").isEventAdmin(event, auth, app);
+  const director = sb.isEventAdmin(event, auth, app);
   const asDirector = director && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
+  if (!asDirector && auth.get("team") !== master.id) {
+    throw new ForbiddenError("Sign up the team on this account. A director adds other teams.");
+  }
   const team = upsertEventTeam(app, event, {
-    name: name,
+    name: master.get("name"),
+    team: master.id,
     pool: body.pool || "",
     gamechanger_url: gcUrl,
-    contact_name: body.contact_name || (auth ? auth.email() : ""),
-    contact_email: body.contact_email || body.coach_email || (auth ? auth.email() : ""),
+    contact_name: body.contact_name || (asDirector ? "" : (auth.get("display_name") || "")),
+    contact_email: body.contact_email || body.coach_email || (asDirector ? "" : auth.email()),
     signed_up_by: asDirector ? "director" : "team",
-    account: auth ? auth.id : "",
-    verified: !!(auth && require(__hooks + "/softball.js").isVerifiedAccount(auth)),
-    age_group: body.age_group || "",
+    account: auth.id,
+    verified: true,
+    age_group: body.age_group || master.get("age_group") || "",
     klass: body.klass || body.class || "",
     notes: body.notes || "",
   });
@@ -674,6 +798,10 @@ function signupTeam(app, event, body, auth) {
     alt_phone: body.alt_phone || "",
     role: body.role || "head_coach",
   });
+  if (contactRec && master.id) {
+    contactRec.set("team", master.id);
+    app.save(contactRec);
+  }
   const contact = contacts.contactJson(contactRec);
   let mailResult = { sent: false, reason: "not_attempted" };
   try {
@@ -712,6 +840,14 @@ function updateEventTeam(app, event, team, body, auth) {
         } catch (err) {
           team.set("slug", next);
         }
+      }
+      const masterId = team.get("team") || "";
+      if (masterId) {
+        try {
+          const master = app.findRecordById("teams", masterId);
+          master.set("name", name);
+          app.save(master);
+        } catch (err) {}
       }
     }
     if (body.pool != null) team.set("pool", body.pool);
@@ -1075,6 +1211,15 @@ function accountHome(app, auth) {
       display_name: auth.get("display_name") || (siteAdmin ? "Site admin" : ""),
       site_admin: siteAdmin,
       verified: require(__hooks + "/softball.js").isVerifiedAccount(auth),
+      team: (function () {
+        const teamId = auth.get("team") || "";
+        if (!teamId) return null;
+        try {
+          return masterTeamJson(app.findRecordById("teams", teamId));
+        } catch (err) {
+          return null;
+        }
+      })(),
     },
     created: created,
     joined: joined,
@@ -1290,7 +1435,7 @@ function syncEvent(app, event) {
 function publicRoster(app, event, auth) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   return teams.map(function (t) {
-    const row = teamJson(t);
+    const row = teamJson(t, app);
     row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth, app));
     return row;
   });
@@ -1416,6 +1561,7 @@ function duplicateEvent(app, source, body, auth) {
     nt.set("gamechanger_url", t.get("gamechanger_url") || "");
     nt.set("gc_team_ref", t.get("gc_team_ref") || "");
     if (t.get("club")) nt.set("club", t.get("club"));
+    if (t.get("team")) nt.set("team", t.get("team"));
     nt.set("packet_status", "incomplete");
     app.save(nt);
     teamMap[t.id] = nt;
@@ -1540,6 +1686,9 @@ module.exports = {
   publicRoster: publicRoster,
   applySettings: applySettings,
   registerAccount: registerAccount,
+  createMasterTeam: createMasterTeam,
+  findOrCreateMasterTeam: findOrCreateMasterTeam,
+  listMasterTeams: listMasterTeams,
   verifyAccount: verifyAccount,
   fileUrl: fileUrl,
   applyAgeGroups: applyAgeGroups,
