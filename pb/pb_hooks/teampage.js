@@ -82,6 +82,7 @@ function publicTeam(app, event, teamSlug, auth) {
       id: team.id,
       name: team.get("name"),
       slug: team.get("slug"),
+      club: team.get("club") || "",
       pool: team.get("pool") || "",
       gamechanger_url: team.get("gamechanger_url") || "",
       gc_linked: host.isGameChangerUrl(team.get("gamechanger_url")),

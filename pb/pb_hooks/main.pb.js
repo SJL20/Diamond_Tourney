@@ -167,6 +167,23 @@ routerAdd("GET", "/api/account/home", (e) => {
   return e.json(200, host.accountHome(e.app, e.auth));
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/account/following", (e) => {
+  if (!e.auth) throw new UnauthorizedError("login required");
+  return e.json(200, require(__hooks + "/follow.js").listFollowing(e.app, e.auth));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/account/follow", (e) => {
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const body = e.requestInfo().body || {};
+  return e.json(200, require(__hooks + "/follow.js").setFollow(e.app, e.auth, body, true));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/account/unfollow", (e) => {
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const body = e.requestInfo().body || {};
+  return e.json(200, require(__hooks + "/follow.js").setFollow(e.app, e.auth, body, false));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/account/resend", (e) => {
   const host = require(__hooks + "/host.js");
   if (!e.auth) throw new UnauthorizedError("login required");

@@ -146,6 +146,58 @@ function tabEmpty(ev, slug, kind) {
   return `<p class="empty">${back[kind] || "Check back closer to the weekend."}</p>`;
 }
 
+function followButton(eventSlug, kind, clubId, teamSlug) {
+  if (!eventPb.authStore.record) {
+    return `<a class="btn ghost" data-link href="/login" data-follow-login>Log in to follow</a>`;
+  }
+  const label = kind === "team" ? "Follow this team" : "Follow this tournament";
+  const stop = kind === "team" ? "Following this team" : "Following this tournament";
+  return `<button class="btn ghost" type="button" id="follow-toggle" data-follow-kind="${kind}" data-follow-event="${escapeHtml(eventSlug)}" data-follow-team="${escapeHtml(teamSlug || "")}" data-follow-club="${escapeHtml(clubId || "")}" data-follow-label="${escapeHtml(label)}" data-follow-stop="${escapeHtml(stop)}">${label}</button>`;
+}
+
+async function bindFollowToggle() {
+  const login = document.querySelector("[data-follow-login]");
+  if (login) {
+    login.addEventListener("click", () => {
+      try { sessionStorage.setItem("dt-after-login", location.pathname); } catch (err) {}
+    });
+  }
+  const btn = document.getElementById("follow-toggle");
+  if (!btn) return;
+  let following = { teams: [], tournaments: [] };
+  try {
+    const res = await fetch("/api/account/following", { headers: authHeader() });
+    if (res.ok) following = await res.json();
+  } catch (err) {}
+  const kind = btn.dataset.followKind;
+  const already = kind === "team"
+    ? (following.teams || []).some((t) => t.id && t.id === btn.dataset.followClub)
+    : (following.tournaments || []).some((t) => t.slug === btn.dataset.followEvent && (t.via === "event" || t.via === "both"));
+  const paint = (active) => {
+    btn.textContent = active ? btn.dataset.followStop : btn.dataset.followLabel;
+    btn.dataset.following = active ? "1" : "0";
+  };
+  paint(already);
+  btn.addEventListener("click", async () => {
+    const active = btn.dataset.following === "1";
+    btn.disabled = true;
+    const res = await fetch(active ? "/api/account/unfollow" : "/api/account/follow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({
+        kind: kind,
+        slug: kind === "team" ? btn.dataset.followTeam : btn.dataset.followEvent,
+        event: btn.dataset.followEvent,
+      }),
+    });
+    btn.disabled = false;
+    if (!res.ok) return;
+    const out = await res.json().catch(() => ({}));
+    if (kind === "team" && out.id) btn.dataset.followClub = out.id;
+    paint(!active);
+  });
+}
+
 function authHeader() {
   return eventPb.authStore.token ? { Authorization: eventPb.authStore.token } : {};
 }
@@ -1618,6 +1670,7 @@ export async function eventHome(slug) {
       <p class="lede">${escapeHtml(ev.status_note || packet?.status || "Live standings. The bracket fills when scores are final.")}</p>
       <p class="muted">${escapeHtml([dateLine, ev.venue, ev.format_label, sourceLabel(ev)].filter(Boolean).join(" · "))}</p>
       <div class="actions">
+        ${followButton(ev.slug, "event", false)}
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
         <a class="btn ghost" data-link href="/t/${ev.slug}/overall">Weekend schedule</a>
         <a class="btn ghost" data-link href="/t/${ev.slug}/bracket">Open bracket</a>
@@ -1639,6 +1692,7 @@ export async function eventHome(slug) {
     ${homeGettingThere(ev, board.photos || [])}
     ${fieldsBlock(ev, board.fields, { demote: true })}
   `);
+  await bindFollowToggle();
 }
 
 export async function eventStandings(slug) {
@@ -2127,6 +2181,92 @@ export async function directorImportPopup() {
   });
 }
 
+const HIT_SORTS = [
+  { key: "h", label: "H", dir: "desc" },
+  { key: "avg", label: "AVG", dir: "desc" },
+  { key: "ops", label: "OPS", dir: "desc" },
+  { key: "rbi", label: "RBI", dir: "desc" },
+];
+const PIT_SORTS = [
+  { key: "ip", label: "IP", dir: "desc" },
+  { key: "era", label: "ERA", dir: "asc" },
+  { key: "k", label: "K", dir: "desc" },
+  { key: "w", label: "W", dir: "desc" },
+];
+
+function statBlank(value) {
+  return value == null || value === "";
+}
+
+function statNumber(row, key) {
+  if (key === "ip") {
+    const outs = row.ip_outs != null && row.ip_outs !== "" ? Number(row.ip_outs) : ipToOuts(row.ip);
+    return Number.isFinite(outs) ? outs : null;
+  }
+  if (key === "k") {
+    const raw = row.k ?? row.so;
+    if (statBlank(raw)) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (key === "w") {
+    const raw = statBlank(row.w) ? row.wins : row.w;
+    if (statBlank(raw)) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  const raw = row[key];
+  if (statBlank(raw)) return null;
+  const n = parseFloat(String(raw));
+  return Number.isFinite(n) ? n : null;
+}
+
+function sortStatRows(rows, key, dir) {
+  const sign = dir === "asc" ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    const av = statNumber(a, key);
+    const bv = statNumber(b, key);
+    if (av == null && bv == null) return String(a.player || "").localeCompare(String(b.player || ""));
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    if (av !== bv) return (av - bv) * sign;
+    return String(a.player || "").localeCompare(String(b.player || ""));
+  });
+}
+
+function statShown(row, key) {
+  if (key === "h") return statBlank(row.h) ? "—" : String(row.h);
+  if (key === "avg") return statBlank(row.avg) ? "—" : String(row.avg);
+  if (key === "ops") return statBlank(row.ops) ? "—" : String(row.ops);
+  if (key === "rbi") return statBlank(row.rbi) ? "—" : String(row.rbi);
+  if (key === "ip") return statBlank(row.ip) ? "—" : String(row.ip);
+  if (key === "era") return statBlank(row.era) ? "—" : String(row.era);
+  if (key === "k") {
+    const raw = row.k ?? row.so;
+    return statBlank(raw) ? "—" : String(raw);
+  }
+  if (key === "w") {
+    const raw = statBlank(row.w) ? row.wins : row.w;
+    return statBlank(raw) ? "—" : String(raw);
+  }
+  return "—";
+}
+
+function sortChips(sorts, active, dir) {
+  return `<div class="chips" id="stats-sorts">${sorts.map((s) => {
+    const on = s.key === active;
+    const arrow = on ? (dir === "asc" ? " ▲" : " ▼") : "";
+    return `<button class="chip${on ? " on" : ""}" type="button" data-stat-sort="${s.key}" aria-pressed="${on ? "true" : "false"}">${s.label}${arrow}</button>`;
+  }).join("")}</div>`;
+}
+
+function sortHead(label, key, active, dir) {
+  if (!key) return `<th>${label}</th>`;
+  const on = key === active;
+  const arrow = on ? (dir === "asc" ? " ▲" : " ▼") : "";
+  return `<th><button class="stat-col${on ? " on" : ""}" type="button" data-stat-sort="${key}" aria-pressed="${on ? "true" : "false"}">${label}${arrow}</button></th>`;
+}
+
 export async function eventStats(slug) {
   const board = await fetchBoard(slug);
   const hitting = board.leaders.full_hitting || [];
@@ -2144,7 +2284,7 @@ export async function eventStats(slug) {
       </div>
     </section>
     ${approveBanner}
-    <section class="card">
+    <section class="card" id="stats-board">
       <div class="tabs" role="tablist">
         <button class="tab active" type="button" data-stats-tab="hit">Hitting</button>
         <button class="tab" type="button" data-stats-tab="pit">Pitching</button>
@@ -2154,33 +2294,65 @@ export async function eventStats(slug) {
         ${teams.map((t) => `<button class="chip" type="button" data-team="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("")}
       </div>
       <label class="check stats-opt"><input type="checkbox" id="stats-qual" checked> Qualifiers only</label>
+      <p class="muted" id="stats-sort-note"></p>
       <div id="stats-table"></div>
     </section>
   `);
-  const state = { tab: "hit", team: "", qual: true };
+  const state = { tab: "hit", team: "", qual: true, hitKey: "avg", hitDir: "desc", pitKey: "era", pitDir: "asc" };
   const paint = () => {
-    const rows = (state.tab === "hit" ? hitting : pitching).filter((r) => {
+    const source = state.tab === "hit" ? hitting : pitching;
+    const sorts = state.tab === "hit" ? HIT_SORTS : PIT_SORTS;
+    const key = state.tab === "hit" ? state.hitKey : state.pitKey;
+    const dir = state.tab === "hit" ? state.hitDir : state.pitDir;
+    const rows = sortStatRows(source.filter((r) => {
       if (state.team && r.team !== state.team) return false;
       if (state.qual && r.q === false) return false;
       return true;
-    });
+    }), key, dir);
+    const note = document.getElementById("stats-sort-note");
+    if (note) {
+      note.textContent = state.tab === "hit"
+        ? "Sort hitting by hits, average, OPS, or RBIs. Average is the default. A blank OPS was not on the scorebook."
+        : "Sort pitching by innings, ERA, strikeouts, or wins. ERA is the default. A blank win total was not on the scorebook.";
+    }
     const box = document.getElementById("stats-table");
     if (!hitting.length && !pitching.length) {
       box.innerHTML = tabEmpty(board.event, slug, "stats");
       return;
     }
+    const qualCell = (r) => (r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`);
     if (state.tab === "hit") {
-      box.innerHTML = deskTable(["#", "Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+      box.innerHTML = sortChips(sorts, key, dir) + `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>
+        <th>#</th><th>Player</th><th>Team</th><th>AB</th>
+        ${sortHead("H", "h", key, dir)}${sortHead("RBI", "rbi", key, dir)}${sortHead("AVG", "avg", key, dir)}${sortHead("OPS", "ops", key, dir)}
+        <th></th>
+      </tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
         <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-        <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg}</td><td>${r.ops}</td>
-        <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
-      </tr>`)) + statList(rows.map((r, i) => hitStatRow(r, escapeHtml(r.player), { seed: i + 1, teamHtml: teamNameLink(slug, board.roster, r.team) })));
+        <td>${statBlank(r.ab) ? "—" : r.ab}</td><td>${statShown(r, "h")}</td><td>${statShown(r, "rbi")}</td><td>${statShown(r, "avg")}</td><td>${statShown(r, "ops")}</td>
+        <td>${qualCell(r)}</td>
+      </tr>`).join("")}</tbody></table></div>` + statList(rows.map((r, i) => statRow({
+        seed: i + 1,
+        name: escapeHtml(r.player || ""),
+        meta: [teamNameLink(slug, board.roster, r.team), statBlank(r.ab) ? "" : `${r.ab} AB`].filter(Boolean).join(" · "),
+        value: escapeHtml(statShown(r, key)),
+        muted: r.q === false,
+      })));
     } else {
-      box.innerHTML = deskTable(["#", "Player", "Team", "IP", "K", "ERA", ""], rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+      box.innerHTML = sortChips(sorts, key, dir) + `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>
+        <th>#</th><th>Player</th><th>Team</th>
+        ${sortHead("IP", "ip", key, dir)}${sortHead("K", "k", key, dir)}${sortHead("ERA", "era", key, dir)}${sortHead("W", "w", key, dir)}
+        <th></th>
+      </tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
         <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-        <td>${r.ip}</td><td>${r.k}</td><td>${r.era}</td>
-        <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
-      </tr>`)) + statList(rows.map((r, i) => pitStatRow(r, escapeHtml(r.player), { seed: i + 1, teamHtml: teamNameLink(slug, board.roster, r.team) })));
+        <td>${statShown(r, "ip")}</td><td>${statShown(r, "k")}</td><td>${statShown(r, "era")}</td><td>${statShown(r, "w")}</td>
+        <td>${qualCell(r)}</td>
+      </tr>`).join("")}</tbody></table></div>` + statList(rows.map((r, i) => statRow({
+        seed: i + 1,
+        name: escapeHtml(r.player || ""),
+        meta: teamNameLink(slug, board.roster, r.team),
+        value: escapeHtml(statShown(r, key)),
+        muted: r.q === false,
+      })));
     }
   };
   eventRoot().querySelectorAll("[data-stats-tab]").forEach((btn) => {
@@ -2199,6 +2371,22 @@ export async function eventStats(slug) {
   });
   document.getElementById("stats-qual").addEventListener("change", (ev) => {
     state.qual = ev.target.checked;
+    paint();
+  });
+  document.getElementById("stats-board").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-stat-sort]");
+    if (!btn) return;
+    const key = btn.dataset.statSort;
+    const sorts = state.tab === "hit" ? HIT_SORTS : PIT_SORTS;
+    const spec = sorts.find((s) => s.key === key);
+    if (!spec) return;
+    if (state.tab === "hit") {
+      state.hitDir = state.hitKey === key ? (state.hitDir === "asc" ? "desc" : "asc") : spec.dir;
+      state.hitKey = key;
+    } else {
+      state.pitDir = state.pitKey === key ? (state.pitDir === "asc" ? "desc" : "asc") : spec.dir;
+      state.pitKey = key;
+    }
     paint();
   });
   paint();
@@ -4221,6 +4409,7 @@ export async function eventTeamPage(eventSlug, teamSlug) {
         <h1>${escapeHtml(team.name)}</h1>
         <p class="muted">${escapeHtml(ev.name)}${team.pool ? " · Pool " + escapeHtml(team.pool) : ""}</p>
         <div class="actions no-print">
+          ${followButton(ev.slug, "team", team.club, team.slug)}
           <button class="btn ghost" type="button" onclick="window.print()">Print this page</button>
           ${team.gc_linked && team.gamechanger_url
             ? `<a class="btn ghost" href="${escapeHtml(team.gamechanger_url)}" target="_blank" rel="noopener">GameChanger</a>`
@@ -4272,6 +4461,7 @@ export async function eventTeamPage(eventSlug, teamSlug) {
           : `<p class="muted">Standings appear after a pool game is final.</p>`}
         ${page.paid != null ? `<p class="muted">Paid: ${page.paid ? "yes" : "no"}${page.packet_status ? " · packet " + escapeHtml(page.packet_status) : ""}</p>` : ""}
         ${page.box_scores ? `<p class="muted">Box scores: ${page.box_scores.filter((b) => b.submitted).length} submitted</p>` : ""}
+        <p class="muted">Follow this team to add yourself to its fan list. Your email stays off the public page.</p>
       </section>
       ${(page.hitting || []).length || (page.pitching || []).length ? `<section class="card">
         <h2>Team stats</h2>
@@ -4297,6 +4487,7 @@ export async function eventTeamPage(eventSlug, teamSlug) {
       </section>` : ""}
     </article>
   `);
+  await bindFollowToggle();
 }
 
 export async function boxUploadPage(token) {

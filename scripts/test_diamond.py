@@ -4469,5 +4469,163 @@ class FlexibleBracketTests(unittest.TestCase):
         self.assertEqual(plan[1]["pool_place_to"], 4)
 
 
+class FollowAndStatsTests(unittest.TestCase):
+    def _fan(self, label):
+        email = f"{label}.{uuid.uuid4().hex[:8]}@local.test"
+        password = "FanFollow1!"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": password,
+            "passwordConfirm": password,
+            "display_name": "Fan " + label,
+            "intent": "team",
+        })
+        return email, auth(BASE, email, password)
+
+    def _assert_private_hidden(self, payload, email):
+        blob = json.dumps(payload)
+        self.assertNotIn(email, blob)
+        self.assertNotIn("contact_email", blob)
+        self.assertNotIn("contact_phone", blob)
+        self.assertNotIn("birthdate", blob)
+
+    def test_stats_sort_defaults_leave_missing_wins_blank(self):
+        event = (ROOT / "pb/pb_public/js/event.js").read_text()
+        popup = (ROOT / "pb/pb_public/popup/stats.html").read_text()
+        css = (ROOT / "pb/pb_public/css/app.css").read_text()
+        flow = (ROOT / "pb/pb_public/js/flow.js").read_text()
+        self.assertIn('hitKey: "avg"', event)
+        self.assertIn('pitKey: "era"', event)
+        self.assertIn('{ key: "h", label: "H"', event)
+        self.assertIn('{ key: "ops", label: "OPS"', event)
+        self.assertIn('{ key: "rbi", label: "RBI"', event)
+        self.assertIn('{ key: "ip", label: "IP"', event)
+        self.assertIn('{ key: "k", label: "K"', event)
+        self.assertIn('{ key: "w", label: "W"', event)
+        self.assertIn("A blank OPS was not on the scorebook.", event)
+        self.assertIn("A blank win total was not on the scorebook.", event)
+        self.assertIn("await bindFollowToggle()", event)
+        self.assertIn("Follow this team", event)
+        self.assertIn("button.stat-col", css)
+        self.assertIn("let sortKey = 'avg'", popup)
+        self.assertIn("sortKey = v === 'hitting' ? 'avg' : 'era'", popup)
+        self.assertIn("{k:'w',", popup)
+        self.assertNotIn("let sortKey = 'ops'", popup)
+        self.assertNotIn("? 'ops'", popup)
+        self.assertIn("Tournaments you follow", flow)
+        self.assertIn("Teams you follow", flow)
+        self.assertIn('next.startsWith("/t/")', flow)
+        self.assertIn("dt-after-login", flow)
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        pitching = board["leaders"]["full_pitching"]
+        hitting = board["leaders"]["full_hitting"]
+        self.assertGreater(len(pitching), 0)
+        self.assertGreater(len(hitting), 0)
+        self.assertTrue(any(row.get("avg") for row in hitting))
+        for row in pitching:
+            self.assertFalse(row.get("w"))
+            self.assertFalse(row.get("wins"))
+
+    def test_follow_lists_tournaments_without_fan_emails(self):
+        with self.assertRaises(RuntimeError) as anon:
+            request(BASE, "POST", "/api/account/follow", None, {
+                "kind": "event",
+                "slug": "keystone-clash-2026",
+            })
+        self.assertIn("-> 401:", str(anon.exception))
+
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        with self.assertRaises(RuntimeError) as superuser:
+            request(BASE, "POST", "/api/account/follow", admin, {
+                "kind": "event",
+                "slug": "keystone-clash-2026",
+            })
+        self.assertIn("-> 403:", str(superuser.exception))
+        self.assertIn("site login", str(superuser.exception).lower())
+
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        passion = next(t for t in board["roster"] if t["name"] == "Pittsburgh Passion")
+        self.assertTrue(passion.get("slug"))
+        page = request(BASE, "GET", f"/api/event/keystone-clash-2026/team/{passion['slug']}")
+        self.assertEqual(page["team"]["name"], "Pittsburgh Passion")
+        self._assert_private_hidden(page, "fan@local.test")
+
+        email, token = self._fan("direct")
+        followed = request(BASE, "POST", "/api/account/follow", token, {
+            "kind": "event",
+            "slug": "keystone-clash-2026",
+        })
+        self.assertTrue(followed["following"])
+        self.assertEqual(followed["kind"], "event")
+        listing = request(BASE, "GET", "/api/account/following", token)
+        keystone = next(t for t in listing["tournaments"] if t["slug"] == "keystone-clash-2026")
+        self.assertEqual(keystone["via"], "event")
+        self.assertEqual(listing["teams"], [])
+        self._assert_private_hidden(listing, email)
+
+        team = request(BASE, "POST", "/api/account/follow", token, {
+            "kind": "team",
+            "event": "keystone-clash-2026",
+            "slug": passion["slug"],
+        })
+        self.assertEqual(team["kind"], "team")
+        self.assertTrue(team["id"])
+        self.assertIn("Passion", team["name"])
+        listing = request(BASE, "GET", "/api/account/following", token)
+        self.assertTrue(any(row["id"] == team["id"] for row in listing["teams"]))
+        keystone = next(t for t in listing["tournaments"] if t["slug"] == "keystone-clash-2026")
+        self.assertEqual(keystone["via"], "both")
+        self.assertIn("Passion", keystone["team"])
+        self._assert_private_hidden(listing, email)
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["following"]["tournaments"][0]["slug"], "keystone-clash-2026")
+        self._assert_private_hidden(home["following"], email)
+
+        other_email, other = self._fan("other")
+        for who in (None, token, other):
+            with self.assertRaises(RuntimeError) as hidden:
+                request(BASE, "GET", "/api/collections/follows/records", who)
+            self.assertRegex(str(hidden.exception), r"-> (401|403|404):")
+            self.assertNotIn(email, str(hidden.exception))
+        other_list = request(BASE, "GET", "/api/account/following", other)
+        self.assertEqual(other_list["teams"], [])
+        self.assertEqual(other_list["tournaments"], [])
+        self.assertNotIn(email, json.dumps(other_list))
+        self.assertNotIn(other_email, json.dumps(request(BASE, "GET", "/api/account/following", token)))
+
+        request(BASE, "POST", "/api/account/unfollow", token, {
+            "kind": "team",
+            "event": "keystone-clash-2026",
+            "slug": passion["slug"],
+        })
+        after_team = request(BASE, "GET", "/api/account/following", token)
+        self.assertEqual(after_team["teams"], [])
+        self.assertEqual(
+            next(t for t in after_team["tournaments"] if t["slug"] == "keystone-clash-2026")["via"],
+            "event",
+        )
+
+        team_email, team_token = self._fan("teamonly")
+        request(BASE, "POST", "/api/account/follow", team_token, {
+            "kind": "team",
+            "event": "keystone-clash-2026",
+            "slug": passion["slug"],
+        })
+        only_team = request(BASE, "GET", "/api/account/following", team_token)
+        self.assertEqual(len(only_team["teams"]), 1)
+        via_team = next(t for t in only_team["tournaments"] if t["slug"] == "keystone-clash-2026")
+        self.assertEqual(via_team["via"], "team")
+        self.assertIn("Passion", via_team["team"])
+        self._assert_private_hidden(only_team, team_email)
+        club_id = only_team["teams"][0]["id"]
+        with self.assertRaises(RuntimeError) as cannot_follow_by_id:
+            request(BASE, "POST", "/api/account/follow", team_token, {"kind": "club", "id": club_id})
+        self.assertIn("-> 400:", str(cannot_follow_by_id.exception))
+        request(BASE, "POST", "/api/account/unfollow", team_token, {"kind": "club", "id": club_id})
+        cleared = request(BASE, "GET", "/api/account/following", team_token)
+        self.assertEqual(cleared["teams"], [])
+        self.assertEqual(cleared["tournaments"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
