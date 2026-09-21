@@ -331,12 +331,12 @@ function eventMapUrl(rec) {
 }
 
 const FORMAT_LABELS = {
-  "pool-to-bracket": "Pool play, then single-elim bracket",
-  "pool-double-elim": "Pool play, then double-elim bracket",
+  "pool-to-bracket": "Pool play, then bracket",
+  "pool-double-elim": "Pool play, then bracket",
   "round-robin": "Round robin",
   "pool-only": "Pool play only",
-  "single-elim": "Single elimination",
-  "double-elim": "Double elimination",
+  "single-elim": "Bracket only",
+  "double-elim": "Bracket only",
   imported: "Imported / already drawn",
 };
 
@@ -375,7 +375,7 @@ function eventJson(rec, app, auth, opts) {
     hours_end: rec.get("hours_end") || "18:00",
     scheduler: (function () {
       try { return require(__hooks + "/schedule.js").parseScheduler(rec.get("scheduler")); }
-      catch (err) { return { games_per_team: 2, consolation: true, replace: true, draw_bracket: false, origin: "", days: [] }; }
+      catch (err) { return { games_per_team: 2, consolation: false, replace: true, draw_bracket: false, origin: "", days: [] }; }
     })(),
     fields: fields,
     ages: rec.get("ages") || "",

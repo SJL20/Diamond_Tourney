@@ -2,6 +2,21 @@ function isDirector(auth, event, app) {
   return require(__hooks + "/softball.js").isEventAdmin(event, auth, app);
 }
 
+function userIdIfExists(app, auth) {
+  if (!app || !auth || !auth.id) return "";
+  try {
+    app.findRecordById("users", auth.id);
+    return auth.id;
+  } catch (err) {
+    return "";
+  }
+}
+
+function setUserRel(app, rec, field, auth) {
+  const id = userIdIfExists(app, auth);
+  if (id) rec.set(field, id);
+}
+
 function canScore(app, event, rec, auth) {
   if (!auth) return false;
   if (isDirector(auth, event, app)) return true;
@@ -265,7 +280,7 @@ function postScore(app, event, id, body, auth) {
   }
   if (director && body.confirm === true) rec.set("status", "final");
   if (body.notes != null) rec.set("notes", body.notes);
-  rec.set("scored_by", auth.id);
+  setUserRel(app, rec, "scored_by", auth);
   app.save(rec);
   const schedule = require(__hooks + "/schedule.js");
   if (rec.get("status") === "final") {
@@ -317,7 +332,7 @@ function saveBox(app, event, id, body, files, auth) {
   if (!director && !bot && status === "approved") status = hasLines ? "submitted" : "queued";
   if (director && (body.approve_file === true || body.approve_file === "true")) status = "approved";
   box.set("status", status);
-  box.set("submitted_by", auth.id);
+  setUserRel(app, box, "submitted_by", auth);
   if (body.note != null) box.set("note", body.note);
   app.save(box);
   if (hasLines) applyBoxLines(app, event, rec, hitting, pitching);
@@ -341,7 +356,7 @@ function attachUpdateBox(app, event, game, body, auth) {
   box.set("source", boxPayload.source || body.source || "bot");
   const status = boxPayload.status || body.box_status || (hitting.length || pitching.length ? "needs_review" : "queued");
   box.set("status", status);
-  if (auth) box.set("submitted_by", auth.id);
+  if (auth) setUserRel(app, box, "submitted_by", auth);
   if (boxPayload.note != null) box.set("note", boxPayload.note);
   else if (body.note != null) box.set("note", body.note);
   app.save(box);
@@ -375,7 +390,7 @@ function botApply(app, body, auth) {
   if (pitching.length) box.set("pitching", pitching);
   box.set("source", body.source || "bot");
   box.set("status", body.status || (body.apply === false ? "needs_review" : "approved"));
-  box.set("submitted_by", auth.id);
+  setUserRel(app, box, "submitted_by", auth);
   if (body.parser_notes != null) box.set("note", body.parser_notes);
   else if (body.note != null) box.set("note", body.note);
   app.save(box);
@@ -384,7 +399,7 @@ function botApply(app, body, auth) {
     if (body.home_runs != null) rec.set("home_runs", Number(body.home_runs));
     if (body.away_runs != null) rec.set("away_runs", Number(body.away_runs));
     rec.set("status", body.game_status || "final");
-    rec.set("scored_by", auth.id);
+    setUserRel(app, rec, "scored_by", auth);
     app.save(rec);
     if (rec.get("status") === "final") {
       try { require(__hooks + "/schedule.js").fillEmptyBracket(app, event); } catch (err) {}
@@ -439,6 +454,8 @@ function postBracketScore(app, event, id, body, auth) {
 module.exports = {
   isDirector: isDirector,
   canScore: canScore,
+  userIdIfExists: userIdIfExists,
+  setUserRel: setUserRel,
   postScore: postScore,
   saveBox: saveBox,
   botApply: botApply,
