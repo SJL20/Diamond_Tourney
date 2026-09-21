@@ -188,6 +188,45 @@ class PdfBoxTextTests(unittest.TestCase):
         self.assertEqual(row["pitches"], 41)
         self.assertEqual(row["strikes"], 27)
 
+    def test_real_gamechanger_sheet_reads_both_columns(self):
+        path = ROOT / "testdata" / "boxes" / "lady-dukes-north-stars-2026-09-19.pdf"
+        result = extract_pdf(str(path), "Lady Dukes WPA 2033", "North Stars 11U - Fisher")
+        self.assertTrue(result["ok"], result)
+        hit = {(row["side"], row["name"]): row for row in result["hitting"]}
+        pit = {(row["side"], row["name"]): row for row in result["pitching"]}
+        self.assertEqual(len(hit), 18)
+        self.assertEqual(len(pit), 5)
+        glomb = hit[("home", "A Glomb")]
+        self.assertEqual(glomb["jersey"], "1")
+        self.assertEqual([glomb[key] for key in ("ab", "r", "h", "rbi", "bb", "so")], [3, 1, 1, 1, 0, 1])
+        mcwill = hit[("home", "C McWilliams")]
+        self.assertEqual(mcwill["jersey"], "18")
+        self.assertEqual(mcwill["h"], 2)
+        self.assertEqual(mcwill["rbi"], 2)
+        self.assertEqual(hit[("home", "S Tortorice")]["jersey"], "33")
+        self.assertEqual(hit[("home", "R LaFever")]["bb"], 1)
+        self.assertEqual(hit[("home", "J Bauchman")]["jersey"], "")
+        self.assertEqual(hit[("home", "J Bauchman")]["ab"], 1)
+        self.assertEqual(hit[("away", "Ciara M")]["so"], 1)
+        self.assertEqual(hit[("away", "Cassidy G")]["rbi"], 1)
+        self.assertEqual(hit[("away", "Lucy C")]["ab"], 1)
+        self.assertEqual(hit[("away", "Addison F")]["h"], 0)
+        lucy = pit[("away", "Lucy C")]
+        self.assertEqual(lucy["ip"], "1.2")
+        self.assertEqual(lucy["er"], 6)
+        self.assertEqual(lucy["h"], 5)
+        self.assertEqual(pit[("home", "L Bruckner")]["ip"], "3.0")
+        self.assertEqual(pit[("home", "L Bruckner")]["er"], 0)
+        self.assertEqual(pit[("home", "A Glomb")]["so"], 3)
+        self.assertEqual(pit[("away", "Cassidy G")]["ip"], "2.0")
+        self.assertEqual(pit[("away", "Rylee R")]["ip"], "1.0")
+        blob = json.dumps(result)
+        self.assertNotIn("Totals", blob)
+        self.assertNotIn("38-20", blob)
+        self.assertNotIn("pitches", blob)
+        self.assertIn("C McWilliams", result["note"])
+        self.assertIn("HR", result["note"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -357,11 +357,19 @@ def player_name(words: list[dict]) -> tuple[str, str]:
     if leading and not jersey:
         jersey = leading.group(1)
         text = leading.group(2).strip()
-    parts = text.split()
-    if len(parts) >= 2 and parts[-1].upper() in POSITIONS:
-        parts = parts[:-1]
+    parts = [part for part in text.split() if not is_position_token(part)]
     text = " ".join(parts).strip(" ,")
     return text, jersey
+
+
+def is_position_token(token: str) -> bool:
+    """(CF) and (P) are positions. A bare P or C stays, because it can be a last initial."""
+    raw = re.sub(r"[^A-Za-z0-9]", "", token or "").upper()
+    if not raw:
+        return False
+    if "(" in token or ")" in token:
+        return raw in POSITIONS or raw in {"P", "C"}
+    return raw in POSITIONS
 
 
 def is_skippable_name(name: str) -> bool:
@@ -473,7 +481,7 @@ def side_above(lines: list[dict], index: int, home: str, away: str) -> tuple[str
     """
     fallback = ""
     for j in range(index - 1, -1, -1):
-        if lines[j].get("header"):
+        if lines[j].get("bands") or lines[j].get("header"):
             break
         text = line_text(lines[j])
         if not is_label_candidate(text):
@@ -486,52 +494,228 @@ def side_above(lines: list[dict], index: int, home: str, away: str) -> tuple[str
     return "", fallback, bool(fallback)
 
 
+def drop_stray_glyphs(words: list[dict]) -> list[dict]:
+    """GameChanger clips a name and leaves a tiny leftover letter on a later row."""
+    heights = sorted(w.get("height") or 0 for w in words if (w.get("height") or 0) > 0)
+    if not heights:
+        return words
+    cutoff = heights[len(heights) // 2] * 0.75
+    return [w for w in words if (w.get("height") or cutoff) >= cutoff]
+
+
+def header_bands(words: list[dict]) -> list[dict]:
+    """One band per stat header. A side-by-side sheet has two bands on one line."""
+    known = []
+    for word in sorted(words, key=lambda w: w["x0"]):
+        token = norm_header(word["text"])
+        if not token or token.isdigit() or not is_known(token):
+            continue
+        known.append(word)
+    if len(known) < 3:
+        return []
+    gaps = [known[i]["x0"] - known[i - 1]["x1"] for i in range(1, len(known))]
+    positive = sorted(gap for gap in gaps if gap > 0) or [0]
+    cut = max(60.0, positive[len(positive) // 2] * 3)
+    groups = [[known[0]]]
+    for word, gap in zip(known[1:], gaps):
+        if gap > cut:
+            groups.append([word])
+        else:
+            groups[-1].append(word)
+    bands = []
+    for group in groups:
+        header = classify_header(group)
+        if not header or header["kind"] == "ambiguous":
+            continue
+        header["x0"] = group[0]["x0"]
+        header["x1"] = group[-1]["x1"]
+        bands.append(header)
+    return bands
+
+
+def assign_band_ranges(line: dict) -> None:
+    bands = line.get("bands") or []
+    if not bands:
+        return
+    words = line["words"]
+    for index, band in enumerate(bands):
+        if index == 0:
+            band["xmin"] = -1.0
+        else:
+            prev = bands[index - 1]
+            between = [w for w in words if prev["x1"] - 1 <= w["x0"] < band["x0"]]
+            gutter_right = min((w["x0"] for w in between), default=band["x0"])
+            band["xmin"] = (prev["x1"] + gutter_right) / 2
+    for index, band in enumerate(bands):
+        band["xmax"] = bands[index + 1]["xmin"] if index + 1 < len(bands) else 1e9
+
+
+def band_title(line: dict, band: dict) -> str:
+    parts = []
+    for word in line["words"]:
+        if not (band["xmin"] <= word["x0"] < band["x0"]):
+            continue
+        token = norm_header(word["text"])
+        if token and is_known(token):
+            continue
+        if re.search(r"[A-Za-z]", word["text"]):
+            parts.append(word["text"])
+    return " ".join(parts).strip()
+
+
+NOTE_LINE = re.compile(r"^(?:2B|3B|HR|TB|SB|CS|LOB|P-S|PS|BF|WP|HBP|E|W|L)\s*:", re.I)
+
+
+def is_note_line(line: dict) -> bool:
+    return bool(NOTE_LINE.match(line_text(line).strip()))
+
+
+def is_totals_slice(words: list[dict]) -> bool:
+    return bool(re.search(r"\bTotals?\b", " ".join(w["text"] for w in words), re.I))
+
+
+def slice_band(words: list[dict], band: dict) -> list[dict]:
+    return [w for w in words if band["xmin"] <= w["x0"] < band["xmax"]]
+
+
+def letters_only(text: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", text or "")
+
+
+def complete_clipped_names(rows: list[dict], words: list[dict], notes: list[str]) -> None:
+    """A clipped batting name is completed only when the same page prints the longer name."""
+    tokens = [letters_only(w["text"]) for w in words]
+    for row in rows:
+        parts = row["name"].split()
+        if len(parts) < 2:
+            continue
+        initial = letters_only(parts[0])
+        last = letters_only(parts[-1])
+        if len(initial) != 1 or len(last) < 4:
+            continue
+        choices = []
+        for index, token in enumerate(tokens):
+            if len(token) < len(last) + 2 or not token.startswith(last):
+                continue
+            window = tokens[max(0, index - 3) : index]
+            if initial not in window:
+                continue
+            if token not in choices:
+                choices.append(token)
+        if len(choices) != 1:
+            continue
+        full = " ".join(parts[:-1] + [choices[0]])
+        if full == row["name"]:
+            continue
+        notes.append(f"Name {who(row['name'], row.get('jersey') or '')} was completed from the same page as {full}.")
+        row["name"] = full
+
+
+def harmonize_same_jersey(rows: list[dict], notes: list[str]) -> None:
+    """Pitching sometimes drops the last initial that batting on the same page showed."""
+    groups: dict[tuple, list] = {}
+    for row in rows:
+        if not row.get("jersey"):
+            continue
+        groups.setdefault((row.get("side"), row["jersey"]), []).append(row)
+    for bunch in groups.values():
+        names = list(dict.fromkeys(row["name"] for row in bunch))
+        if len(names) < 2:
+            continue
+        names.sort(key=len)
+        longest = names[-1]
+        if not all(longest == name or (longest.startswith(name) and longest[len(name):len(name) + 1] in (" ", "")) or (longest.startswith(name) and name[-1:].isalpha() and longest[len(name):len(name) + 1].isalpha()) for name in names):
+            continue
+        for row in bunch:
+            if row["name"] == longest:
+                continue
+            notes.append(f"Name {who(row['name'], row['jersey'])} was completed from the same page as {who(longest, row['jersey'])}.")
+            row["name"] = longest
+
+
 def parse_words(words: list[dict], home: str = "", away: str = "") -> dict:
+    source = words
+    words = drop_stray_glyphs(words)
     lines = cluster_lines(words)
     any_header = False
     for line in lines:
-        line["header"] = classify_header(line["words"])
-        if line["header"]:
+        line["bands"] = header_bands(line["words"])
+        assign_band_ranges(line)
+        if line["bands"]:
             any_header = True
     notes: list[str] = []
     hitting = []
     pitching = []
     ignored: list[str] = []
     current_side = ""
-    for i, line in enumerate(lines):
-        header = line.get("header")
-        if not header:
-            text = line_text(line)
+    i = 0
+    while i < len(lines):
+        bands = lines[i]["bands"]
+        if not bands:
+            text = line_text(lines[i])
             if is_label_candidate(text):
                 found = match_side(text, home, away)
                 if found:
                     current_side = found
+            i += 1
             continue
-        if header["kind"] == "ambiguous":
-            notes.append("A header row listed both AB and IP, so that row was left unread.")
-            continue
-        for key in header["dups"]:
-            notes.append(f"{LABELS.get(key, key)} was listed twice, so that column was left blank.")
-        ignored.extend(header["ignored"])
-        side, label, unmatched = side_above(lines, i, home, away)
-        if side:
-            current_side = side
-        elif not unmatched:
-            side = current_side
-        if not side:
-            title = " ".join((label or "unlabeled").split())[:80]
-            kind = "Batting" if header["kind"] == "batting" else "Pitching"
+        for band in bands:
+            if band["kind"] == "ambiguous":
+                notes.append("A header row listed both AB and IP, so that row was left unread.")
+                band["side"] = ""
+                band["unmatched"] = True
+                continue
+            title = band_title(lines[i], band)
+            side = match_side(title, home, away) if title else ""
+            band["title"] = title
+            band["side"] = side
+            band["unmatched"] = bool(title) and not side
+            if side:
+                current_side = side
+        if len(bands) == 1 and not bands[0].get("side") and not bands[0].get("unmatched"):
+            side, label, unmatched = side_above(lines, i, home, away)
+            if side:
+                bands[0]["side"] = side
+                current_side = side
+            elif unmatched:
+                bands[0]["unmatched"] = True
+                bands[0]["title"] = label
+            elif current_side:
+                bands[0]["side"] = current_side
+        for band in bands:
+            for key in band["dups"]:
+                notes.append(f"{LABELS.get(key, key)} was listed twice, so that column was left blank.")
+            ignored.extend(band["ignored"])
+            if band.get("side"):
+                continue
+            title = " ".join((band.get("title") or "unlabeled").split())[:80]
+            kind = "Batting" if band["kind"] == "batting" else "Pitching"
             notes.append(f"{kind} section \"{title}\" is unread until it matches the home or away name.")
-            continue
+        closed: set[int] = set()
         j = i + 1
-        while j < len(lines) and not lines[j].get("header"):
-            row = parse_player(lines[j]["words"], header, side, notes)
-            if row:
-                if header["kind"] == "batting":
+        while j < len(lines) and not lines[j]["bands"]:
+            if is_note_line(lines[j]):
+                break
+            for bi, band in enumerate(bands):
+                if bi in closed or not band.get("side"):
+                    continue
+                sliced = slice_band(lines[j]["words"], band)
+                if not sliced:
+                    continue
+                if is_totals_slice(sliced):
+                    closed.add(bi)
+                    continue
+                row = parse_player(sliced, band, band["side"], notes)
+                if not row:
+                    continue
+                if band["kind"] == "batting":
                     hitting.append(row)
                 else:
                     pitching.append(row)
             j += 1
+        i = j
+    complete_clipped_names(hitting + pitching, source, notes)
+    harmonize_same_jersey(hitting + pitching, notes)
     return finish(bool(words), any_header, hitting, pitching, notes, ignored)
 
 
