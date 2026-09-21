@@ -635,7 +635,7 @@ function buildSingleElimGames(teams, flight, opts) {
       flight_name: flight.name,
     }));
   }
-  if (opts.consolation || flight.consolation) {
+  if (opts.consolation === true || flight.consolation === true) {
     if (size >= 8) {
       games.push(newGame({
         round: "5TH", slot: 1, side: "consolation", kind: "consolation",
@@ -657,55 +657,193 @@ function buildSingleElimGames(teams, flight, opts) {
   return { games: games, byes: byes, notes: notes, feeds: {}, first_round: firstRound };
 }
 
-function buildDoubleElimGames(teams, flight, opts) {
-  const winners = buildSingleElimGames(teams, flight, {
-    consolation: false,
-    third_place: false,
-    rematches: opts && opts.rematches,
-  });
-  const n = (teams || []).length;
-  if (n < 2) return winners;
-  const size = nextPowerOfTwo(n);
-  const loserCount = Math.max(0, size - 2);
-  const names = [];
-  if (loserCount === 1) names.push("LF");
-  else if (loserCount === 2) { names.push("L1"); names.push("LF"); }
-  else if (loserCount > 2) {
-    let left = loserCount;
-    let r = 1;
-    while (left > 1) {
-      const take = left > 3 ? 2 : 1;
-      for (let k = 0; k < take && left > 1; k++) {
-        names.push("L" + r);
-        left -= 1;
-      }
-      r += 1;
-    }
-    names.push("LF");
-  }
-  const slotByRound = {};
-  for (let i = 0; i < names.length; i++) {
-    const rec = newGame({
-      round: names[i],
-      slot: (slotByRound[names[i]] || 0) + 1,
-      side: "losers",
-      kind: "losers",
+function sourceKind(item) {
+  if (!item) return "winner";
+  return item.kind === "loser" ? "loser" : "winner";
+}
+
+function pairLoserSources(sources, roundName, flight) {
+  const games = [];
+  const leftover = [];
+  const list = (sources || []).filter(Boolean);
+  if (list.length % 2 === 1) leftover.push(list.pop());
+  for (let i = 0; i < list.length; i += 2) {
+    const a = list[i];
+    const b = list[i + 1];
+    const g = newGame({
+      round: roundName,
+      slot: games.length + 1,
+      side: roundName === "F" || roundName === "IFN" ? "championship" : "losers",
+      kind: roundName === "F" || roundName === "IFN" ? "winners" : "losers",
       flight: flight.id,
       flight_name: flight.name,
     });
-    slotByRound[names[i]] = rec.slot;
-    winners.games.push(rec);
+    g._fromA = a;
+    g._fromB = b;
+    games.push(g);
   }
-  if (flight.if_necessary || (opts && opts.if_necessary)) {
-    winners.games.push(newGame({
-      round: "IFN",
+  return { games: games, leftover: leftover };
+}
+
+function winnersRoundGroups(games) {
+  const groups = [];
+  const seen = {};
+  for (let i = 0; i < (games || []).length; i++) {
+    const g = games[i];
+    if (!g || g.is_bye || g.kind === "losers" || g.kind === "consolation") continue;
+    if (g.side === "losers" || g.side === "consolation") continue;
+    if (!seen[g.round]) {
+      seen[g.round] = [];
+      groups.push(seen[g.round]);
+    }
+    seen[g.round].push(g);
+  }
+  return groups;
+}
+
+function resolveFlightFormat(flight, eventFormat) {
+  const fl = (flight && flight.format) || "";
+  if (fl) return fl;
+  if (formatIsDouble(eventFormat)) return "double-elim";
+  return "single-elim";
+}
+
+function buildDoubleElimGames(teams, flight, opts) {
+  opts = opts || {};
+  flight = flight || normalizeFlight({}, 0);
+  const winners = buildSingleElimGames(teams, flight, {
+    consolation: false,
+    third_place: false,
+    rematches: opts.rematches,
+  });
+  const n = (teams || []).length;
+  if (n < 2) return winners;
+
+  for (let i = 0; i < winners.games.length; i++) {
+    const g = winners.games[i];
+    if (!g.is_bye && g.round === "F" && g.kind !== "losers" && g.kind !== "consolation") {
+      g.round = "WF";
+    }
+  }
+
+  const groups = winnersRoundGroups(winners.games);
+  if (!groups.length) return winners;
+
+  const wantIfn = flight.if_necessary !== false && opts.if_necessary !== false;
+  const loserGames = [];
+  let lRound = 1;
+
+  function emitLosers(sources, forceName) {
+    const name = forceName || ("L" + lRound);
+    const built = pairLoserSources(sources, name, flight);
+    if (built.games.length && !forceName) lRound += 1;
+    for (let i = 0; i < built.games.length; i++) loserGames.push(built.games[i]);
+    const next = built.leftover.slice();
+    for (let i = 0; i < built.games.length; i++) next.push({ from: built.games[i], kind: "winner" });
+    return next;
+  }
+
+  function consolidate(sources, target) {
+    let cur = (sources || []).slice();
+    let guard = 0;
+    const want = Math.max(Number(target) || 1, 1);
+    while (cur.length > want && guard < 24) {
+      const before = cur.length;
+      cur = emitLosers(cur);
+      if (cur.length >= before) break;
+      guard += 1;
+    }
+    return cur;
+  }
+
+  if (groups.length === 1 && groups[0].length === 1) {
+    const wf = groups[0][0];
+    const gf = newGame({
+      round: "F",
       slot: 1,
       side: "championship",
       kind: "winners",
       flight: flight.id,
       flight_name: flight.name,
-    }));
-    winners.notes.push("If-necessary championship included");
+    });
+    gf._fromA = { from: wf, kind: "winner" };
+    gf._fromB = { from: wf, kind: "loser" };
+    winners.games.push(gf);
+    winners.notes.push("Two-team double elim: championship rematch after the first game");
+    return winners;
+  }
+
+  let pool = [];
+  for (let r = 0; r < groups.length - 1; r++) {
+    const droppers = groups[r].map(function (g) { return { from: g, kind: "loser" }; });
+    if (!pool.length) {
+      pool = emitLosers(droppers);
+    } else if (pool.length === droppers.length) {
+      const mixed = [];
+      const rev = pool.slice().reverse();
+      for (let i = 0; i < droppers.length; i++) {
+        mixed.push(rev[i]);
+        mixed.push(droppers[i]);
+      }
+      pool = emitLosers(mixed);
+    } else if (pool.length < droppers.length) {
+      const mixed = [];
+      const rev = pool.slice().reverse();
+      let d = 0;
+      for (let i = 0; i < rev.length && d < droppers.length; i++, d++) {
+        mixed.push(rev[i]);
+        mixed.push(droppers[d]);
+      }
+      pool = emitLosers(mixed.concat(droppers.slice(d)));
+    } else {
+      const mixed = [];
+      const rev = pool.slice().reverse();
+      for (let i = 0; i < droppers.length; i++) {
+        mixed.push(rev[i]);
+        mixed.push(droppers[i]);
+      }
+      pool = emitLosers(mixed.concat(rev.slice(droppers.length)));
+    }
+    if (r < groups.length - 2) pool = consolidate(pool, groups[r + 1].length);
+    else pool = consolidate(pool, 1);
+  }
+
+  const wf = groups[groups.length - 1][0];
+  pool = consolidate(pool, 1);
+  if (pool.length) {
+    emitLosers([{ from: wf, kind: "loser" }, pool[0]], "LF");
+  }
+
+  const lf = loserGames.length ? loserGames[loserGames.length - 1] : null;
+  for (let i = 0; i < loserGames.length; i++) winners.games.push(loserGames[i]);
+
+  if (lf) {
+    const gf = newGame({
+      round: "F",
+      slot: 1,
+      side: "championship",
+      kind: "winners",
+      flight: flight.id,
+      flight_name: flight.name,
+    });
+    gf._fromA = { from: wf, kind: "winner" };
+    gf._fromB = { from: lf, kind: "winner" };
+    winners.games.push(gf);
+    winners.notes.push("Losers bracket merges back: championship is WF winner vs LF winner");
+    if (wantIfn) {
+      const ifn = newGame({
+        round: "IFN",
+        slot: 1,
+        side: "championship",
+        kind: "winners",
+        flight: flight.id,
+        flight_name: flight.name,
+      });
+      ifn._fromA = { from: gf, kind: "winner" };
+      ifn._fromB = { from: gf, kind: "loser" };
+      winners.games.push(ifn);
+      winners.notes.push("If-necessary championship — played only if the losers-bracket team wins the final");
+    }
   }
   return winners;
 }
@@ -769,28 +907,31 @@ function scheduleGames(games, flight, defaults) {
   return games;
 }
 
+function wireSeat(g, wrap, seat) {
+  if (!wrap) return;
+  if (wrap.from) {
+    const src = wrap.from;
+    const id = src.game_id || src.uid || "";
+    const loser = sourceKind(wrap) === "loser";
+    if (loser) src.loser_to = g.game_id || g.uid;
+    else src.winner_to = g.game_id || g.uid;
+    const ref = (loser ? "loser:" : "winner:") + id;
+    if (seat === "home" && !g.home_id) g.home_ref = ref;
+    if (seat === "away" && !g.away_id) g.away_ref = ref;
+  } else if (wrap.team) {
+    if (seat === "home" && !g.home_ref) g.home_ref = seatRef(wrap.team);
+    if (seat === "away" && !g.away_ref) g.away_ref = seatRef(wrap.team);
+  }
+}
+
 function wireWinnerRefs(games) {
-  const byUid = {};
   for (let i = 0; i < games.length; i++) {
-    if (games[i].uid) byUid[games[i].uid] = games[i];
-    if (games[i].game_id) byUid[games[i].game_id] = games[i];
+    if (games[i].uid == null) games[i].uid = games[i].game_id || (games[i].round + "-" + games[i].slot);
   }
   for (let i = 0; i < games.length; i++) {
     const g = games[i];
-    if (g._fromA && g._fromA.from) {
-      const src = g._fromA.from;
-      src.winner_to = g.game_id || g.uid;
-      if (!g.home_id) g.home_ref = "winner:" + (src.game_id || src.uid);
-    } else if (g._fromA && g._fromA.team) {
-      if (!g.home_ref) g.home_ref = seatRef(g._fromA.team);
-    }
-    if (g._fromB && g._fromB.from) {
-      const src = g._fromB.from;
-      src.winner_to = g.game_id || g.uid;
-      if (!g.away_id) g.away_ref = "winner:" + (src.game_id || src.uid);
-    } else if (g._fromB && g._fromB.team) {
-      if (!g.away_ref) g.away_ref = seatRef(g._fromB.team);
-    }
+    wireSeat(g, g._fromA, "home");
+    wireSeat(g, g._fromB, "away");
   }
 }
 
@@ -825,16 +966,19 @@ function buildEventBracket(assigned, opts) {
     const row = flights[i];
     const fl = row.flight;
     const teams = row.teams || [];
-    const fmt = fl.format || opts.eventFormat || "pool-to-bracket";
+    const fmt = resolveFlightFormat(fl, opts.eventFormat);
     if (teams.length < 2 && !opts.allowEmpty) {
       drawn.push({ flight: fl.id || "", name: fl.name || "", seeds: teams.length, games: 0, byes: 0 });
       continue;
     }
     const built = formatIsDouble(fmt)
-      ? buildDoubleElimGames(teams, fl, { rematches: opts.rematches, if_necessary: fl.if_necessary })
+      ? buildDoubleElimGames(teams, fl, {
+        rematches: opts.rematches,
+        if_necessary: fl.if_necessary !== false && opts.if_necessary !== false,
+      })
       : buildSingleElimGames(teams, fl, {
-        consolation: fl.consolation || (opts.consolation && flights.length === 1),
-        third_place: fl.third_place,
+        consolation: fl.consolation === true || opts.consolation === true,
+        third_place: fl.third_place === true || opts.third_place === true,
         rematches: opts.rematches,
       });
     scheduleGames(built.games, fl, {
@@ -923,6 +1067,8 @@ module.exports = {
   feedsFromGames: feedsFromGames,
   missingSplits: missingSplits,
   formatIsDouble: formatIsDouble,
+  resolveFlightFormat: resolveFlightFormat,
   addMinutes: addMinutes,
   splitManualByes: splitManualByes,
+  wireWinnerRefs: wireWinnerRefs,
 };

@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 111 unit/integration cases + 13 acceptance checks |
+| Tests | 113 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -205,6 +205,36 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Bracket review: consolation, DE merge, score 400, two schedulers
+
+Owner review of the flexible-bracket desk. Seven fixes:
+
+1. Consolation / placement games are opt-in on the bracket card. Scheduler
+   JSON no longer defaults `consolation` to true, and a draw does not add
+   3RD/5TH/7TH unless asked.
+2. Double elim builds a real losers tree. Winners final is `WF`. Losers
+   drop through `L1…LF`. Championship `F` is WF winner vs LF winner.
+   IFN is the rematch when the losers-side wins. 8-team is 14 games
+   without IFN, 15 with IFN.
+3. `event_schedule.scored_by` is a `users` relation. Superuser and other
+   non-`users` auth ids are skipped instead of 400
+   `validation_missing_rel_records` (Harbor Eight score as PocketBase admin).
+4. Specific-seed list is gone from the card. Seed *range*, pool finish,
+   size, and a team list stay.
+5. Weekend format is pool-then-bracket / pool only / round robin / bracket
+   only. Single vs double lives on the card. Legacy `pool-double-elim`
+   still draws losers if the card has no format.
+6. Admin rail splits **Pool scheduler** and **Bracket scheduler**.
+   `#admin-scheduler` opens the pool tab.
+7. Combo coverage: SE 4/6/8, DE 4/6/8, 8-team + IFN, no consolation unless
+   asked, superuser score.
+
+28b / 29 / 31 stay open. Harbor Eight seed consolation games were not
+edited. Covered by `scripts/test_brackets.mjs` and
+`test_pool_double_elim_draws_losers` /
+`test_empty_single_elim_has_no_consolation_unless_asked` /
+`test_eight_team_de_merges_and_superuser_can_score`.
 
 ### 2026-09-20 — BACKLOG vs Derek’s 22:20 Scarecrow mail
 

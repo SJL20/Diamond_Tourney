@@ -57,7 +57,7 @@ function parseScheduler(raw) {
   try { plan = require(__hooks + "/brackets.js").parsePlan(data.bracket_plan); } catch (err) { plan = null; }
   return {
     games_per_team: Number(data.games_per_team || 2) || 2,
-    consolation: data.consolation !== false && data.consolation !== "false" && data.consolation !== "0",
+    consolation: flag(data.consolation),
     replace: data.replace !== false && data.replace !== "false" && data.replace !== "0",
     draw_bracket: flag(data.draw_bracket),
     origin: origin,
@@ -624,7 +624,7 @@ function formatWantsBracket(format) {
 }
 
 function formatIsDoubleElim(format) {
-  return format === "double-elim" || format === "pool-double-elim";
+  return format === "double-elim" || format === "pool-double-elim" || format === "4gg-double-elim";
 }
 
 function poolCap(format, prefs, body) {
@@ -779,7 +779,7 @@ function autoSchedule(app, event, body) {
   if (wantBracket) {
     const bracketFormat = formatWantsBracket(format) && format !== "imported" ? format : "pool-to-bracket";
     bracket = buildBracket(app, event, {
-      consolation: prefs.consolation,
+      consolation: prefs.consolation === true,
       replace: true,
       empty: true,
       format: bracketFormat,
@@ -1292,7 +1292,7 @@ function buildBracket(app, event, opts) {
   persistBracketPlan(app, event, opts);
   const plan = br.planFromInputs(event, opts);
   const format = opts.format === "imported" ? "pool-to-bracket" : (opts.format || (event.get("format") === "imported" ? "pool-to-bracket" : event.get("format")) || "pool-to-bracket");
-  const consolation = opts.consolation !== false && !formatIsDoubleElim(format);
+  const consolation = opts.consolation === true && !formatIsDoubleElim(format);
   event.set("bracket_mode", empty ? "empty" : (opts.bracket_mode || "standings"));
   if (opts.format && opts.format !== "imported") event.set("format", opts.format);
   else if (event.get("format") === "imported") event.set("format", "pool-to-bracket");

@@ -171,7 +171,8 @@ class TournamentUiTests(unittest.TestCase):
         self.assertNotIn('name="lat"', event)
         self.assertIn("Import schedule", event)
         self.assertIn("Clear bracket", event)
-        self.assertIn("Save weekend settings", event)
+        self.assertIn("Save pool settings", event)
+        self.assertIn("Save bracket settings", event)
         self.assertIn("Check back closer to the weekend", event)
         self.assertIn("No pool results yet", event)
         self.assertIn("function formatWeekendDates", event)
@@ -220,6 +221,17 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Custom bracket builder", event)
         self.assertIn("pool-double-elim", event)
         self.assertIn("round-robin", event)
+        self.assertIn("Pool play, then bracket", event)
+        self.assertIn("function weekendFormatSelect", event)
+        self.assertIn("function flightFormatValue", event)
+        self.assertIn("admin-pool-scheduler", event)
+        self.assertIn("admin-bracket-scheduler", event)
+        self.assertIn('data-admin-pane="pool-scheduler"', event)
+        self.assertIn('data-admin-pane="bracket-scheduler"', event)
+        self.assertIn("Pool scheduler", event)
+        self.assertIn("Bracket scheduler", event)
+        self.assertNotIn("Or specific overall seeds", event)
+        self.assertNotIn("Same as weekend format", event)
         self.assertIn("One bracket by default", event)
         self.assertIn("Add another bracket", event)
         self.assertIn("data-add-flight", event)
@@ -2423,10 +2435,103 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         rounds = {g["round"] for g in board["bracket"]}
         self.assertIn("SF", rounds)
+        self.assertIn("WF", rounds)
         self.assertIn("F", rounds)
         self.assertIn("L1", rounds)
         self.assertIn("LF", rounds)
         self.assertTrue(any(g.get("side") == "losers" or g.get("bracket_kind") == "losers" for g in board["bracket"]))
+        wf = next(g for g in board["bracket"] if g["round"] == "WF")
+        lf = next(g for g in board["bracket"] if g["round"] == "LF")
+        gf = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertEqual(wf.get("loser_to"), lf.get("game_id"))
+        self.assertEqual(wf.get("winner_to"), gf.get("game_id"))
+        self.assertTrue(str(gf.get("home_ref") or "").startswith("winner:"))
+        self.assertTrue(str(gf.get("away_ref") or "").startswith("winner:"))
+        self.assertFalse(any(g["round"] in ("3RD", "5TH", "7TH") for g in board["bracket"]))
+
+    def test_empty_single_elim_has_no_consolation_unless_asked(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "se-nocon-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "No Consolation Classic",
+            "slug": slug,
+            "format": "pool-to-bracket",
+        })
+        for name in ("NC Hawks", "NC Heat", "NC Cats", "NC Fox", "NC Owls", "NC Bats", "NC Rays", "NC Cubs"):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A",
+                "as_director": True,
+            })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "empty": True,
+            "format": "pool-to-bracket",
+        })
+        self.assertEqual(drawn["games"], 7)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        rounds = {g["round"] for g in board["bracket"]}
+        self.assertEqual(rounds, {"QF", "SF", "F"})
+        asked = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "empty": True,
+            "consolation": True,
+            "format": "pool-to-bracket",
+        })
+        self.assertGreater(asked["games"], 7)
+        board2 = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertIn("3RD", {g["round"] for g in board2["bracket"]})
+
+    def test_eight_team_de_merges_and_superuser_can_score(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "de8-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Eight DE Classic",
+            "slug": slug,
+            "format": "pool-to-bracket",
+            "fields": [{"name": "Harbor 1"}],
+        })
+        names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"]
+        for i, name in enumerate(names):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": "DE8 " + name,
+                "pool": "A" if i < 4 else "B",
+                "as_director": True,
+            })
+        drawn = request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "empty": True,
+            "format": "pool-to-bracket",
+            "bracket_plan": {"flights": [{"name": "Championship", "format": "double-elim", "if_necessary": True, "size": 8}]},
+        })
+        self.assertEqual(drawn["games"], 15)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        rounds = {g["round"] for g in board["bracket"]}
+        self.assertTrue({"QF", "SF", "WF", "L1", "L2", "L3", "LF", "F", "IFN"}.issubset(rounds))
+        wf = next(g for g in board["bracket"] if g["round"] == "WF")
+        lf = next(g for g in board["bracket"] if g["round"] == "LF")
+        gf = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertEqual(wf.get("winner_to"), gf.get("game_id"))
+        self.assertEqual(wf.get("loser_to"), lf.get("game_id"))
+        self.assertEqual(gf.get("away_ref"), "winner:" + lf.get("game_id"))
+
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": "2026-10-03",
+            "games_per_team": 1,
+            "replace": True,
+        })
+        self.assertGreaterEqual(auto["games"], 1)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        game = next(g for g in board["schedule"] if g.get("home_id") and g.get("away_id"))
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        posted = request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", admin, {
+            "home_runs": 4,
+            "away_runs": 1,
+            "status": "final",
+        })
+        self.assertEqual(posted["game"]["status"], "final")
 
     def test_migration_safety_script_blocks_wipe(self):
         from scripts.check_migration_safety import scan
@@ -3967,11 +4072,13 @@ class FlexibleBracketTests(unittest.TestCase):
                 }],
             },
         })
-        self.assertEqual(drawn["games"], 14)
+        self.assertEqual(drawn["games"], 15)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         rounds = {g["round"] for g in board["bracket"] if g.get("status") != "bye"}
         self.assertIn("QF", rounds)
+        self.assertIn("WF", rounds)
         self.assertIn("LF", rounds)
+        self.assertIn("F", rounds)
         self.assertIn("IFN", rounds)
 
     def test_pool_finish_split_and_director_byes(self):
