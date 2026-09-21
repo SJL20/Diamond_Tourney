@@ -171,7 +171,8 @@ class TournamentUiTests(unittest.TestCase):
         self.assertNotIn('name="lat"', event)
         self.assertIn("Import schedule", event)
         self.assertIn("Clear bracket", event)
-        self.assertIn("Save weekend settings", event)
+        self.assertIn("Save pool settings", event)
+        self.assertIn("Save bracket settings", event)
         self.assertIn("Check back closer to the weekend", event)
         self.assertIn("No pool results yet", event)
         self.assertIn("function formatWeekendDates", event)
@@ -4071,11 +4072,13 @@ class FlexibleBracketTests(unittest.TestCase):
                 }],
             },
         })
-        self.assertEqual(drawn["games"], 14)
+        self.assertEqual(drawn["games"], 15)
         board = request(BASE, "GET", f"/api/event/{slug}/board")
         rounds = {g["round"] for g in board["bracket"] if g.get("status") != "bye"}
         self.assertIn("QF", rounds)
+        self.assertIn("WF", rounds)
         self.assertIn("LF", rounds)
+        self.assertIn("F", rounds)
         self.assertIn("IFN", rounds)
 
     def test_pool_finish_split_and_director_byes(self):
