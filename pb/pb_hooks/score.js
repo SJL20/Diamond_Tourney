@@ -61,6 +61,13 @@ function fileUrl(app, collectionName, rec, field) {
 
 function asList(raw) {
   if (!raw) return [];
+  if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "number") {
+    try {
+      const text = require(__hooks + "/softball.js").bytesToString(raw);
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (err) {}
+  }
   if (typeof raw === "string") {
     const text = raw.trim();
     if (!text) return [];
@@ -86,7 +93,11 @@ function asList(raw) {
     }
     return rows;
   }
-  if (typeof raw === "object" && raw.length !== undefined) return raw;
+  if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "object") {
+    const copy = [];
+    for (let i = 0; i < raw.length; i++) copy.push(raw[i]);
+    return copy;
+  }
   return [];
 }
 

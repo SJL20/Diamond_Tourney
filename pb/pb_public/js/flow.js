@@ -71,6 +71,7 @@ function bindRegister(form) {
     }
     const out = await res.json();
     err.hidden = false;
+    err.className = "muted";
     if (out.verify_sent) {
       err.textContent = "Check your email to confirm this address, then log in.";
       return;

@@ -13,7 +13,10 @@ function senderConfigured(app) {
 
 function sender(app) {
   try {
-    const meta = app.settings().meta;
+    const settings = app.settings();
+    const smtp = settings.smtp;
+    if (!smtp || !smtp.enabled) return null;
+    const meta = settings.meta;
     const address = meta.senderAddress || meta.sender_address || "";
     const name = meta.senderName || meta.sender_name || "Diamond Tourney";
     if (!address) return null;

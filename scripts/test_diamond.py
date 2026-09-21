@@ -2202,7 +2202,9 @@ class AccountHardeningTests(unittest.TestCase):
                 request(BASE, "PATCH", f"/api/collections/users/records/{victim_id}", primary, {
                     "role": "region_admin",
                 })
-            self.assertIn("403", str(early.exception))
+            self.assertTrue(any(code in str(early.exception) for code in ("403", "404")))
+            still = request(BASE, "GET", f"/api/collections/users/records/{victim_id}", admin)
+            self.assertEqual(still.get("role"), "event_td")
             confirm_account(primary_email)
             primary = auth(BASE, primary_email, "PrimaryPass1!")
             home = request(BASE, "GET", "/api/account/home", primary)
