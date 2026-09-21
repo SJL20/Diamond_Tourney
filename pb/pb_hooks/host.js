@@ -169,7 +169,10 @@ function teamDocs(app, teamId, withFiles) {
 // boundary.
 function canSeeTeamPacket(event, team, auth, app) {
   if (!auth) return false;
-  if (require(__hooks + "/softball.js").isEventAdmin(event, auth, app)) return true;
+  const sb = require(__hooks + "/softball.js");
+  if (sb.isSiteAdmin(auth)) return true;
+  if (!sb.isVerifiedAccount(auth)) return false;
+  if (sb.isEventAdmin(event, auth, app)) return true;
   if (team) {
     if (team.get("account") && team.get("account") === auth.id) return true;
     const email = team.get("contact_email");
@@ -535,16 +538,30 @@ function writeLog(app, eventId, kind, ok, detail) {
 function upsertEventTeam(app, event, data) {
   const slug = slugify(data.name);
   let rec;
+  let existing = false;
   try {
     rec = app.findFirstRecordByFilter(
       "event_teams",
       "event = {:e} && slug = {:s}",
       { e: event.id, s: slug },
     );
+    existing = true;
   } catch (err) {
     rec = new Record(app.findCollectionByNameOrId("event_teams"));
     rec.set("event", event.id);
     rec.set("slug", slug);
+  }
+  if (existing) {
+    const ownerId = rec.get("account") || "";
+    const incoming = data.account || "";
+    const sameOwner = !!(ownerId && incoming && ownerId === incoming);
+    const storedEmail = String(rec.get("contact_email") || "").trim().toLowerCase();
+    const incomingEmail = String(data.contact_email || "").trim().toLowerCase();
+    const claim = !ownerId && incoming && data.verified && storedEmail && storedEmail === incomingEmail;
+    const directorFill = data.signed_up_by === "director" && !ownerId;
+    if (!sameOwner && !claim && !directorFill) {
+      throw new BadRequestError("That team is already signed up for this tournament.");
+    }
   }
   rec.set("name", data.name);
   if (data.pool) rec.set("pool", data.pool);
@@ -595,7 +612,7 @@ function createEvent(app, body, auth) {
   try { require(__hooks + "/schedule.js").persistBracketPlan(app, rec, body); } catch (err) {}
   rec.set("source", source);
   rec.set("signup_open", body.signup_open !== false);
-  rec.set("auto_sync", true);
+  rec.set("auto_sync", false);
   rec.set("pitch_limit_ip", Number(body.pitch_limit_ip || 0));
   rec.set("pitch_limit_mode", body.pitch_limit_mode || "none");
   rec.set("rain_status", body.rain_status || "clear");
@@ -641,6 +658,7 @@ function signupTeam(app, event, body, auth) {
     contact_email: body.contact_email || body.coach_email || (auth ? auth.email() : ""),
     signed_up_by: asDirector ? "director" : "team",
     account: auth ? auth.id : "",
+    verified: !!(auth && require(__hooks + "/softball.js").isVerifiedAccount(auth)),
     age_group: body.age_group || "",
     klass: body.klass || body.class || "",
     notes: body.notes || "",
@@ -745,7 +763,7 @@ function removeEventTeam(app, event, team, auth) {
     return false;
   }
 
-  const schedule = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+  const schedule = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
   for (let i = 0; i < schedule.length; i++) {
     const row = schedule[i];
     if (!involving(row, ["home", "away"])) continue;
@@ -753,7 +771,7 @@ function removeEventTeam(app, event, team, auth) {
       throw new BadRequestError("This team has a final pool game. Keep the score on the board; you cannot remove them.");
     }
   }
-  const tree = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+  const tree = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 2000, 0, { e: event.id });
   for (let i = 0; i < tree.length; i++) {
     const row = tree[i];
     if (!involving(row, ["home_team", "away_team", "winner"])) continue;
@@ -876,6 +894,18 @@ function reviewDoc(app, event, doc, body) {
   return docJson(app, doc);
 }
 
+const RESET_MS = 60 * 60 * 1000;
+const VERIFY_MS = 48 * 60 * 60 * 1000;
+
+function expiresAt(ms) {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+function freshStamp(raw) {
+  const ms = Date.parse(String(raw || ""));
+  return !!ms && ms > Date.now();
+}
+
 function registerAccount(app, body) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
@@ -884,28 +914,28 @@ function registerAccount(app, body) {
     throw new BadRequestError("Email and a password of at least 8 characters are required");
   }
   const intent = body.intent === "team" ? "team_coach" : "event_td";
+  if (intent !== "team_coach" && intent !== "event_td") {
+    throw new BadRequestError("Choose a director or team account.");
+  }
   const rec = new Record(app.findCollectionByNameOrId("users"));
   rec.set("email", email);
   rec.set("password", password);
   rec.set("passwordConfirm", password);
   rec.set("role", intent);
   rec.set("display_name", name);
-  rec.set("verified", true);
+  rec.set("verified", false);
   const mail = require(__hooks + "/mail.js");
-  const token = mail.randomToken();
+  const token = mail.randomToken(48);
   rec.set("verify_token", token);
+  rec.set("verify_expires", expiresAt(VERIFY_MS));
+  rec.set("reset_token", "");
+  rec.set("reset_expires", "");
   app.save(rec);
-  try { require(__hooks + "/softball.js").linkCoOwnerAccount(app, rec); } catch (err) {}
   let verifySent = false;
   let verifyReason = "";
   const out = mail.directorVerify(app, rec, token);
-  if (out && out.sent) {
-    rec.set("verified", false);
-    app.save(rec);
-    verifySent = true;
-  } else {
-    verifyReason = (out && out.reason) || "not_sent";
-  }
+  if (out && out.sent) verifySent = true;
+  else verifyReason = (out && out.reason) || "not_sent";
   return {
     id: rec.id,
     email: rec.email(),
@@ -926,9 +956,14 @@ function verifyAccount(app, token) {
   } catch (err) {
     throw new BadRequestError("That confirmation link is expired or already used.");
   }
+  if (!freshStamp(user.get("verify_expires"))) {
+    throw new BadRequestError("That confirmation link is expired or already used.");
+  }
   user.set("verified", true);
   user.set("verify_token", "");
+  user.set("verify_expires", "");
   app.save(user);
+  try { require(__hooks + "/softball.js").linkCoOwnerAccount(app, user); } catch (err) {}
   const welcome = require(__hooks + "/mail.js").directorWelcome(app, user);
   return { verified: true, email: user.email(), welcome_sent: !!(welcome && welcome.sent), welcome_reason: (welcome && welcome.reason) || "" };
 }
@@ -1029,6 +1064,7 @@ function accountHome(app, auth) {
       role: siteAdmin ? (auth.get("role") || "region_admin") : (auth.get("role") || ""),
       display_name: auth.get("display_name") || (siteAdmin ? "Site admin" : ""),
       site_admin: siteAdmin,
+      verified: require(__hooks + "/softball.js").isVerifiedAccount(auth),
     },
     created: created,
     joined: joined,
@@ -1036,7 +1072,7 @@ function accountHome(app, auth) {
 }
 
 function listAdminEvents(app) {
-  return app.findRecordsByFilter("events", "", "-start", 400, 0).map(function (rec) {
+  return app.findRecordsByFilter("events", "", "-start", 2000, 0).map(function (rec) {
     return eventJson(rec, app);
   });
 }
@@ -1051,10 +1087,19 @@ function archiveEvent(app, event) {
 }
 
 function wipeByEvent(app, name, eventId) {
-  try {
-    const rows = app.findRecordsByFilter(name, "event = {:e}", "", 400, 0, { e: eventId });
-    for (let i = 0; i < rows.length; i++) app.delete(rows[i]);
-  } catch (err) {}
+  for (let guard = 0; guard < 40; guard++) {
+    let rows = [];
+    try {
+      rows = app.findRecordsByFilter(name, "event = {:e}", "", 200, 0, { e: eventId });
+    } catch (err) {
+      return;
+    }
+    if (!rows || !rows.length) return;
+    for (let i = 0; i < rows.length; i++) {
+      try { app.delete(rows[i]); } catch (err) { return; }
+    }
+    if (rows.length < 200) return;
+  }
 }
 
 function deleteEvent(app, event, body) {
@@ -1068,7 +1113,7 @@ function deleteEvent(app, event, body) {
   const eventId = event.id;
   writeLog(app, eventId, "event", true, "Site admin deleted " + slug);
   try {
-    const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "", 400, 0, { e: eventId });
+    const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "", 2000, 0, { e: eventId });
     for (let i = 0; i < teams.length; i++) {
       try {
         const docs = app.findRecordsByFilter("team_docs", "event_team = {:t}", "", 40, 0, { t: teams[i].id });
@@ -1088,9 +1133,13 @@ function deleteEvent(app, event, body) {
 
 function requestPasswordReset(app, email) {
   const addr = String(email || "").trim().toLowerCase();
-  if (!addr || addr.indexOf("@") === -1) return { ok: true };
   const mail = require(__hooks + "/mail.js");
-  const token = mail.randomToken() + mail.randomToken();
+  const configured = !!mail.senderConfigured(app);
+  if (!addr || addr.indexOf("@") === -1) {
+    return { ok: true, mail: configured ? "sent" : "not_configured" };
+  }
+  const token = mail.randomToken(48);
+  const exp = expiresAt(RESET_MS);
   let rec = null;
   let collection = "users";
   try { rec = app.findAuthRecordByEmail("users", addr); } catch (err) {}
@@ -1100,19 +1149,44 @@ function requestPasswordReset(app, email) {
       collection = "_superusers";
     } catch (err) {}
   }
-  if (!rec) return { ok: true };
+  if (!rec) return { ok: true, mail: configured ? "sent" : "not_configured" };
   if (collection === "users") {
     rec.set("reset_token", token);
+    rec.set("reset_expires", exp);
     app.save(rec);
   } else {
+    try {
+      const old = app.findRecordsByFilter("login_resets", "record_id = {:id}", "", 20, 0, { id: rec.id });
+      for (let i = 0; i < old.length; i++) app.delete(old[i]);
+    } catch (err) {}
     const row = new Record(app.findCollectionByNameOrId("login_resets"));
     row.set("token", token);
     row.set("collection", collection);
     row.set("record_id", rec.id);
+    row.set("expires", exp);
     app.save(row);
   }
-  mail.passwordReset(app, rec.email(), token);
-  return { ok: true };
+  if (configured) mail.passwordReset(app, rec.email(), token);
+  return { ok: true, mail: configured ? "sent" : "not_configured" };
+}
+
+function resendVerification(app, auth) {
+  if (!auth) throw new UnauthorizedError("login required");
+  try { if (auth.isSuperuser()) return { ok: true, verified: true }; } catch (err) {}
+  if (auth.get("verified")) return { ok: true, verified: true };
+  const mail = require(__hooks + "/mail.js");
+  const token = mail.randomToken(48);
+  auth.set("verify_token", token);
+  auth.set("verify_expires", expiresAt(VERIFY_MS));
+  app.save(auth);
+  const out = mail.directorVerify(app, auth, token);
+  return {
+    ok: true,
+    verified: false,
+    verify_sent: !!(out && out.sent),
+    verify_reason: (out && out.reason) || "",
+    mail: mail.senderConfigured(app) ? ((out && out.sent) ? "sent" : "failed") : "not_configured",
+  };
 }
 
 function confirmPasswordReset(app, token, password) {
@@ -1121,22 +1195,37 @@ function confirmPasswordReset(app, token, password) {
   if (!key) throw new BadRequestError("That reset link is missing a token.");
   if (pass.length < 8) throw new BadRequestError("Use a password of at least 8 characters.");
   let rec = null;
-  try { rec = app.findFirstRecordByFilter("users", "reset_token = {:t}", { t: key }); } catch (err) {}
+  let userRow = null;
+  try { userRow = app.findFirstRecordByFilter("users", "reset_token = {:t}", { t: key }); } catch (err) {}
+  if (userRow) {
+    if (userRow.get("reset_token") !== key || !freshStamp(userRow.get("reset_expires"))) {
+      throw new BadRequestError("That reset link is expired or already used.");
+    }
+    rec = userRow;
+  }
   if (!rec) {
-    try {
-      const row = app.findFirstRecordByFilter("login_resets", "token = {:t}", { t: key });
+    let row = null;
+    try { row = app.findFirstRecordByFilter("login_resets", "token = {:t}", { t: key }); } catch (err) {}
+    if (row) {
+      if (!freshStamp(row.get("expires"))) {
+        try { app.delete(row); } catch (err) {}
+        throw new BadRequestError("That reset link is expired or already used.");
+      }
       rec = app.findRecordById(row.get("collection"), row.get("record_id"));
       app.delete(row);
-    } catch (err) {}
+    }
   }
   if (!rec) throw new BadRequestError("That reset link is expired or already used.");
   rec.set("password", pass);
   rec.set("passwordConfirm", pass);
   try {
-    if (rec.collection().name === "users") rec.set("reset_token", "");
+    if (rec.collection().name === "users") {
+      rec.set("reset_token", "");
+      rec.set("reset_expires", "");
+    }
   } catch (err) {}
   app.save(rec);
-  return { ok: true, email: rec.email() };
+  return { ok: true };
 }
 
 function syncGameChangerTeam(app, team) {
@@ -1178,7 +1267,7 @@ function syncEvent(app, event) {
     writeLog(app, event.id, "tourneymachine", tm.ok, tm.note);
     results.push({ kind: "tourneymachine", ok: tm.ok, detail: tm.note });
   }
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   for (const team of teams) {
     const r = syncGameChangerTeam(app, team);
     results.push({ kind: "gamechanger", team: team.get("name"), ok: r.ok, status: r.status });
@@ -1188,7 +1277,7 @@ function syncEvent(app, event) {
 }
 
 function publicRoster(app, event, auth) {
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   return teams.map(function (t) {
     const row = teamJson(t);
     row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth, app));
@@ -1258,7 +1347,7 @@ function duplicateEvent(app, source, body, auth) {
   rec.set("bracket_plan", source.get("bracket_plan") || null);
   rec.set("source", "native");
   rec.set("signup_open", true);
-  rec.set("auto_sync", true);
+  rec.set("auto_sync", false);
   rec.set("rain_status", "clear");
   rec.set("rain_note", "");
   rec.set("hours_start", source.get("hours_start") || "08:00");
@@ -1285,7 +1374,7 @@ function duplicateEvent(app, source, body, auth) {
   app.save(rec);
 
   const fieldMap = {};
-  const fields = app.findRecordsByFilter("fields", "event = {:e}", "name", 400, 0, { e: source.id });
+  const fields = app.findRecordsByFilter("fields", "event = {:e}", "name", 2000, 0, { e: source.id });
   for (let i = 0; i < fields.length; i++) {
     const f = fields[i];
     const nf = new Record(app.findCollectionByNameOrId("fields"));
@@ -1304,7 +1393,7 @@ function duplicateEvent(app, source, body, auth) {
   }
 
   const teamMap = {};
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: source.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: source.id });
   for (let i = 0; i < teams.length; i++) {
     const t = teams[i];
     const nt = new Record(app.findCollectionByNameOrId("event_teams"));
@@ -1335,7 +1424,7 @@ function duplicateEvent(app, source, body, auth) {
     }
   } catch (err) {}
 
-  const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "game_number", 400, 0, { e: source.id });
+  const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "game_number", 2000, 0, { e: source.id });
   for (let i = 0; i < games.length; i++) {
     const g = games[i];
     const home = teamMap[g.get("home")];
@@ -1451,6 +1540,7 @@ module.exports = {
   deleteEvent: deleteEvent,
   requestPasswordReset: requestPasswordReset,
   confirmPasswordReset: confirmPasswordReset,
+  resendVerification: resendVerification,
   listClubs: listClubs,
   saveClub: saveClub,
   applyGuidelines: applyGuidelines,

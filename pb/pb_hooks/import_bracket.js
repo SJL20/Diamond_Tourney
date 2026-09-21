@@ -167,7 +167,7 @@ function slotFromLabel(label, index) {
 }
 
 function indexTeams(app, event) {
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   const byName = {};
   const byId = {};
   const csv = require(__hooks + "/csv.js");
@@ -230,7 +230,7 @@ function hasCycle(labels, edges) {
 }
 
 function existingByLabel(app, event) {
-  const rows = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+  const rows = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 2000, 0, { e: event.id });
   const byLabel = {};
   for (let i = 0; i < rows.length; i++) {
     const label = normLabel(rows[i].get("game_id"));

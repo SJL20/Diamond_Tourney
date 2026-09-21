@@ -306,10 +306,38 @@ function seasonTables(app, teamId) {
   return { hitting: hitting, pitching: pitching, record: rebuildTeamRecord(app, teamId) };
 }
 
+// Day-to-day site admin. The PocketBase /_/ superuser is break-glass only.
+// New site admins and bot accounts are granted by this verified address.
+const PRIMARY_SITE_ADMIN_EMAIL = "ladydukeslafever@gmail.com";
+
 function isSiteAdmin(auth) {
   if (!auth) return false;
   try { if (auth.isSuperuser()) return true; } catch (err) {}
-  return auth.get("role") === "region_admin";
+  if (isPrimarySiteAdmin(auth)) return true;
+  return auth.get("role") === "region_admin" && !!auth.get("verified");
+}
+
+function isPrimarySiteAdmin(auth) {
+  if (!auth) return false;
+  try { if (auth.isSuperuser()) return false; } catch (err) {}
+  let email = "";
+  try { email = auth.email ? auth.email() : ""; } catch (err) { email = ""; }
+  return normalizeEmail(email) === PRIMARY_SITE_ADMIN_EMAIL && !!auth.get("verified");
+}
+
+function isVerifiedAccount(auth) {
+  if (!auth) return false;
+  try { if (auth.isSuperuser()) return true; } catch (err) {}
+  if (isPrimarySiteAdmin(auth)) return true;
+  return !!auth.get("verified");
+}
+
+function requireVerified(auth) {
+  if (!auth) throw new UnauthorizedError("login required");
+  if (!isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before you do that. Resend the confirmation from your account page.");
+  }
+  return auth;
 }
 
 function appDao(app) {
@@ -354,7 +382,10 @@ function isCoOwner(event, auth, app) {
 }
 
 function isEventAdmin(event, auth, app) {
-  return isSiteAdmin(auth) || isEventOwner(event, auth) || isCoOwner(event, auth, app);
+  if (!auth) return false;
+  if (isSiteAdmin(auth)) return true;
+  if (!isVerifiedAccount(auth)) return false;
+  return isEventOwner(event, auth) || isCoOwner(event, auth, app);
 }
 
 function canManageCoOwners(event, auth) {
@@ -454,8 +485,11 @@ function requireRole(e, roles) {
   const auth = e.auth;
   if (!auth) throw new UnauthorizedError("login required");
   if (auth.isSuperuser()) return auth;
-  if (roles.indexOf(auth.get("role")) === -1) {
-    throw new ForbiddenError("role not allowed");
+  const role = auth.get("role");
+  const allowed = roles.indexOf(role) !== -1 || (roles.indexOf("region_admin") !== -1 && isPrimarySiteAdmin(auth));
+  if (!allowed) throw new ForbiddenError("role not allowed");
+  if (role === "region_admin" && !isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before you do that. Resend the confirmation from your account page.");
   }
   return auth;
 }
@@ -463,7 +497,12 @@ function requireRole(e, roles) {
 function requireEventAdmin(e, event) {
   const auth = e.auth;
   if (!auth) throw new UnauthorizedError("login required");
-  if (isEventAdmin(event, auth, e.app)) return auth;
+  if (isSiteAdmin(auth)) return auth;
+  const related = isEventOwner(event, auth) || isCoOwner(event, auth, e.app);
+  if (related && !isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before you do that. Resend the confirmation from your account page.");
+  }
+  if (related) return auth;
   throw new ForbiddenError("Only the director who created this tournament, a listed co-owner, or a site admin can do that.");
 }
 
@@ -485,7 +524,11 @@ module.exports = {
   findPlayer: findPlayer,
   applyStaging: applyStaging,
   seasonTables: seasonTables,
+  PRIMARY_SITE_ADMIN_EMAIL: PRIMARY_SITE_ADMIN_EMAIL,
   isSiteAdmin: isSiteAdmin,
+  isPrimarySiteAdmin: isPrimarySiteAdmin,
+  isVerifiedAccount: isVerifiedAccount,
+  requireVerified: requireVerified,
   isEventOwner: isEventOwner,
   isCoOwner: isCoOwner,
   isEventAdmin: isEventAdmin,

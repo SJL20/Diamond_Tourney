@@ -149,7 +149,7 @@ function validEmail(addr) {
 }
 
 function indexExisting(app, event) {
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 400, 0, { e: event.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   const byEmail = {};
   const byName = {};
   const contacts = require(__hooks + "/contacts.js");

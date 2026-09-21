@@ -27,7 +27,7 @@ function dayList(event) {
 
 function openFieldCount(app, event) {
   try {
-    return app.findRecordsByFilter("fields", "event = {:e} && status != 'closed'", "name", 400, 0, { e: event.id }).length;
+    return app.findRecordsByFilter("fields", "event = {:e} && status != 'closed'", "name", 2000, 0, { e: event.id }).length;
   } catch (err) {
     return 0;
   }
@@ -157,7 +157,7 @@ function behind(app, event) {
   const now = Date.now();
   let rows = [];
   try {
-    rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 400, 0, { e: event.id });
+    rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 2000, 0, { e: event.id });
   } catch (err) { rows = []; }
   let scheduled = 0;
   let due = 0;

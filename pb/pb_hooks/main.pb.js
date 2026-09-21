@@ -136,6 +136,7 @@ routerAdd("POST", "/api/bot/publish", (e) => {
 routerAdd("POST", "/api/account/register", (e) => {
   const host = require(__hooks + "/host.js");
   const body = e.requestInfo().body || {};
+  require(__hooks + "/ratelimit.js").limitAuth(e, "register");
   return e.json(200, host.registerAccount(e.app, body));
 });
 
@@ -166,15 +167,26 @@ routerAdd("GET", "/api/account/home", (e) => {
   return e.json(200, host.accountHome(e.app, e.auth));
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/account/resend", (e) => {
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  let email = "";
+  try { email = e.auth.email ? e.auth.email() : ""; } catch (err) { email = ""; }
+  require(__hooks + "/ratelimit.js").limitAuth(e, "resend", email);
+  return e.json(200, host.resendVerification(e.app, e.auth));
+}, $apis.requireAuth());
+
 routerAdd("POST", "/api/account/forgot", (e) => {
   const host = require(__hooks + "/host.js");
   const body = e.requestInfo().body || {};
+  require(__hooks + "/ratelimit.js").limitAuth(e, "forgot", body.email);
   return e.json(200, host.requestPasswordReset(e.app, body.email));
 });
 
 routerAdd("POST", "/api/account/reset", (e) => {
   const host = require(__hooks + "/host.js");
   const body = e.requestInfo().body || {};
+  require(__hooks + "/ratelimit.js").limitAuth(e, "reset");
   return e.json(200, host.confirmPasswordReset(e.app, body.token, body.password));
 });
 
@@ -237,6 +249,7 @@ routerAdd("POST", "/api/events/create", (e) => {
   const sb = require(__hooks + "/softball.js");
   const host = require(__hooks + "/host.js");
   const auth = sb.requireRole(e, ["region_admin", "event_td", "team_coach", "public"]);
+  sb.requireVerified(auth);
   const body = e.requestInfo().body || {};
   const result = host.createEvent(e.app, body, auth);
   const rules = host.uploaded(e, "rules_file");
@@ -253,6 +266,7 @@ routerAdd("POST", "/api/events/{slug}/duplicate", (e) => {
   const sb = require(__hooks + "/softball.js");
   const host = require(__hooks + "/host.js");
   const auth = sb.requireRole(e, ["region_admin", "event_td"]);
+  sb.requireVerified(auth);
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   if (!(event.get("public") && event.get("status") !== "archived")) {
     sb.requireEventAdmin(e, event);
@@ -761,7 +775,8 @@ routerAdd("POST", "/api/event/import-schedule", (e) => {
   const sb = require(__hooks + "/softball.js");
   const diamond = require(__hooks + "/diamond.js");
   const host = require(__hooks + "/host.js");
-  sb.requireRole(e, ["region_admin", "event_td"]);
+  const importAuth = sb.requireRole(e, ["region_admin", "event_td"]);
+  sb.requireVerified(importAuth);
   const body = e.requestInfo().body || {};
   if (!body.csv) throw new BadRequestError("csv required");
   const into = String(body.into || body.event_slug || body.slug || "").trim();
@@ -790,7 +805,7 @@ routerAdd("POST", "/api/event/import-schedule", (e) => {
   event.set("format", "pool-to-bracket");
   event.set("source", "native");
   event.set("signup_open", true);
-  event.set("auto_sync", true);
+  event.set("auto_sync", false);
   event.set("venue", body.venue || "");
   event.set("ages", body.ages || "10U");
   event.set("pitch_limit_ip", Number(body.pitch_limit_ip || 0));
@@ -911,23 +926,123 @@ routerAdd("POST", "/api/events/{slug}/boxes/{id}/review", (e) => {
 }, $apis.requireAuth());
 
 cronAdd("box-score-ask", "*/15 * * * *", () => {
-  try { require(__hooks + "/boxmail.js").runBoxMail($app); } catch (err) {}
+  try {
+    require(__hooks + "/boxmail.js").runBoxMail($app);
+  } catch (err) {
+    try {
+      require(__hooks + "/host.js").writeLog($app, "", "box_mail", false, String(err));
+    } catch (logErr) {}
+  }
 });
 
 cronAdd("hosted-gc-tm-sync", "15 */2 * * *", () => {
   const host = require(__hooks + "/host.js");
-  const events = $app.findRecordsByFilter("events", "auto_sync = true && status = 'live'", "", 80, 0);
+  let events = [];
+  try {
+    events = $app.findRecordsByFilter("events", "auto_sync = true && status = 'live'", "", 80, 0);
+  } catch (err) {
+    try { host.writeLog($app, "", "gamechanger", false, String(err)); } catch (logErr) {}
+    return;
+  }
   for (const ev of events) {
-    try { host.syncEvent($app, ev); } catch (err) {}
+    try { host.syncEvent($app, ev); }
+    catch (err) {
+      try { host.writeLog($app, ev.id, "gamechanger", false, String(err)); } catch (logErr) {}
+    }
   }
 });
 
 onRecordCreateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();
-  const role = e.record.get("role");
-  if (role === "region_admin" || role === "bot" || !role) e.record.set("role", "event_td");
+  e.record.set("role", "event_td");
+  e.record.set("verified", false);
+  e.record.set("reset_token", "");
+  e.record.set("verify_token", "");
+  e.record.set("reset_expires", "");
+  e.record.set("verify_expires", "");
   e.next();
 }, "users");
+
+onRecordUpdateRequest((e) => {
+  if (e.hasSuperuserAuth()) return e.next();
+  const sb = require(__hooks + "/softball.js");
+  const rec = e.record;
+  let original = null;
+  try { original = rec.original(); } catch (err) { original = null; }
+  function prior(name) {
+    if (!original) return "";
+    try { return original.get(name); } catch (err) { return ""; }
+  }
+  const body = (e.requestInfo() && e.requestInfo().body) || {};
+  if (!original) {
+    const refused = ["role", "team", "verified", "reset_token", "verify_token", "reset_expires", "verify_expires"];
+    for (let i = 0; i < refused.length; i++) {
+      if (body[refused[i]] != null) throw new ForbiddenError("That field cannot be changed here.");
+    }
+    if (body.password) {
+      rec.set("reset_token", "");
+      rec.set("reset_expires", "");
+    }
+    return e.next();
+  }
+  const auth = e.auth;
+  const self = !!(auth && auth.id === rec.id);
+  const nextRole = String(rec.get("role") || "");
+  const prevRole = String(prior("role") || "");
+  if (nextRole !== prevRole) {
+    const privileged = nextRole === "region_admin" || nextRole === "bot" || prevRole === "region_admin" || prevRole === "bot";
+    if (self || (privileged && !sb.isPrimarySiteAdmin(auth)) || (!privileged && !sb.isSiteAdmin(auth))) {
+      throw new ForbiddenError("Only the site admin can change account roles.");
+    }
+  }
+  if (String(rec.get("team") || "") !== String(prior("team") || "")) {
+    if (self || !sb.isSiteAdmin(auth)) {
+      throw new ForbiddenError("Only a site admin can assign a team.");
+    }
+  }
+  if (!!rec.get("verified") !== !!prior("verified")) {
+    if (self || !sb.isPrimarySiteAdmin(auth)) {
+      throw new ForbiddenError("Email confirmation cannot be changed here.");
+    }
+  }
+  const locked = ["reset_token", "verify_token", "reset_expires", "verify_expires"];
+  for (let i = 0; i < locked.length; i++) {
+    const name = locked[i];
+    if (body[name] == null) {
+      rec.set(name, prior(name) || "");
+      continue;
+    }
+    if (String(body[name]) !== String(prior(name) || "")) {
+      throw new ForbiddenError("That field cannot be changed here.");
+    }
+  }
+  if (body.password) {
+    rec.set("reset_token", "");
+    rec.set("reset_expires", "");
+  }
+  e.next();
+}, "users");
+
+onRecordUpdateRequest((e) => {
+  const body = (e.requestInfo() && e.requestInfo().body) || {};
+  if (body.password) {
+    try {
+      const old = e.app.findRecordsByFilter("login_resets", "record_id = {:id}", "", 20, 0, { id: e.record.id });
+      for (let i = 0; i < old.length; i++) e.app.delete(old[i]);
+    } catch (err) {}
+  }
+  e.next();
+}, "_superusers");
+
+onRecordAuthWithPasswordRequest((e) => {
+  require(__hooks + "/ratelimit.js").limitAuth(e, "login");
+  e.next();
+}, "users");
+
+onRecordAuthWithPasswordRequest((e) => {
+  require(__hooks + "/ratelimit.js").limitAuth(e, "login");
+  e.next();
+}, "_superusers");
 
 onRecordCreateRequest((e) => {
   if (!e.record.get("created_by") && e.auth) e.record.set("created_by", e.auth.id);

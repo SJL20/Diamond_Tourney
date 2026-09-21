@@ -88,6 +88,7 @@ function canSeeEventContact(event, team, auth, app) {
   if (!auth) return false;
   const sb = require(__hooks + "/softball.js");
   if (sb.isEventAdmin(event, auth, app)) return true;
+  if (!sb.isVerifiedAccount(auth)) return false;
   if (team && team.get("account") && team.get("account") === auth.id) return true;
   if (team && team.get("contact_email") && team.get("contact_email") === auth.email()) return true;
   return emailsMatch(auth, findForEventTeam(app, team && team.id));

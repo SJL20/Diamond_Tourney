@@ -70,18 +70,14 @@ function bindRegister(form) {
       return;
     }
     const out = await res.json();
+    err.hidden = false;
     if (out.verify_sent) {
-      err.hidden = false;
       err.textContent = "Check your email to confirm this address, then log in.";
       return;
     }
-    try {
-      await flowPb.collection("users").authWithPassword(data.email, data.password);
-      goFlow("/account");
-    } catch (e) {
-      err.hidden = false;
-      err.textContent = "Account created. Log in with that email.";
-    }
+    err.textContent = out.verify_reason === "smtp_not_configured"
+      ? "Account created, but confirmation email is not set up on this server. Log in, then resend confirmation from your account page."
+      : "Account created, but the confirmation email did not send. Log in, then resend it from your account page.";
   });
 }
 
@@ -223,7 +219,14 @@ export async function accountHome() {
   }
   const home = await res.json();
   const name = home.user.display_name || home.user.email;
-  const admin = home.user.site_admin || isSiteAdmin(u);
+  const admin = !!home.user.site_admin;
+  const verified = home.user.verified !== false;
+  const confirmCard = verified ? "" : `<section class="card">
+        <h2>Confirm your email</h2>
+        <p>Director tools, scores, team contacts, and packets stay closed until this address is confirmed.</p>
+        <button class="btn" id="resend-confirm" type="button">Resend confirmation</button>
+        <p class="muted" id="resend-note" hidden></p>
+      </section>`;
   let book = "";
   if (u.role === "team_coach" && u.team) {
     try {
@@ -247,6 +250,17 @@ export async function accountHome() {
       </div>
     </section>
     ${book}
+    ${confirmCard}
+    <section class="card">
+      <h2>Change password</h2>
+      <form class="form wide" id="password-form">
+        <label>Current password <input name="oldPassword" type="password" autocomplete="current-password" required></label>
+        <label>New password (8+ characters) <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Confirm new password <input name="passwordConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
+        <button class="btn" type="submit">Save password</button>
+        <p class="muted" id="password-note" hidden></p>
+      </form>
+    </section>
     <section>
       <h2>${admin ? "All tournaments" : "Tournaments you run"}</h2>
       ${eventCards(home.created, "You have not opened a tournament yet.", "created")}
@@ -256,6 +270,48 @@ export async function accountHome() {
       ${eventCards(home.joined, "No team signups on this email yet.", "joined")}
     </section>
   `);
+  const resend = document.getElementById("resend-confirm");
+  if (resend) {
+    resend.addEventListener("click", async () => {
+      const note = document.getElementById("resend-note");
+      const sent = await fetch("/api/account/resend", {
+        method: "POST",
+        headers: { Authorization: flowPb.authStore.token },
+      });
+      const out = await sent.json().catch(() => ({}));
+      note.hidden = false;
+      if (!sent.ok) {
+        note.textContent = out.message || "Could not resend confirmation.";
+        return;
+      }
+      if (out.verified) note.textContent = "This email is already confirmed.";
+      else if (out.mail === "not_configured") note.textContent = "Confirmation email is not set up on this server yet.";
+      else if (out.verify_sent) note.textContent = "Check your email for a new confirmation link.";
+      else note.textContent = "The confirmation email did not send. Try again in a little while.";
+    });
+  }
+  document.getElementById("password-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const note = document.getElementById("password-note");
+    const data = Object.fromEntries(new FormData(ev.target));
+    note.hidden = false;
+    if (data.password !== data.passwordConfirm) {
+      note.textContent = "The new passwords do not match.";
+      return;
+    }
+    const collection = (u && u.collectionName) || "users";
+    try {
+      await flowPb.collection(collection).update(u.id, {
+        oldPassword: data.oldPassword,
+        password: data.password,
+        passwordConfirm: data.passwordConfirm,
+      });
+      note.textContent = "Password saved. Use it the next time you log in.";
+      ev.target.reset();
+    } catch (err) {
+      note.textContent = "Could not change the password. Check the current one and try again.";
+    }
+  });
 }
 
 export async function findPage() {
@@ -446,9 +502,14 @@ export async function forgotPage() {
     });
     err.hidden = false;
     err.className = res.ok ? "muted" : "error";
-    err.textContent = res.ok
-      ? "If that email is on this site and mail is configured, a reset link is on the way."
-      : await res.text();
+    if (!res.ok) {
+      err.textContent = await res.text();
+      return;
+    }
+    const out = await res.json();
+    err.textContent = out.mail === "not_configured"
+      ? "PocketBase mail is not configured, so no reset link was sent."
+      : "If that email is on this site, a reset link is on the way.";
   });
 }
 
