@@ -54,31 +54,59 @@ function bindLogin(form) {
   });
 }
 
+function mailFailureText(reason) {
+  const raw = String(reason || "");
+  if (!raw || raw === "smtp_not_configured" || raw.indexOf("smtp_not_configured") !== -1) {
+    return "Account created. Confirmation email is not set up on this server yet. Use Resend confirmation on this page once mail is configured.";
+  }
+  if (/not verified/i.test(raw)) {
+    return "Account created. The mail provider refused the confirmation email because the sending domain is not verified. Use Resend confirmation on this page after that is fixed.";
+  }
+  return "Account created, but the confirmation email did not send. Use Resend confirmation on this page.";
+}
+
 function bindRegister(form) {
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const data = Object.fromEntries(new FormData(ev.target));
     const err = document.getElementById("gate-error");
+    err.className = "error";
+    if (data.password !== data.passwordConfirm) {
+      err.hidden = false;
+      err.textContent = "Type the same password in both password fields.";
+      return;
+    }
     const res = await fetch("/api/account/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     if (!res.ok) {
+      const raw = await res.text();
+      let message = raw;
+      try { message = JSON.parse(raw).message || raw; } catch (e) {}
       err.hidden = false;
-      err.textContent = await res.text();
+      err.textContent = message;
       return;
     }
     const out = await res.json();
-    err.hidden = false;
-    err.className = "muted";
-    if (out.verify_sent) {
-      err.textContent = "Check your email to confirm this address, then log in.";
+    try {
+      sessionStorage.setItem("dt-just-registered", JSON.stringify({
+        verify_sent: !!out.verify_sent,
+        verify_reason: out.verify_reason || "",
+      }));
+    } catch (e) {}
+    try {
+      await loginWithPassword(flowPb, data.email, data.password);
+    } catch (e) {
+      err.hidden = false;
+      err.className = "muted";
+      err.textContent = out.verify_sent
+        ? "Account created. Check your email for the confirmation link, then log in. Your account page is where you update your password."
+        : mailFailureText(out.verify_reason) + " Log in to open the account page.";
       return;
     }
-    err.textContent = out.verify_reason === "smtp_not_configured"
-      ? "Account created, but confirmation email is not set up on this server. Log in, then resend confirmation from your account page."
-      : "Account created, but the confirmation email did not send. Log in, then resend it from your account page.";
+    location.assign("/account");
   });
 }
 
@@ -157,11 +185,12 @@ export async function startGate(forcedTab) {
     ${tab === "register" ? `
       <section class="card">
         <h2>Create an account</h2>
-        <p class="muted">Directors create weekends. Teams join them. You can do both from the same login. If PocketBase Admin mail is configured, we send a confirmation link first.</p>
+        <p class="muted">Directors create weekends. Teams join them. You can do both from the same login. Creating the account emails a confirmation link and opens your account page, where you can update your password.</p>
         <form class="form wide" id="register-form">
           <label>Your name <input name="display_name" required placeholder="Pat Rivera"></label>
           <label>Email <input name="email" type="email" autocomplete="email" required></label>
           <label>Password (8+ characters) <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+          <label>Confirm password <input name="passwordConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
           <label>I am here to
             <select name="intent">
               <option value="director">Run tournaments</option>
@@ -222,6 +251,17 @@ export async function accountHome() {
   const name = home.user.display_name || home.user.email;
   const admin = !!home.user.site_admin;
   const verified = home.user.verified !== false;
+  let just = null;
+  try {
+    just = JSON.parse(sessionStorage.getItem("dt-just-registered") || "null");
+    sessionStorage.removeItem("dt-just-registered");
+  } catch (err) { just = null; }
+  const justCard = !just ? "" : `<section class="card">
+        <h2>Account created</h2>
+        <p>${escapeHtml(just.verify_sent
+          ? "A confirmation link is on the way to this email. Open that message to confirm the address. You are already signed in, and you can update your password below."
+          : mailFailureText(just.verify_reason))}</p>
+      </section>`;
   const confirmCard = verified ? "" : `<section class="card">
         <h2>Confirm your email</h2>
         <p>Director tools, scores, team contacts, and packets stay closed until this address is confirmed.</p>
@@ -250,10 +290,11 @@ export async function accountHome() {
         ${admin ? `<a class="btn ghost" data-link href="/admin/events">Remove tournaments</a>` : ""}
       </div>
     </section>
+    ${justCard}
     ${book}
     ${confirmCard}
-    <section class="card">
-      <h2>Change password</h2>
+    <section class="card" id="update-password">
+      <h2>Update your password</h2>
       <form class="form wide" id="password-form">
         <label>Current password <input name="oldPassword" type="password" autocomplete="current-password" required></label>
         <label>New password (8+ characters) <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
@@ -460,21 +501,35 @@ export async function verifyPage() {
     pb: flowPb,
     site: "verify",
     body: `<section class="page-head"><h1>Confirm your email</h1></section>
-      <section class="card"><p class="muted" id="verify-note">Checking that link…</p></section>`,
+      <section class="card">
+        <p class="muted" id="verify-note">This link confirms the address on the new account.</p>
+        <button class="btn" id="verify-go" type="button">Confirm my email</button>
+      </section>`,
   });
   const note = document.getElementById("verify-note");
+  const button = document.getElementById("verify-go");
   if (!token) {
     note.textContent = "That confirmation link is missing a token.";
+    button.hidden = true;
     return;
   }
-  try {
-    const res = await fetch("/api/account/verify?token=" + encodeURIComponent(token));
-    const out = await res.json();
-    if (!res.ok) throw new Error(out.message || "That confirmation link is expired or already used.");
-    note.innerHTML = `Email confirmed${out.email ? " for " + escapeHtml(out.email) : ""}. <a class="btn" data-link href="/login">Log in</a>`;
-  } catch (err) {
-    note.textContent = err.message || String(err);
-  }
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      const res = await fetch("/api/account/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.message || "That confirmation link is expired or already used.");
+      note.innerHTML = `Email confirmed${out.email ? " for " + escapeHtml(out.email) : ""}. <a class="btn" data-link href="/account">Open your account</a>`;
+      button.hidden = true;
+    } catch (err) {
+      button.disabled = false;
+      note.textContent = err.message || String(err);
+    }
+  });
 }
 
 export async function forgotPage() {
