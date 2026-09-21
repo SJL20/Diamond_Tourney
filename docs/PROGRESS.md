@@ -228,7 +228,14 @@ directly and tournaments a followed team is in. Fan rows live in `follows`
 read someone else's address. Public team pages still omit email, phone, and
 birthdate. This pass does not email the fan list.
 
-Covered by `FollowAndStatsTests`.
+Covered by `FollowAndStatsTests` (121 cases, acceptance still green).
+A first list call came back empty because PocketBase rejected sorting
+`follows` on `created`; that field is not on this collection. The list now
+uses an unsorted filter. A browser pass on the local board confirmed the
+popup and `/t/keystone-clash-2026/stats` open hitting on average and pitching
+on ERA, the other sort keys reorder the rows, win cells stay an em dash, and
+a login that follows Keystone Clash and Pittsburgh Passion sees both on the
+account page. The public team page does not show an email.
 
 ### 2026-09-21 — Create-account password confirm and verification mail
 
