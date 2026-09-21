@@ -225,7 +225,8 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("verifyPage", app)
         flow = (ROOT / "pb/pb_public/js/flow.js").read_text()
         self.assertIn("Forgot my password", flow)
-        self.assertIn("Change password", flow)
+        self.assertIn("Update your password", flow)
+        self.assertIn("Confirm password", flow)
         self.assertIn("PocketBase mail is not configured", flow)
         self.assertIn("/api/account/resend", flow)
         self.assertIn("/forgot", app)
@@ -763,6 +764,7 @@ class AccountAndYearTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "DirectorPass1!",
+            "passwordConfirm": "DirectorPass1!",
             "display_name": "Pat Director",
             "intent": "director",
         })
@@ -786,6 +788,7 @@ class AccountAndYearTests(unittest.TestCase):
         out = request(BASE, "POST", "/api/account/register", None, {
             "email": f"notadmin.{uuid.uuid4().hex[:8]}@local.test",
             "password": "NotAdmin99!",
+            "passwordConfirm": "NotAdmin99!",
             "display_name": "Not Admin",
             "intent": "director",
             "role": "region_admin",
@@ -808,6 +811,7 @@ class AccountAndYearTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "OldPass12!",
+            "passwordConfirm": "OldPass12!",
             "display_name": "Reset User",
             "intent": "director",
         })
@@ -882,6 +886,7 @@ class AccountAndYearTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": stranger_email,
             "password": "Stranger99!",
+            "passwordConfirm": "Stranger99!",
             "display_name": "List Stranger",
             "intent": "director",
         })
@@ -926,6 +931,7 @@ class AccountAndYearTests(unittest.TestCase):
         registered = request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "Stranger99!",
+            "passwordConfirm": "Stranger99!",
             "display_name": "Stranger",
             "intent": "director",
         })
@@ -1010,18 +1016,21 @@ class AccountAndYearTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": owner_email,
             "password": "OwnerPass1!",
+            "passwordConfirm": "OwnerPass1!",
             "display_name": "Event Owner",
             "intent": "director",
         })
         request(BASE, "POST", "/api/account/register", None, {
             "email": helper_email,
             "password": "HelperPass1!",
+            "passwordConfirm": "HelperPass1!",
             "display_name": "Helper Director",
             "intent": "director",
         })
         request(BASE, "POST", "/api/account/register", None, {
             "email": extra_email,
             "password": "ExtraPass1!",
+            "passwordConfirm": "ExtraPass1!",
             "display_name": "Extra Director",
             "intent": "director",
         })
@@ -1105,6 +1114,7 @@ class AccountAndYearTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": pending_email,
             "password": "LaterPass1!",
+            "passwordConfirm": "LaterPass1!",
             "display_name": "Later Director",
             "intent": "director",
         })
@@ -1393,6 +1403,7 @@ class ScheduleTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "CoachScore1!",
+            "passwordConfirm": "CoachScore1!",
             "display_name": "Coach Score",
             "intent": "team",
         })
@@ -1485,6 +1496,7 @@ class ScheduleTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "CoachScore1!",
+            "passwordConfirm": "CoachScore1!",
             "display_name": "GC Coach",
             "intent": "team",
         })
@@ -1886,6 +1898,7 @@ class PacketPrivacyTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "Stranger99!",
+            "passwordConfirm": "Stranger99!",
             "display_name": "Random Stranger",
             "intent": "director",
         })
@@ -2046,12 +2059,26 @@ class LiveReviewTests(unittest.TestCase):
         out = request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "DirectorPass1!",
+            "passwordConfirm": "DirectorPass1!",
             "display_name": "Mail Check",
             "intent": "director",
         })
         self.assertFalse(out.get("verified"))
         self.assertFalse(out.get("verify_sent"))
         self.assertEqual(out.get("verify_reason"), "smtp_not_configured")
+
+    def test_register_requires_matching_password_confirm(self):
+        email = f"mismatch.{uuid.uuid4().hex[:8]}@local.test"
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", "/api/account/register", None, {
+                "email": email,
+                "password": "DirectorPass1!",
+                "passwordConfirm": "OtherPass1!",
+                "display_name": "Mismatch",
+                "intent": "director",
+            })
+        self.assertIn("400", str(bad.exception))
+        self.assertIn("both password", str(bad.exception).lower())
 
 
 class AccountHardeningTests(unittest.TestCase):
@@ -2065,6 +2092,7 @@ class AccountHardeningTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "LockPass1!",
+            "passwordConfirm": "LockPass1!",
             "display_name": "Lock User",
             "intent": "director",
         })
@@ -2095,6 +2123,7 @@ class AccountHardeningTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "OpenPass1!",
+            "passwordConfirm": "OpenPass1!",
             "display_name": "Open User",
             "intent": "director",
         })
@@ -2139,6 +2168,7 @@ class AccountHardeningTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "SecondPass1!",
+            "passwordConfirm": "SecondPass1!",
             "display_name": "Second Coach",
             "intent": "team",
         })
@@ -2167,6 +2197,7 @@ class AccountHardeningTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": victim_email,
             "password": "VictimPass1!",
+            "passwordConfirm": "VictimPass1!",
             "display_name": "Victim",
             "intent": "director",
         })
@@ -2194,6 +2225,7 @@ class AccountHardeningTests(unittest.TestCase):
             request(BASE, "POST", "/api/account/register", None, {
                 "email": primary_email,
                 "password": "PrimaryPass1!",
+                "passwordConfirm": "PrimaryPass1!",
                 "display_name": "Site Admin",
                 "intent": "director",
             })
@@ -2553,6 +2585,7 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "StrangerTeam1!",
+            "passwordConfirm": "StrangerTeam1!",
             "display_name": "Stranger",
             "intent": "td",
         })
@@ -4118,6 +4151,7 @@ class EventBoxReviewTests(unittest.TestCase):
         request(BASE, "POST", "/api/account/register", None, {
             "email": email,
             "password": "Stranger99!",
+            "passwordConfirm": "Stranger99!",
             "display_name": "Stranger",
             "intent": "director",
         })

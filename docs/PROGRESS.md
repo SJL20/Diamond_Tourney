@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 113 unit/integration cases + 13 acceptance checks |
+| Tests | 119 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -211,6 +211,25 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Create-account password confirm and verification mail
+
+Creating an account asks for the password twice and refuses a mismatch.
+The confirmation email is sent in that same request. The new login opens
+`/account` immediately, and that page has **Update your password**. The
+confirmation page waits for **Confirm my email** so a mail preview does not
+spend the link.
+
+Live mail was refused because PocketBase still used `support@example.com`.
+Resend accepts `noreply@diamondtourney.com`. That sender is saved on the Fly
+volume, and migration `1700000034_mail_sender.js` replaces an `@example.com`
+sender on the next boot. A confirmation to a test inbox arrived from
+`noreply@diamondtourney.com`. Local tests still have SMTP disabled, so they
+still expect `verify_reason=smtp_not_configured`.
+
+`ladydukeslafever@gmail.com` is not a login on the live site. The address has
+to be created on `/register`. The PocketBase `/_/` break-glass login is still
+the seeded local superuser; change that password in `/_/`.
 
 ### 2026-09-21 — Account hardening
 

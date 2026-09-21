@@ -30,7 +30,7 @@ cannot close issues (403).
 
 | # | Status | What is left |
 |---|---|---|
-| 1 | `[~]` | Fly SMTP + SPF/DKIM + live inbox proof. Code already sends. |
+| 1 | `[~]` | Resend delivers director verification from `noreply@diamondtourney.com`. SPF/DKIM and coach signup mail still open. |
 | 2–10 | `[x]` | — |
 | 11 | `[x]` | Live Keystone pool-CSV → standings → 8-team DE (ops, not missing code) |
 | 12–15 | `[x]` | — |
@@ -84,13 +84,14 @@ data, inventing Friday/Saturday Keystone pool boxes the popup does not list.
 
 ## [~] 1. No email is sent when a user signs up
 
-**Blocker for the next live event.**
+**Blocker for the next live event until SPF/DKIM is confirmed and a coach signup mail is seen.**
 
-Nothing sends on signup. The blocker is configuration, not code: PocketBase
-defaults to a local sendmail binary that does not exist in the Fly container.
-Set real SMTP credentials in Admin → Settings → Mail (Resend or Postmark). The
-sending domain needs SPF and DKIM at Cloudflare or mail lands in spam, which is
-worse than sending nothing.
+Resend is the live SMTP host. A director confirmation from
+`noreply@diamondtourney.com` landed in an inbox on 2026-09-21. The previous
+sender, `support@example.com`, was refused because that domain is not verified
+on Resend. Keep the sender on the verified domain. SPF and DKIM at Cloudflare
+are still unchecked here, and a coach signup confirmation has not been watched
+end to end.
 
 Three emails, in priority order:
 
@@ -111,10 +112,10 @@ welcome, forgot-password, and rain/schedule notices. Failures write `sync_log`
 sender). Callers no longer empty-catch. **Ops still required on Fly** — this
 repo cannot store SMTP secrets.
 
-- [ ] SMTP configured, test mail delivers to an external inbox
+- [x] SMTP configured, test mail delivers to an external inbox
 - [ ] SPF and DKIM added for the sending domain
 - [ ] Coach receives confirmation on team registration
-- [ ] Director accounts receive verification email
+- [x] Director accounts receive verification email
 - [x] Mail failures logged, never silently swallowed
 
 ---

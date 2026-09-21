@@ -909,9 +909,13 @@ function freshStamp(raw) {
 function registerAccount(app, body) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
+  const passwordConfirm = String(body.passwordConfirm || "");
   const name = String(body.display_name || body.name || "").trim();
   if (!email || password.length < 8) {
     throw new BadRequestError("Email and a password of at least 8 characters are required");
+  }
+  if (!passwordConfirm || passwordConfirm !== password) {
+    throw new BadRequestError("Type the same password in both password fields.");
   }
   const intent = body.intent === "team" ? "team_coach" : "event_td";
   if (intent !== "team_coach" && intent !== "event_td") {
