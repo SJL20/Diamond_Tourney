@@ -116,12 +116,10 @@ The outline requires `Firstname LastInitial #jersey`, for example
 `Evelynn M #17`. `lib/metrics.py` has a correct `name_key`; the hook does not
 use it. This is how the same player ends up as two rows across weekends.
 
-### 6. The hosted sync fails silently — **open**
+### 6. The hosted sync fails silently — **closed**
 
-The `hosted-gc-tm-sync` cron in `pb/pb_hooks/main.pb.js` wraps its work in
-`catch (err) {}`. A sync that stops working looks identical to one that has
-nothing to do. There is a `sync_log` collection already; the cron should write
-its failures there.
+See *Closed*. The hosted sync and box-score mail crons write failures to
+`sync_log` instead of swallowing them.
 
 ### 7. No test drives the browser — **open**
 
@@ -153,10 +151,11 @@ direct unit tests for the hook modules.
 - ~~**Stats inbox had no Approve/Reject for pending event boxes.**~~ Bots post
   `needs_review` to `POST /api/bot/event-box`, but Admin → Stats inbox only
   showed Open. Directors now Approve or Reject via
-  `POST /api/events/{slug}/boxes/{id}/review`. Bot role is refused. Reject
-  flips status only and does not delete `event_hitting` / `event_pitching`.
-  Season-team staging Approve is unchanged. Covered by
-  `EventBoxReviewTests`.
+  `POST /api/events/{slug}/boxes/{id}/review`. Bot role is refused. A bot
+  post stays `needs_review` and does not write `event_hitting` /
+  `event_pitching` until a director approves. Reject removes only the player
+  lines named on that box. Season-team staging Approve is unchanged. Covered
+  by `EventBoxReviewTests`.
 
 - ~~**Anyone with `event_td` could administer any tournament.**~~ Registration
   still assigns that role so a new account can create a weekend. Director
@@ -175,6 +174,13 @@ direct unit tests for the hook modules.
   REST. `team_docs` let any account list every event's packet. Fixed in
   [#1](https://github.com/SJL20/Diamond_Tourney/pull/1); covered by
   `PacketPrivacyTests`.
+- ~~**Account recovery and role changes were open.**~~ Registration no longer
+  marks an account confirmed when mail is down. Role, team, confirmation, and
+  reset tokens cannot be edited by the account that holds them. Granting
+  `region_admin` or `bot` takes the verified primary site admin. Reset links
+  expire. Unapproved box lines stay off the public stat tables until a
+  director approves them. Covered by `AccountHardeningTests`,
+  `AccountAndYearTests`, and `EventBoxReviewTests`.
 - ~~**CI had never passed.**~~ `scripts/ci.sh` ran the tests before starting
   PocketBase, so 19 of 25 died on connection-refused on a clean runner. It
   looked green locally only because the Cloud Agent `start` script leaves a
@@ -205,6 +211,26 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Account hardening
+
+Confirmed email is required before a director opens a weekend, posts a score,
+or sees a team contact or packet. New accounts stay unverified when mail is
+not configured. Public user creation is closed. A user cannot change their own
+role, team, confirmation flag, or reset tokens. Only the verified primary
+site-admin address can grant `region_admin` or `bot`. Other verified site
+admins can assign a team and the ordinary roles. Password reset tokens expire,
+one superuser reset row is kept, and the forgot-password response says when
+mail is not configured. Register, login, forgot, reset, and resend are rate
+limited. Archived weekends and unapproved boxes are not on the public list.
+Hitting and pitching lines publish only after a non-bot approval. New
+tournaments start with auto-sync off. List caps on a weekend's games, teams,
+and stat lines are higher so a full bracket is not silently cut off. Sync and
+box-mail cron failures are written to `sync_log`.
+
+The PocketBase `/_/` superuser stays the break-glass login. If the primary
+address is registered before that person confirms it, a superuser has to
+remove that account. Day-to-day admin does not need a new superuser screen.
 
 ### 2026-09-21 — Bracket review: consolation, DE merge, score 400, two schedulers
 

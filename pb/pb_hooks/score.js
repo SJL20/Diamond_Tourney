@@ -21,11 +21,12 @@ function canScore(app, event, rec, auth) {
   if (!auth) return false;
   if (isDirector(auth, event, app)) return true;
   if (auth.get("role") === "bot") return true;
+  if (!require(__hooks + "/softball.js").isVerifiedAccount(auth)) return false;
   const home = rec.get("home") || rec.get("home_team");
   const away = rec.get("away") || rec.get("away_team");
   const mine = {};
   try {
-    const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "", 80, 0, { e: event.id });
+    const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "", 500, 0, { e: event.id });
     for (const t of teams) {
       if (t.get("account") === auth.id) mine[t.id] = true;
       if (t.get("contact_email") && t.get("contact_email") === auth.email()) mine[t.id] = true;
@@ -36,6 +37,10 @@ function canScore(app, event, rec, auth) {
 
 function requireScore(app, event, rec, auth) {
   if (!auth) throw new UnauthorizedError("Log in to post a result");
+  const sb = require(__hooks + "/softball.js");
+  if (auth.get("role") !== "bot" && !sb.isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before you post a result.");
+  }
   if (!canScore(app, event, rec, auth)) {
     throw new ForbiddenError("Only the director or a manager of a team in this game can post a result.");
   }
@@ -56,6 +61,13 @@ function fileUrl(app, collectionName, rec, field) {
 
 function asList(raw) {
   if (!raw) return [];
+  if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "number") {
+    try {
+      const text = require(__hooks + "/softball.js").bytesToString(raw);
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+    } catch (err) {}
+  }
   if (typeof raw === "string") {
     const text = raw.trim();
     if (!text) return [];
@@ -81,7 +93,11 @@ function asList(raw) {
     }
     return rows;
   }
-  if (typeof raw === "object" && raw.length !== undefined) return raw;
+  if (typeof raw === "object" && raw.length !== undefined && typeof raw[0] === "object") {
+    const copy = [];
+    for (let i = 0; i < raw.length; i++) copy.push(raw[i]);
+    return copy;
+  }
   return [];
 }
 
@@ -164,6 +180,46 @@ function applyBoxLines(app, event, game, hitting, pitching) {
   }
 }
 
+function findEventPlayer(app, teamId, name, jersey) {
+  const trimmed = String(name || "").trim();
+  const jerseyText = String(jersey || "").trim();
+  const nameKey = jerseyText ? (trimmed + " #" + jerseyText) : trimmed;
+  if (!nameKey || !teamId) return null;
+  try {
+    return app.findFirstRecordByFilter(
+      "event_players",
+      "event_team = {:t} && name_key = {:k}",
+      { t: teamId, k: nameKey },
+    );
+  } catch (err) {
+    return null;
+  }
+}
+
+function removeBoxLines(app, game, hitting, pitching) {
+  function teamId(side) {
+    if (side === "away") return game.get("away");
+    return game.get("home");
+  }
+  function drop(collection, row) {
+    const player = findEventPlayer(app, teamId(row.side) || game.get("home"), row.name || row.name_key, row.jersey);
+    if (!player) return;
+    try {
+      const rows = app.findRecordsByFilter(
+        collection,
+        "schedule_row = {:s} && event_player = {:p}",
+        "",
+        10,
+        0,
+        { s: game.id, p: player.id },
+      );
+      for (let i = 0; i < rows.length; i++) app.delete(rows[i]);
+    } catch (err) {}
+  }
+  for (const row of hitting || []) drop("event_hitting", row);
+  for (const row of pitching || []) drop("event_pitching", row);
+}
+
 function boxJson(app, rec) {
   return {
     id: rec.id,
@@ -218,16 +274,14 @@ function reviewBox(app, event, id, body, auth) {
   if (!pendingFilter(current)) {
     throw new BadRequestError("Box is not waiting on review");
   }
-  if (status === "approved") {
-    const hitting = asList(box.get("hitting"));
-    const pitching = asList(box.get("pitching"));
-    if (hitting.length || pitching.length) {
-      const game = app.findRecordById("event_schedule", box.get("schedule_row"));
-      applyBoxLines(app, event, game, hitting, pitching);
-    }
+  const hitting = asList(box.get("hitting"));
+  const pitching = asList(box.get("pitching"));
+  if (hitting.length || pitching.length) {
+    let game = null;
+    try { game = app.findRecordById("event_schedule", box.get("schedule_row")); } catch (err) { game = null; }
+    if (game && status === "approved") applyBoxLines(app, event, game, hitting, pitching);
+    if (game && status === "rejected") removeBoxLines(app, game, hitting, pitching);
   }
-  // Reject only flips status. Live event_hitting / event_pitching rows stay —
-  // botApply may already have upserted them, and there is no reject-wipe pattern.
   box.set("status", status);
   app.save(box);
   return { box: boxJson(app, box) };
@@ -251,9 +305,9 @@ function listPendingBoxes(app, eventId) {
   let rows = [];
   try {
     if (eventId) {
-      rows = app.findRecordsByFilter("event_boxes", "event = {:e}", "-id", 120, 0, { e: eventId });
+      rows = app.findRecordsByFilter("event_boxes", "event = {:e}", "-id", 2000, 0, { e: eventId });
     } else {
-      rows = app.findRecordsByFilter("event_boxes", "", "-id", 120, 0);
+      rows = app.findRecordsByFilter("event_boxes", "", "-id", 2000, 0);
     }
   } catch (err) {
     return out;
@@ -331,11 +385,12 @@ function saveBox(app, event, id, body, files, auth) {
   }
   if (!director && !bot && status === "approved") status = hasLines ? "submitted" : "queued";
   if (director && (body.approve_file === true || body.approve_file === "true")) status = "approved";
+  if (bot && status === "approved") status = "needs_review";
   box.set("status", status);
   setUserRel(app, box, "submitted_by", auth);
   if (body.note != null) box.set("note", body.note);
   app.save(box);
-  if (hasLines) applyBoxLines(app, event, rec, hitting, pitching);
+  if (hasLines && status === "approved") applyBoxLines(app, event, rec, hitting, pitching);
   if (body.home_runs != null || body.away_runs != null) {
     postScore(app, event, id, body, auth);
   }
@@ -354,13 +409,14 @@ function attachUpdateBox(app, event, game, body, auth) {
   if (hitting.length) box.set("hitting", hitting);
   if (pitching.length) box.set("pitching", pitching);
   box.set("source", boxPayload.source || body.source || "bot");
-  const status = boxPayload.status || body.box_status || (hitting.length || pitching.length ? "needs_review" : "queued");
+  let status = boxPayload.status || body.box_status || (hitting.length || pitching.length ? "needs_review" : "queued");
+  if (auth && auth.get("role") === "bot" && status === "approved") status = "needs_review";
   box.set("status", status);
   if (auth) setUserRel(app, box, "submitted_by", auth);
   if (boxPayload.note != null) box.set("note", boxPayload.note);
   else if (body.note != null) box.set("note", body.note);
   app.save(box);
-  if (hitting.length || pitching.length) applyBoxLines(app, event, game, hitting, pitching);
+  if ((hitting.length || pitching.length) && status === "approved") applyBoxLines(app, event, game, hitting, pitching);
   return boxJson(app, box);
 }
 
@@ -389,12 +445,14 @@ function botApply(app, body, auth) {
   if (hitting.length) box.set("hitting", hitting);
   if (pitching.length) box.set("pitching", pitching);
   box.set("source", body.source || "bot");
-  box.set("status", body.status || (body.apply === false ? "needs_review" : "approved"));
+  let status = body.status || (body.apply === false ? "needs_review" : "approved");
+  if (auth.get("role") === "bot" && status === "approved") status = "needs_review";
+  box.set("status", status);
   setUserRel(app, box, "submitted_by", auth);
   if (body.parser_notes != null) box.set("note", body.parser_notes);
   else if (body.note != null) box.set("note", body.note);
   app.save(box);
-  if (hitting.length || pitching.length) applyBoxLines(app, event, rec, hitting, pitching);
+  if ((hitting.length || pitching.length) && status === "approved") applyBoxLines(app, event, rec, hitting, pitching);
   if (body.home_runs != null || body.away_runs != null) {
     if (body.home_runs != null) rec.set("home_runs", Number(body.home_runs));
     if (body.away_runs != null) rec.set("away_runs", Number(body.away_runs));

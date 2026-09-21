@@ -7,9 +7,16 @@ function publicUrl(path) {
   return publicBase() + (path.charAt(0) === "/" ? path : "/" + path);
 }
 
+function senderConfigured(app) {
+  return !!sender(app);
+}
+
 function sender(app) {
   try {
-    const meta = app.settings().meta;
+    const settings = app.settings();
+    const smtp = settings.smtp;
+    if (!smtp || !smtp.enabled) return null;
+    const meta = settings.meta;
     const address = meta.senderAddress || meta.sender_address || "";
     const name = meta.senderName || meta.sender_name || "Diamond Tourney";
     if (!address) return null;
@@ -115,7 +122,7 @@ function directorWelcome(app, user) {
 }
 
 function rainNotice(app, event) {
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: event.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   const status = event.get("rain_status") || "watch";
   const note = event.get("rain_note") || event.get("status_note") || "";
   const subject = event.get("name") + " — schedule update";
@@ -146,11 +153,12 @@ function rainNotice(app, event) {
   return { sent: sent, attempted: attempted, reason: sent ? "" : lastReason };
 }
 
-function randomToken() {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let out = "";
-  for (let i = 0; i < 32; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
-  return out;
+function randomToken(size) {
+  const n = size || 48;
+  if (typeof $security !== "undefined" && $security.randomString) {
+    return $security.randomString(n);
+  }
+  throw new Error("secure random is unavailable");
 }
 
 module.exports = {
@@ -163,4 +171,5 @@ module.exports = {
   directorWelcome: directorWelcome,
   rainNotice: rainNotice,
   randomToken: randomToken,
+  senderConfigured: senderConfigured,
 };

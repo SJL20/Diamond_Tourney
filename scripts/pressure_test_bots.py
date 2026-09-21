@@ -185,8 +185,8 @@ def bot_c_worker(base: str, q: Queue, slug: str, games: list[str]) -> None:
 
         with ThreadPoolExecutor(max_workers=6) as pool:
             boxes = list(pool.map(post_box, range(6)))
-        if any(b["box"]["status"] != "approved" for b in boxes):
-            raise RuntimeError("concurrent event-box did not stay approved")
+        if any(b["box"]["status"] != "needs_review" for b in boxes):
+            raise RuntimeError("concurrent bot event-box should stay needs_review, not publish lines")
 
         update_game = games[3] if len(games) > 3 else score_target
         h, p = _lines("event-update-box")
@@ -301,6 +301,10 @@ def director_and_public(td: str, slug: str, bot_c: dict) -> dict:
     if approved["box"]["status"] != "approved":
         raise RuntimeError("director approve failed")
 
+    still_pending = request(BASE, "GET", f"/api/events/{slug}/plan", td).get("pending_boxes") or []
+    upsert_id = next((b.get("id") for b in still_pending if b.get("schedule_id") == bot_c["upsert_game"]), "")
+    if upsert_id:
+        request(BASE, "POST", f"/api/events/{slug}/boxes/{upsert_id}/review", td, {"status": "approved"})
     leftovers = [b for b in (request(BASE, "GET", f"/api/events/{slug}/plan", td).get("pending_boxes") or [])]
     rejected = 0
     for box in leftovers:

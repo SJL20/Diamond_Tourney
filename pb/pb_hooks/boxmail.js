@@ -189,7 +189,7 @@ function dueGames(app, event, nowMs) {
   function add(kind, collection) {
     let rows = [];
     try {
-      rows = app.findRecordsByFilter(collection, "event = {:e}", "", 400, 0, { e: event.id });
+      rows = app.findRecordsByFilter(collection, "event = {:e}", "", 2000, 0, { e: event.id });
     } catch (err) { rows = []; }
     for (let i = 0; i < rows.length; i++) {
       if (isSuppressed(rows[i])) continue;
@@ -209,7 +209,7 @@ function runBoxMail(app, opts) {
   if (opts.event) events = [opts.event];
   else {
     try {
-      events = app.findRecordsByFilter("events", "status = 'live'", "", 400, 0);
+      events = app.findRecordsByFilter("events", "status = 'live'", "", 2000, 0);
     } catch (err) { events = []; }
   }
   const summary = { invited: 0, reminded: 0, skipped: 0, mailed: 0, reason: "", invites: [] };
@@ -502,7 +502,7 @@ function directorDesk(app, event) {
   const games = [];
   let sched = [];
   try {
-    sched = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 400, 0, { e: event.id });
+    sched = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 2000, 0, { e: event.id });
   } catch (err) { sched = []; }
   for (let i = 0; i < sched.length; i++) {
     const g = sched[i];
@@ -537,7 +537,7 @@ function directorDesk(app, event) {
   }
   let bracket = [];
   try {
-    bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "date,time", 400, 0, { e: event.id });
+    bracket = app.findRecordsByFilter("bracket_games", "event = {:e}", "date,time", 2000, 0, { e: event.id });
   } catch (err) { bracket = []; }
   for (let i = 0; i < bracket.length; i++) {
     const g = bracket[i];

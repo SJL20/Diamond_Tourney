@@ -22,6 +22,26 @@ from scripts.pb_client import auth, request, request_multipart
 BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT', '8097')}"
 
 
+def confirm_account(email: str) -> None:
+    """Turn a just-registered user into a confirmed login via the verify token."""
+    from urllib.parse import quote
+
+    admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+    users = request(
+        BASE, "GET",
+        "/api/collections/users/records?filter=" + quote(f'email="{email}"'),
+        admin,
+    )
+    row = users["items"][0]
+    token = row.get("verify_token") or ""
+    if token:
+        request(BASE, "POST", "/api/account/verify", None, {"token": token})
+        return
+    if row.get("verified"):
+        return
+    request(BASE, "PATCH", f"/api/collections/users/records/{row['id']}", admin, {"verified": True})
+
+
 class TiebreakTests(unittest.TestCase):
     def test_h2h_before_run_diff(self):
         a = {"id": "a", "name": "A", "w": 1, "l": 1, "t": 0, "rs": 20, "ra": 3}
@@ -203,7 +223,11 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("Fields and facilities only", event)
         self.assertIn("/verify", app)
         self.assertIn("verifyPage", app)
-        self.assertIn("Forgot my password", (ROOT / "pb/pb_public/js/flow.js").read_text())
+        flow = (ROOT / "pb/pb_public/js/flow.js").read_text()
+        self.assertIn("Forgot my password", flow)
+        self.assertIn("Change password", flow)
+        self.assertIn("PocketBase mail is not configured", flow)
+        self.assertIn("/api/account/resend", flow)
         self.assertIn("/forgot", app)
         self.assertIn("adminEvents", app)
         self.assertIn("loginWithPassword", chrome)
@@ -742,6 +766,7 @@ class AccountAndYearTests(unittest.TestCase):
             "display_name": "Pat Director",
             "intent": "director",
         })
+        confirm_account(email)
         token = auth(BASE, email, "DirectorPass1!")
         home = request(BASE, "GET", "/api/account/home", token)
         self.assertEqual(home["user"]["email"], email)
@@ -788,16 +813,53 @@ class AccountAndYearTests(unittest.TestCase):
         })
         out = request(BASE, "POST", "/api/account/forgot", None, {"email": email})
         self.assertTrue(out.get("ok"))
-        self.assertTrue(request(BASE, "POST", "/api/account/forgot", None, {"email": "nobody@nowhere.test"}).get("ok"))
+        self.assertEqual(out.get("mail"), "not_configured")
+        self.assertEqual(
+            request(BASE, "POST", "/api/account/forgot", None, {"email": "nobody@nowhere.test"}).get("mail"),
+            "not_configured",
+        )
+        logged = request(BASE, "POST", "/api/collections/users/auth-with-password", None, {
+            "identity": email,
+            "password": "OldPass12!",
+        })
+        self.assertNotIn("reset_token", logged.get("record") or {})
+        self.assertNotIn("verify_token", logged.get("record") or {})
         admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
         from urllib.parse import quote
+        users = request(BASE, "GET", f"/api/collections/users/records?filter={quote(f'email=\"{email}\"')}", admin)
+        row = users["items"][0]
+        token = row["reset_token"]
+        self.assertTrue(token)
+        request(BASE, "PATCH", f"/api/collections/users/records/{row['id']}", admin, {
+            "reset_expires": "2000-01-01T00:00:00.000Z",
+        })
+        with self.assertRaises(RuntimeError) as expired:
+            request(BASE, "POST", "/api/account/reset", None, {"token": token, "password": "NewPass12!"})
+        self.assertIn("expired", str(expired.exception).lower())
+        request(BASE, "POST", "/api/account/forgot", None, {"email": email})
         users = request(BASE, "GET", f"/api/collections/users/records?filter={quote(f'email=\"{email}\"')}", admin)
         token = users["items"][0]["reset_token"]
         self.assertTrue(token)
         request(BASE, "POST", "/api/account/reset", None, {"token": token, "password": "NewPass12!"})
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", "/api/account/reset", None, {"token": token, "password": "OtherPass1!"})
         auth(BASE, email, "NewPass12!")
         with self.assertRaises(RuntimeError):
             auth(BASE, email, "OldPass12!")
+        request(BASE, "POST", "/api/account/forgot", None, {"email": email})
+        users = request(BASE, "GET", f"/api/collections/users/records?filter={quote(f'email=\"{email}\"')}", admin)
+        stale = users["items"][0]["reset_token"]
+        user = auth(BASE, email, "NewPass12!")
+        request(BASE, "PATCH", f"/api/collections/users/records/{users['items'][0]['id']}", user, {
+            "oldPassword": "NewPass12!",
+            "password": "NewerPass1!",
+            "passwordConfirm": "NewerPass1!",
+        })
+        cleared = request(BASE, "GET", f"/api/collections/users/records?filter={quote(f'email=\"{email}\"')}", admin)
+        self.assertFalse(cleared["items"][0].get("reset_token"))
+        with self.assertRaises(RuntimeError):
+            request(BASE, "POST", "/api/account/reset", None, {"token": stale, "password": "StolenPass1!"})
+        auth(BASE, email, "NewerPass1!")
 
     def test_site_admin_removes_tournament_director_cannot(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
@@ -815,6 +877,27 @@ class AccountAndYearTests(unittest.TestCase):
         archived = request(BASE, "POST", f"/api/admin/events/{slug}/archive", owner)
         self.assertEqual(archived["event"]["status"], "archived")
         self.assertFalse(archived["event"]["public"])
+        from urllib.parse import quote
+        stranger_email = f"list.{uuid.uuid4().hex[:8]}@nowhere.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": stranger_email,
+            "password": "Stranger99!",
+            "display_name": "List Stranger",
+            "intent": "director",
+        })
+        stranger = auth(BASE, stranger_email, "Stranger99!")
+        hidden = request(
+            BASE, "GET",
+            f"/api/collections/events/records?filter={quote(f'slug=\"{slug}\"')}&perPage=5",
+            stranger,
+        )
+        self.assertEqual(hidden.get("items") or [], [])
+        visible = request(
+            BASE, "GET",
+            f"/api/collections/events/records?filter={quote(f'slug=\"{slug}\"')}&perPage=5",
+            td,
+        )
+        self.assertTrue(visible.get("items"))
         found = request(BASE, "GET", f"/api/events/search?q={slug}")
         self.assertNotIn(slug, [e["slug"] for e in found["events"]])
         slug2 = "wipe-" + uuid.uuid4().hex[:8]
@@ -888,6 +971,17 @@ class AccountAndYearTests(unittest.TestCase):
         }, codes=("403", "400", "404"))
 
         slug = "mine-" + uuid.uuid4().hex[:8]
+        with self.assertRaises(RuntimeError) as unconfirmed:
+            request(BASE, "POST", "/api/events/create", token, {
+                "source": "native",
+                "name": "Stranger Open",
+                "slug": slug,
+                "venue": "Own Park",
+                "ages": "10U",
+            })
+        self.assertIn("403", str(unconfirmed.exception))
+        self.assertIn("confirm", str(unconfirmed.exception).lower())
+        confirm_account(email)
         created = request(BASE, "POST", "/api/events/create", token, {
             "source": "native",
             "name": "Stranger Open",
@@ -931,6 +1025,9 @@ class AccountAndYearTests(unittest.TestCase):
             "display_name": "Extra Director",
             "intent": "director",
         })
+        confirm_account(owner_email)
+        confirm_account(helper_email)
+        confirm_account(extra_email)
         owner = auth(BASE, owner_email, "OwnerPass1!")
         helper = auth(BASE, helper_email, "HelperPass1!")
         extra = auth(BASE, extra_email, "ExtraPass1!")
@@ -1011,6 +1108,7 @@ class AccountAndYearTests(unittest.TestCase):
             "display_name": "Later Director",
             "intent": "director",
         })
+        confirm_account(pending_email)
         later = auth(BASE, pending_email, "LaterPass1!")
         later_home = request(BASE, "GET", "/api/account/home", later)
         self.assertIn(slug, [e["slug"] for e in later_home["created"]])
@@ -1298,6 +1396,7 @@ class ScheduleTests(unittest.TestCase):
             "display_name": "Coach Score",
             "intent": "team",
         })
+        confirm_account(email)
         mgr = auth(BASE, email, "CoachScore1!")
         request(BASE, "POST", f"/api/events/{slug}/signup", mgr, {
             "team_name": "Score Hawks",
@@ -1389,6 +1488,7 @@ class ScheduleTests(unittest.TestCase):
             "display_name": "GC Coach",
             "intent": "team",
         })
+        confirm_account(email)
         mgr = auth(BASE, email, "CoachScore1!")
         request(BASE, "POST", f"/api/events/{slug}/signup", mgr, {
             "team_name": "Dukes Stats",
@@ -1450,7 +1550,7 @@ class ScheduleTests(unittest.TestCase):
             "parser_notes": "Read from the public box the coach pasted.",
         })
         self.assertEqual(extracted["box"]["source"], "bot")
-        self.assertEqual(extracted["box"]["status"], "approved")
+        self.assertEqual(extracted["box"]["status"], "needs_review")
 
         director = request_multipart(BASE, f"/api/events/{slug}/schedule/{game_id}/box", td, {
             "source": "director_pdf",
@@ -1941,7 +2041,7 @@ class LiveReviewTests(unittest.TestCase):
         self.assertNotIn(b"eXIf", stored)
         self.assertNotIn(b"GPS-EXIF", stored)
 
-    def test_register_stays_verified_without_smtp(self):
+    def test_register_stays_unverified_without_smtp(self):
         email = f"mailcheck.{uuid.uuid4().hex[:8]}@local.test"
         out = request(BASE, "POST", "/api/account/register", None, {
             "email": email,
@@ -1949,8 +2049,189 @@ class LiveReviewTests(unittest.TestCase):
             "display_name": "Mail Check",
             "intent": "director",
         })
-        self.assertTrue(out.get("verified"))
+        self.assertFalse(out.get("verified"))
         self.assertFalse(out.get("verify_sent"))
+        self.assertEqual(out.get("verify_reason"), "smtp_not_configured")
+
+
+class AccountHardeningTests(unittest.TestCase):
+    def _user_id(self, token):
+        return request(BASE, "GET", "/api/account/home", token)["user"]["id"]
+
+    def test_public_user_create_and_self_promotion_are_blocked(self):
+        from urllib.parse import quote
+
+        email = f"lock.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "LockPass1!",
+            "display_name": "Lock User",
+            "intent": "director",
+        })
+        token = auth(BASE, email, "LockPass1!")
+        with self.assertRaises(RuntimeError) as created:
+            request(BASE, "POST", "/api/collections/users/records", token, {
+                "email": f"new.{uuid.uuid4().hex[:6]}@local.test",
+                "password": "LockPass1!",
+                "passwordConfirm": "LockPass1!",
+                "role": "region_admin",
+            })
+        self.assertTrue(any(code in str(created.exception) for code in ("403", "400", "404")))
+        uid = self._user_id(token)
+        with self.assertRaises(RuntimeError) as role:
+            request(BASE, "PATCH", f"/api/collections/users/records/{uid}", token, {"role": "region_admin"})
+        self.assertIn("403", str(role.exception))
+        teams = request(BASE, "GET", "/api/collections/teams/records?filter=" + quote('slug="hawks-10u"'))
+        team_id = teams["items"][0]["id"]
+        with self.assertRaises(RuntimeError) as team:
+            request(BASE, "PATCH", f"/api/collections/users/records/{uid}", token, {
+                "team": team_id,
+                "role": "team_coach",
+            })
+        self.assertIn("403", str(team.exception))
+
+    def test_unverified_cannot_open_a_weekend(self):
+        email = f"open.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "OpenPass1!",
+            "display_name": "Open User",
+            "intent": "director",
+        })
+        token = auth(BASE, email, "OpenPass1!")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertFalse(home["user"]["verified"])
+        slug = "unconfirmed-" + uuid.uuid4().hex[:8]
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", "/api/events/create", token, {
+                "source": "native",
+                "name": "Unconfirmed Open",
+                "slug": slug,
+                "ages": "10U",
+            })
+        self.assertIn("403", str(denied.exception))
+        self.assertIn("confirm", str(denied.exception).lower())
+        confirm_account(email)
+        created = request(BASE, "POST", "/api/events/create", token, {
+            "source": "native",
+            "name": "Confirmed Open",
+            "slug": slug,
+            "ages": "10U",
+        })
+        self.assertTrue(created["event"]["slug"].startswith("unconfirmed-"))
+        home2 = request(BASE, "GET", "/api/account/home", token)
+        self.assertTrue(home2["user"]["verified"])
+
+    def test_second_account_cannot_replace_a_signup(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "taken-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Taken Name",
+            "slug": slug,
+            "ages": "10U",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Already In",
+            "as_director": True,
+        })
+        email = f"second.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "SecondPass1!",
+            "display_name": "Second Coach",
+            "intent": "team",
+        })
+        confirm_account(email)
+        other = auth(BASE, email, "SecondPass1!")
+        with self.assertRaises(RuntimeError) as taken:
+            request(BASE, "POST", f"/api/events/{slug}/signup", other, {
+                "team_name": "Already In",
+                "contact_email": email,
+            })
+        self.assertIn("already signed up", str(taken.exception).lower())
+
+    def test_forgot_password_is_limited_per_email(self):
+        email = f"limit.{uuid.uuid4().hex[:8]}@nowhere.test"
+        for _ in range(5):
+            out = request(BASE, "POST", "/api/account/forgot", None, {"email": email})
+            self.assertTrue(out.get("ok"))
+        with self.assertRaises(RuntimeError) as limited:
+            request(BASE, "POST", "/api/account/forgot", None, {"email": email})
+        self.assertIn("429", str(limited.exception))
+
+    def test_only_the_verified_primary_admin_grants_privileged_roles(self):
+        from urllib.parse import quote
+
+        victim_email = f"victim.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": victim_email,
+            "password": "VictimPass1!",
+            "display_name": "Victim",
+            "intent": "director",
+        })
+        confirm_account(victim_email)
+        victim = auth(BASE, victim_email, "VictimPass1!")
+        victim_id = self._user_id(victim)
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        with self.assertRaises(RuntimeError) as owner_denied:
+            request(BASE, "PATCH", f"/api/collections/users/records/{victim_id}", owner, {
+                "role": "region_admin",
+            })
+        self.assertIn("403", str(owner_denied.exception))
+
+        primary_email = "ladydukeslafever@gmail.com"
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        existing = request(
+            BASE, "GET",
+            "/api/collections/users/records?filter=" + quote(f'email="{primary_email}"'),
+            admin,
+        )
+        for row in existing.get("items") or []:
+            request(BASE, "DELETE", f"/api/collections/users/records/{row['id']}", admin)
+
+        try:
+            request(BASE, "POST", "/api/account/register", None, {
+                "email": primary_email,
+                "password": "PrimaryPass1!",
+                "display_name": "Site Admin",
+                "intent": "director",
+            })
+            primary = auth(BASE, primary_email, "PrimaryPass1!")
+            with self.assertRaises(RuntimeError) as early:
+                request(BASE, "PATCH", f"/api/collections/users/records/{victim_id}", primary, {
+                    "role": "region_admin",
+                })
+            self.assertTrue(any(code in str(early.exception) for code in ("403", "404")))
+            still = request(BASE, "GET", f"/api/collections/users/records/{victim_id}", admin)
+            self.assertEqual(still.get("role"), "event_td")
+            confirm_account(primary_email)
+            primary = auth(BASE, primary_email, "PrimaryPass1!")
+            home = request(BASE, "GET", "/api/account/home", primary)
+            self.assertTrue(home["user"]["site_admin"])
+            with self.assertRaises(RuntimeError) as own:
+                request(BASE, "PATCH", f"/api/collections/users/records/{home['user']['id']}", primary, {
+                    "role": "region_admin",
+                })
+            self.assertIn("403", str(own.exception))
+            changed = request(BASE, "PATCH", f"/api/collections/users/records/{victim_id}", primary, {
+                "role": "team_coach",
+            })
+            self.assertEqual(changed.get("role"), "team_coach")
+            raised = request(BASE, "PATCH", f"/api/collections/users/records/{victim_id}", primary, {
+                "role": "region_admin",
+            })
+            self.assertEqual(raised.get("role"), "region_admin")
+        finally:
+            admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+            for email in (primary_email, victim_email):
+                rows = request(
+                    BASE, "GET",
+                    "/api/collections/users/records?filter=" + quote(f'email="{email}"'),
+                    admin,
+                )
+                for row in rows.get("items") or []:
+                    request(BASE, "DELETE", f"/api/collections/users/records/{row['id']}", admin)
 
 
 class GcMonitorTests(unittest.TestCase):
@@ -3597,7 +3878,7 @@ class LeaderQualifyTests(unittest.TestCase):
             "confirm": True,
         })
         bot = auth(BASE, "bot@local.test", "BotStaging1!")
-        return request(BASE, "POST", "/api/bot/event-box", bot, {
+        posted = request(BASE, "POST", "/api/bot/event-box", bot, {
             "event_slug": slug,
             "schedule_id": game_id,
             "home_runs": 5,
@@ -3611,6 +3892,11 @@ class LeaderQualifyTests(unittest.TestCase):
                 "ip": ip, "h": 2, "r": 1, "er": 1, "bb": 0, "so": 2,
             }],
         })
+        self.assertEqual(posted["box"]["status"], "needs_review")
+        request(BASE, "POST", f"/api/events/{slug}/boxes/{posted['box']['id']}/review", td, {
+            "status": "approved",
+        })
+        return posted
 
     def test_no_cap_does_not_mark_over_and_early_lines_qualify(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
@@ -3756,13 +4042,13 @@ class EventBoxReviewTests(unittest.TestCase):
         self.assertEqual(pending["pitching"][0]["name"], "Sam P")
         self.assertEqual(int(pending["hitting"][0]["h"]), 2)
         hits_before = self._hitting_count(td, game_id)
-        self.assertGreaterEqual(hits_before, 1)
+        self.assertEqual(hits_before, 0)
 
         approved = request(BASE, "POST", f"/api/events/{slug}/boxes/{box_id}/review", td, {
             "status": "approved",
         })
         self.assertEqual(approved["box"]["status"], "approved")
-        self.assertEqual(self._hitting_count(td, game_id), hits_before)
+        self.assertGreaterEqual(self._hitting_count(td, game_id), 1)
         after = request(BASE, "GET", f"/api/event/{slug}/board")
         done = next(g for g in after["schedule"] if g["id"] == game_id)
         self.assertEqual(done["box_status"], "approved")
@@ -3783,11 +4069,12 @@ class EventBoxReviewTests(unittest.TestCase):
         posted2 = self._bot_review_box(bot, slug2, game2, "alignment messy")
         reject_id = posted2["box"]["id"]
         hits2 = self._hitting_count(td, game2)
+        self.assertEqual(hits2, 0)
         rejected = request(BASE, "POST", f"/api/events/{slug2}/boxes/{reject_id}/review", td, {
             "status": "rejected",
         })
         self.assertEqual(rejected["box"]["status"], "rejected")
-        self.assertEqual(self._hitting_count(td, game2), hits2)
+        self.assertEqual(self._hitting_count(td, game2), 0)
         plan3 = request(BASE, "GET", f"/api/events/{slug2}/plan", td)
         self.assertFalse(any(b["id"] == reject_id for b in plan3.get("pending_boxes", [])))
 

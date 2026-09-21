@@ -46,7 +46,7 @@ function listGcMonitor(app) {
   for (const ev of liveRecords) {
     let teams = [];
     try {
-      teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 200, 0, { e: ev.id });
+      teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: ev.id });
     } catch (err) {
       teams = [];
     }
@@ -69,7 +69,7 @@ function listGcMonitor(app) {
 
   let boxes = [];
   try {
-    boxes = app.findRecordsByFilter("event_boxes", "", "-id", 200, 0);
+    boxes = app.findRecordsByFilter("event_boxes", "", "-id", 2000, 0);
   } catch (err) {
     boxes = [];
   }

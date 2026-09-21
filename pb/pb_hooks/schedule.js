@@ -229,7 +229,7 @@ function eventFields(app, eventId) {
   try {
     let event = null;
     try { event = app.findRecordById("events", eventId); } catch (miss) {}
-    return app.findRecordsByFilter("fields", "event = {:e}", "name", 400, 0, { e: eventId }).map(function (rec) {
+    return app.findRecordsByFilter("fields", "event = {:e}", "name", 2000, 0, { e: eventId }).map(function (rec) {
       return fieldJson(rec, event);
     });
   } catch (err) {
@@ -364,7 +364,7 @@ function applyLocation(rec, body) {
 
 function listFieldRecords(app, eventId) {
   try {
-    return app.findRecordsByFilter("fields", "event = {:e}", "name", 400, 0, { e: eventId });
+    return app.findRecordsByFilter("fields", "event = {:e}", "name", 2000, 0, { e: eventId });
   } catch (err) {
     return [];
   }
@@ -374,7 +374,7 @@ function unlinkField(app, event, rec) {
   const fieldId = rec.id;
   const fieldName = rec.get("name") || "";
   try {
-    const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    const games = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
     for (let i = 0; i < games.length; i++) {
       const row = games[i];
       if (row.get("field") !== fieldId && row.get("field_name") !== fieldName) continue;
@@ -384,7 +384,7 @@ function unlinkField(app, event, rec) {
     }
   } catch (err) {}
   try {
-    const tree = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+    const tree = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 2000, 0, { e: event.id });
     for (let i = 0; i < tree.length; i++) {
       if (tree[i].get("field_name") === fieldName) {
         tree[i].set("field_name", "");
@@ -523,10 +523,10 @@ function boxesForEvent(app, eventId) {
     }
   }
   try {
-    add(app.findRecordsByFilter("event_boxes", "event = {:e}", "", 200, 0, { e: eventId }));
+    add(app.findRecordsByFilter("event_boxes", "event = {:e}", "", 2000, 0, { e: eventId }));
   } catch (err) {
     try {
-      add(app.findRecordsByFilter("event_boxes", "", "", 200, 0));
+      add(app.findRecordsByFilter("event_boxes", "", "", 2000, 0));
     } catch (miss) {}
   }
   return map;
@@ -539,7 +539,7 @@ function listSchedule(app, eventId, auth) {
   }
   const boxes = boxesForEvent(app, eventId);
   const score = require(__hooks + "/score.js");
-  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time,field_name", 400, 0, { e: eventId }).map(function (r) {
+  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time,field_name", 2000, 0, { e: eventId }).map(function (r) {
     return scheduleRow(app, r, {
       can_score: !!(auth && event && score.canScore(app, event, r, auth)),
       has_box: !!boxes[r.id],
@@ -655,7 +655,7 @@ function nextGameNumber(app, eventId) {
   const cols = ["event_schedule", "bracket_games"];
   for (let c = 0; c < cols.length; c++) {
     try {
-      const rows = app.findRecordsByFilter(cols[c], "event = {:e}", "", 400, 0, { e: eventId });
+      const rows = app.findRecordsByFilter(cols[c], "event = {:e}", "", 2000, 0, { e: eventId });
       for (let i = 0; i < rows.length; i++) {
         const n = Number(rows[i].get("game_number") || 0);
         if (n > max) max = n;
@@ -697,7 +697,7 @@ function savePoolGame(app, event, game, slot, field) {
 
 function autoSchedule(app, event, body) {
   const prefs = saveScheduler(app, event, body || {});
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   const format = body.format || event.get("format") || "pool-to-bracket";
   const keepImported = importedGrid(event, prefs);
   const generatePool = formatWantsPool(format) && !keepImported;
@@ -715,7 +715,7 @@ function autoSchedule(app, event, body) {
   // Selecting a bracket format or drawing a tree must not rewrite an imported
   // pool grid. Replace only applies when we are generating new pool games.
   if (prefs.replace && generatePool) {
-    const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
     for (const row of old) {
       if (row.get("status") === "final") continue;
       app.delete(row);
@@ -789,7 +789,7 @@ function autoSchedule(app, event, body) {
   return {
     games: placed.length,
     leftover: remaining.length,
-    kept: keepImported ? app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id }).length : 0,
+    kept: keepImported ? app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id }).length : 0,
     note: keepImported
       ? "Imported pool games were left in place. Drawing a bracket does not change pool play."
       : "",
@@ -956,7 +956,7 @@ function deleteGame(app, event, id) {
 }
 
 function poolResultCount(app, event) {
-  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
   let finals = 0;
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].get("status") === "final") finals++;
@@ -1008,7 +1008,7 @@ function seedList(app, event) {
 }
 
 function emptySeeds(app, event) {
-  const n = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id }).length;
+  const n = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id }).length;
   const size = n < 2 ? 0 : n <= 2 ? 2 : n <= 4 ? 4 : 8;
   const out = [];
   for (let i = 0; i < size; i++) out.push({ id: "", name: "" });
@@ -1176,7 +1176,7 @@ function drawDoubleElim(app, event, seeds, flight) {
 function rematchKeys(app, event) {
   const keys = [];
   try {
-    const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
     for (let i = 0; i < rows.length; i++) {
       const a = rows[i].get("home") || "";
       const b = rows[i].get("away") || "";
@@ -1215,7 +1215,7 @@ function fillEmptySeat(rec, field, teamId) {
 }
 
 function fillEmptyBracket(app, event) {
-  const existing = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+  const existing = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 2000, 0, { e: event.id });
   if (!existing.length) return { filled: 0 };
   const seeds = seedList(app, event);
   let filled = 0;
@@ -1253,7 +1253,7 @@ function fillEmptyBracket(app, event) {
 }
 
 function stampEmptyTimes(app, event) {
-  const rows = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 400, 0, { e: event.id });
+  const rows = app.findRecordsByFilter("bracket_games", "event = {:e}", "round,slot", 2000, 0, { e: event.id });
   if (!rows.length) return;
   const day = dateOnly(event.get("end") || event.get("start"));
   const start = event.get("hours_start") || "08:00";
@@ -1297,7 +1297,7 @@ function buildBracket(app, event, opts) {
   if (opts.format && opts.format !== "imported") event.set("format", opts.format);
   else if (event.get("format") === "imported") event.set("format", "pool-to-bracket");
   const seeds = empty ? [] : seedList(app, event);
-  const registered = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: event.id }).length;
+  const registered = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id }).length;
   const assigned = br.assignFlights(seeds, plan, { empty: empty, registered: registered });
   const missing = br.missingSplits(assigned);
   if (missing.length && !empty) {
@@ -1362,7 +1362,7 @@ function buildBracket(app, event, opts) {
   if (preview) return payload;
   app.save(event);
   if (opts.replace !== false && opts.replace !== "false") {
-    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 2000, 0, { e: event.id });
     for (const row of old) {
       if (row.get("status") === "final") continue;
       app.delete(row);
@@ -1379,7 +1379,7 @@ function buildBracket(app, event, opts) {
 }
 
 function clearCollectionGames(app, event, collection) {
-  const rows = app.findRecordsByFilter(collection, "event = {:e}", "", 400, 0, { e: event.id });
+  const rows = app.findRecordsByFilter(collection, "event = {:e}", "", 2000, 0, { e: event.id });
   if (!rows.length) return { deleted: 0, kept: 0, note: "Nothing to clear." };
   let finals = 0;
   for (let i = 0; i < rows.length; i++) {
@@ -1441,7 +1441,7 @@ function saveCustomBracket(app, event, body) {
     } catch (err) {}
   }
   if (body.replace === true || body.replace === "true") {
-    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 400, 0, { e: event.id });
+    const old = app.findRecordsByFilter("bracket_games", "event = {:e}", "", 2000, 0, { e: event.id });
     for (let i = 0; i < old.length; i++) {
       if (old[i].get("status") === "final") continue;
       if (keep[old[i].id]) continue;
@@ -1612,7 +1612,7 @@ function rainUpdate(app, event, body) {
   }
   app.save(event);
 
-  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 400, 0, { e: event.id });
+  const rows = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 2000, 0, { e: event.id });
   const delay = Number(body.delay_minutes || 0);
   const after = body.after_time || "00:00";
   const day = body.date || "";
@@ -1666,7 +1666,7 @@ function rainUpdate(app, event, body) {
       field.set("status", "wet");
       app.save(field);
       const open = app.findRecordsByFilter("fields", "event = {:e} && status = 'open'", "name", 20, 0, { e: event.id });
-      const later = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 400, 0, { e: event.id });
+      const later = app.findRecordsByFilter("event_schedule", "event = {:e}", "date,time", 2000, 0, { e: event.id });
       for (const row of later) {
         if (row.get("status") === "final") continue;
         if (row.get("field") !== field.id && row.get("field_name") !== field.get("name")) continue;

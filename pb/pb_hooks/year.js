@@ -100,7 +100,7 @@ function yearBoard(app, year) {
     eventList.push({ name: ev.get("name"), slug: ev.get("slug"), venue: ev.get("venue") || "", ages: ev.get("ages") || "" });
     const seenClubs = {};
     const etById = {};
-    const roster = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: ev.id });
+    const roster = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: ev.id });
     for (const t of roster) {
       etById[t.id] = clubKey(app, t);
       const ck = etById[t.id].id;

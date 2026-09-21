@@ -388,7 +388,7 @@ function eventTiebreak(app, eventId) {
 
 function poolStandings(app, eventId) {
   const eventOrder = eventTiebreak(app, eventId);
-  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 80, 0, { e: eventId });
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: eventId });
   const published = teams.some(function (t) {
     return Number(t.get("published_w") || 0) + Number(t.get("published_l") || 0) + Number(t.get("published_t") || 0) > 0;
   });
@@ -408,7 +408,7 @@ function poolStandings(app, eventId) {
     "event_schedule",
     "event = {:e} && status = 'final'",
     "",
-    400,
+    2000,
     0,
     { e: eventId },
   );
@@ -494,7 +494,7 @@ function importSchedule(app, event, csv) {
 
 function importIntoEvent(app, event, csv, replace) {
   if (replace === true || replace === "true" || replace === "on" || replace === "1") {
-    const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 400, 0, { e: event.id });
+    const old = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
     for (let i = 0; i < old.length; i++) app.delete(old[i]);
   }
   return importSchedule(app, event, csv);
@@ -621,7 +621,7 @@ function applyImportedFeeds(app, event, games) {
 }
 
 function advanceBracket(app, eventId) {
-  const games = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 400, 0, { e: eventId });
+  const games = app.findRecordsByFilter("bracket_games", "event = {:e}", "slot", 2000, 0, { e: eventId });
   const byFlight = {};
   for (let i = 0; i < games.length; i++) {
     const fl = games[i].get("flight") || "";
@@ -723,8 +723,8 @@ function eventLeaders(app, eventId, opts) {
   const minAb = opts.min_ab != null ? Number(opts.min_ab) : WEEKEND_MIN_AB;
   const minIp = opts.min_ip != null ? Number(opts.min_ip) : WEEKEND_MIN_IP;
   const minIpOuts = Math.round(minIp * 3);
-  const hitRows = app.findRecordsByFilter("event_hitting", "event = {:e}", "", 800, 0, { e: eventId });
-  const pitRows = app.findRecordsByFilter("event_pitching", "event = {:e}", "", 800, 0, { e: eventId });
+  const hitRows = app.findRecordsByFilter("event_hitting", "event = {:e}", "", 5000, 0, { e: eventId });
+  const pitRows = app.findRecordsByFilter("event_pitching", "event = {:e}", "", 5000, 0, { e: eventId });
   const hit = {};
   for (const row of hitRows) {
     const id = row.get("event_player");
@@ -879,7 +879,7 @@ function listOverall(schedule, bracket) {
 
 function publicBoard(app, event, auth) {
   const eventId = event.id;
-  const bracketRecs = app.findRecordsByFilter("bracket_games", "event = {:e}", "flight,round,slot", 400, 0, { e: eventId });
+  const bracketRecs = app.findRecordsByFilter("bracket_games", "event = {:e}", "flight,round,slot", 2000, 0, { e: eventId });
   function teamName(id) {
     if (!id) return "";
     try { return app.findRecordById("event_teams", id).get("name"); } catch (err) { return ""; }
