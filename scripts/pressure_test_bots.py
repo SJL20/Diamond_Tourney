@@ -442,14 +442,14 @@ def main() -> int:
     env = os.environ.copy()
     env["PB_URL"] = BASE
     listed = subprocess.check_output(
-        [sys.executable, str(ROOT / "scripts/bot_c_event_box.py"), "--list", "--event", slug],
+        [sys.executable, str(ROOT / "scripts/bot_c_event_box.py"), "--list", "--event", slug, "--base", BASE],
         env=env, text=True,
     )
     if '"boxes"' not in listed:
         print("FAIL  bot_c --list missing boxes")
         return 1
     monitor = subprocess.check_output(
-        [sys.executable, str(ROOT / "scripts/bot_gc_monitor.py"), "--list"],
+        [sys.executable, str(ROOT / "scripts/bot_gc_monitor.py"), "--list", "--base", BASE],
         env=env, text=True,
     )
     if "watch" not in monitor and "policy" not in monitor:
