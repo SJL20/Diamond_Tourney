@@ -687,7 +687,7 @@ routerAdd("POST", "/api/events/{slug}/bracket/build", (e) => {
     e.app.save(event);
   }
   return e.json(200, schedule.buildBracket(e.app, event, {
-    consolation: prefs.consolation,
+    consolation: body.consolation === true || body.consolation === "true" || body.consolation === "on",
     replace: body.replace !== false,
     empty: body.empty || body.draw_empty,
     confirm: body.confirm,
@@ -814,7 +814,11 @@ routerAdd("POST", "/api/bot/event-update", (e) => {
     if (body.home_runs != null) row.set("home_runs", body.home_runs);
     if (body.away_runs != null) row.set("away_runs", body.away_runs);
     if (body.status) row.set("status", body.status);
-    if (e.auth) row.set("scored_by", e.auth.id);
+    if (e.auth) {
+      try {
+        require(__hooks + "/score.js").setUserRel(e.app, row, "scored_by", e.auth);
+      } catch (err) {}
+    }
     e.app.save(row);
     if (body.box) score.attachUpdateBox(e.app, event, row, body, e.auth);
   }

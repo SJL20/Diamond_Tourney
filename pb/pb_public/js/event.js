@@ -116,8 +116,8 @@ function formatWeekendDates(start, end) {
 function directorBoardActions(slug) {
   return `<div class="actions board-director-actions">
     <a class="btn" data-link href="/directors/import?into=${encodeURIComponent(slug)}">Import a schedule</a>
-    <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/admin#admin-scheduler">Build pool play</a>
-    <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/admin#admin-scheduler">Draw bracket from standings</a>
+    <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/admin#admin-pool-scheduler">Build pool play</a>
+    <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/admin#admin-bracket-scheduler">Draw bracket from standings</a>
   </div>`;
 }
 
@@ -318,24 +318,40 @@ function bindFieldRows(root, startCount, ev = {}) {
   syncRemoves();
 }
 
+function weekendFormatValue(fmt) {
+  if (!fmt || fmt === "imported" || fmt === "pool-double-elim") return "pool-to-bracket";
+  if (fmt === "double-elim" || fmt === "4gg-double-elim") return "single-elim";
+  return fmt;
+}
+
+function weekendFormatSelect(fmt) {
+  const v = weekendFormatValue(fmt);
+  const opts = [
+    ["pool-to-bracket", "Pool play, then bracket"],
+    ["pool-only", "Pool play only"],
+    ["round-robin", "Round robin"],
+    ["single-elim", "Bracket only"],
+  ];
+  return `<label>Weekend format
+      <select name="format">
+        ${opts.map(([val, lab]) => `<option value="${val}" ${v === val ? "selected" : ""}>${lab}</option>`).join("")}
+      </select>
+    </label>`;
+}
+
+function flightFormatValue(fl) {
+  if (fl && fl.format) return fl.format;
+  const evf = (currentEvent && currentEvent.format) || "";
+  if (evf === "double-elim" || evf === "pool-double-elim") return "double-elim";
+  if (evf === "4gg-double-elim") return "4gg-double-elim";
+  return "single-elim";
+}
+
 function setupFormatFields(ev = {}, extras = {}) {
   const fmt = !ev.format || ev.format === "imported" ? "pool-to-bracket" : ev.format;
-  const flights = flightPlanList(ev);
-  const teams = extras.teams || [];
-  const fields = extras.fields || ev.fields || [];
   return `
-    <label>Format
-      <select name="format">
-        <option value="pool-to-bracket" ${fmt === "pool-to-bracket" ? "selected" : ""}>Pool play, then single-elim bracket</option>
-        <option value="pool-double-elim" ${fmt === "pool-double-elim" ? "selected" : ""}>Pool play, then double-elim bracket</option>
-        <option value="round-robin" ${fmt === "round-robin" ? "selected" : ""}>Round robin</option>
-        <option value="pool-only" ${fmt === "pool-only" ? "selected" : ""}>Pool play only</option>
-        <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
-        <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
-      </select>
-    </label>
-    ${flightPlanDesk(flights, teams, fields)}
-    <p class="muted">Pool games stay on the diamonds you name. Each bracket is sized by you — a count, a seed range, or a team list. There is no automatic even split. Changing format or drawing a bracket does not rewrite an imported pool grid.</p>
+    ${weekendFormatSelect(fmt)}
+    <p class="muted">Weekend format is the shape of the event: pool then a bracket, pool only, round robin, or bracket only. Single vs double elimination is chosen on each bracket card, not here. Changing format does not rewrite an imported pool grid.</p>
   `;
 }
 
@@ -352,7 +368,7 @@ function flightPlanDesk(flights, teams, fields) {
   const rows = defaultFlightRows(flights);
   return `
     <div class="flight-plan" data-flight-plan>
-      <p class="muted">One bracket by default. Add another only if this weekend needs a second tree — you name each one and assign its own split. There is no automatic even split.</p>
+      <p class="muted">One bracket by default. Add another only if this weekend needs a second tree — you name each one and assign its own split. There is no automatic even split. Single or double elim is set on the card, not by the weekend format.</p>
       <input type="hidden" name="flight_count" value="${rows.length}">
       <p class="muted" data-flight-remainder></p>
       <button type="button" class="btn ghost" data-add-flight>Add another bracket</button>
@@ -369,13 +385,13 @@ function flightCard(fl, i, teams, fields, canRemove) {
   const seedTo = fl.seed_to || "";
   const poolFrom = fl.pool_place_from || "";
   const poolTo = fl.pool_place_to || "";
-  const seedList = (fl.seeds || []).join(", ");
   const byeSeeds = (fl.bye_seeds || []).join(", ");
   const assigned = new Set(fl.team_ids || fl.teams || []);
   const pickedFields = new Set(fl.fields || []);
-  const fmt = fl.format || "";
+  const fmt = flightFormatValue(fl);
   const seedMode = fl.seed_mode || "reseed";
   const byeMode = fl.bye_mode || "top-seeds";
+  const ifnOn = fmt.indexOf("double") >= 0 ? fl.if_necessary !== false : !!fl.if_necessary;
   return `<fieldset class="flight-card" data-flight-card>
     <div class="flight-card-head">
       <span class="flight-card-title">Bracket ${i + 1}</span>
@@ -390,7 +406,6 @@ function flightCard(fl, i, teams, fields, canRemove) {
       <div class="form-grid two">
         <label>Overall seeds from <input name="flight_seed_from" type="number" min="0" value="${escapeHtml(String(seedFrom))}" placeholder="1"></label>
         <label>through <input name="flight_seed_to" type="number" min="0" value="${escapeHtml(String(seedTo))}" placeholder="8"></label>
-        <label>Or specific overall seeds <input name="flight_seeds" value="${escapeHtml(seedList)}" placeholder="1, 4, 5, 8"></label>
         <label>Pool finish from <input name="flight_pool_from" type="number" min="0" value="${escapeHtml(String(poolFrom))}" placeholder="1"></label>
         <label>through <input name="flight_pool_to" type="number" min="0" value="${escapeHtml(String(poolTo))}" placeholder="2 = winners and runners-up"></label>
         <label>Seeds inside this bracket
@@ -401,11 +416,9 @@ function flightCard(fl, i, teams, fields, canRemove) {
         </label>
         <label>This bracket’s format
           <select name="flight_format">
-            <option value="" ${!fmt ? "selected" : ""}>Same as weekend format</option>
             <option value="single-elim" ${fmt === "single-elim" ? "selected" : ""}>Single elimination</option>
             <option value="double-elim" ${fmt === "double-elim" ? "selected" : ""}>Double elimination</option>
             <option value="4gg-double-elim" ${fmt === "4gg-double-elim" ? "selected" : ""}>4-game-guarantee double elim</option>
-            <option value="round-robin" ${fmt === "round-robin" ? "selected" : ""}>Round robin</option>
           </select>
         </label>
         <label>Pairing
@@ -429,7 +442,7 @@ function flightCard(fl, i, teams, fields, canRemove) {
       <label class="check"><input type="checkbox" name="flight_later" ${(fl.later_slot_for_top_seeds !== false) ? "checked" : ""}> When a round needs two times, the top seed’s half plays later</label>
       <label class="check"><input type="checkbox" name="flight_consolation" ${fl.consolation ? "checked" : ""}> Consolation / placement games</label>
       <label class="check"><input type="checkbox" name="flight_third" ${fl.third_place ? "checked" : ""}> Third-place game</label>
-      <label class="check"><input type="checkbox" name="flight_ifn" ${fl.if_necessary ? "checked" : ""}> If-necessary championship (double elim)</label>
+      <label class="check"><input type="checkbox" name="flight_ifn" ${ifnOn ? "checked" : ""}> If-necessary championship (double elim)</label>
       ${(fields || []).length ? `<fieldset class="flight-fields"><legend>Diamonds for this bracket</legend>${fields.map((f) => {
         const fname = typeof f === "string" ? f : (f.name || "");
         if (!fname) return "";
@@ -439,6 +452,7 @@ function flightCard(fl, i, teams, fields, canRemove) {
         `<label class="check"><input type="checkbox" name="flight_team" value="${escapeHtml(t.id)}" ${assigned.has(t.id) ? "checked" : ""}> ${escapeHtml(t.name)}</label>`).join("")}</fieldset>` : ""}
     </details>
     <input type="hidden" name="flight_id" value="${escapeHtml(fl.id || "")}">
+    <input type="hidden" name="flight_seeds" value="${escapeHtml((fl.seeds || []).join(", "))}">
   </fieldset>`;
 }
 
@@ -1040,6 +1054,7 @@ const ROUND_META = {
   R16: { label: "Round of 16", order: 0.5 },
   QF: { label: "Quarterfinals", order: 1 },
   SF: { label: "Semifinals", order: 2 },
+  WF: { label: "Winners final", order: 2.5 },
   F: { label: "Championship", order: 3 },
   IFN: { label: "If necessary", order: 4 },
   CSF: { label: "Consolation semis", order: 1 },
@@ -1050,6 +1065,8 @@ const ROUND_META = {
   L1: { label: "Losers round 1", order: 1 },
   L2: { label: "Losers round 2", order: 2 },
   L3: { label: "Losers round 3", order: 3 },
+  L4: { label: "Losers round 4", order: 3.5 },
+  L5: { label: "Losers round 5", order: 3.6 },
   LF: { label: "Losers final", order: 4 },
 };
 
@@ -1081,6 +1098,7 @@ function gameSide(g) {
   if (g.side) return g.side;
   const r = String(g.round || "").toUpperCase();
   if (r === "LF" || /^L(\d|QF|SF)/.test(r)) return "losers";
+  if (r === "WF" || r === "IFN" || r === "GF") return "championship";
   return /^(C|3RD|5TH|CONS)/.test(r) ? "consolation" : "championship";
 }
 
@@ -2799,13 +2817,16 @@ async function directorApproveBanner(slug, ev) {
 
 function adminPaneFromHash() {
   const id = String(location.hash || "").replace(/^#admin-/, "");
-  const allowed = ["overview", "setup", "venue", "scheduler", "rain", "teams", "stats", "boxes", "assist"];
+  if (id === "scheduler") return "pool-scheduler";
+  const allowed = ["overview", "setup", "venue", "pool-scheduler", "bracket-scheduler", "rain", "teams", "stats", "boxes", "assist"];
   return allowed.includes(id) ? id : "overview";
 }
 
 function bindAdminRail(root) {
   const setPane = (id, opts = {}) => {
-    const pane = ["overview", "setup", "venue", "scheduler", "rain", "teams", "stats", "boxes", "assist"].includes(id) ? id : "overview";
+    const pane = ["overview", "setup", "venue", "pool-scheduler", "bracket-scheduler", "scheduler", "rain", "teams", "stats", "boxes", "assist"].includes(id)
+      ? (id === "scheduler" ? "pool-scheduler" : id)
+      : "overview";
     root.querySelectorAll("[data-admin-pane]").forEach((el) => {
       el.hidden = el.dataset.adminPane !== pane;
     });
@@ -3347,7 +3368,8 @@ export async function eventAdmin(slug) {
     ["overview", "Overview", ""],
     ["setup", "Tournament setup", ""],
     ["venue", "Venue setups", fields.length ? String(fields.length) : ""],
-    ["scheduler", "Scheduler", games.length ? String(games.length) : ""],
+    ["pool-scheduler", "Pool scheduler", games.length ? String(games.length) : ""],
+    ["bracket-scheduler", "Bracket scheduler", (plan.bracket || []).length ? String(plan.bracket.length) : ""],
     ["rain", "Rain notice", rainOn ? ev.rain_status : ""],
     ["teams", "Teams", teams.length ? String(teams.length) : ""],
     ["stats", "Approve stats", pending.length ? String(pending.length) : ""],
@@ -3378,7 +3400,7 @@ export async function eventAdmin(slug) {
       <div class="admin-stage">
         <section class="card" data-admin-pane="overview">
           <h2>Overview</h2>
-          <p class="muted">Open one section at a time. Venue and hours first, then the scheduler. Rain and team packets stay on their own desks.</p>
+          <p class="muted">Open one section at a time. Venue and hours first, then the pool scheduler, then the bracket scheduler. Rain and team packets stay on their own desks.</p>
           ${rainBanner(ev)}
           <div class="actions">
             <button class="btn" id="sync-now" type="button">Refresh links</button>
@@ -3391,7 +3413,8 @@ export async function eventAdmin(slug) {
           <ul class="admin-jump">
             <li><button type="button" class="link" data-admin-go="stats">${pending.length ? `Approve stats (${pending.length} waiting)` : "Approve stats"}</button></li>
             <li><button type="button" class="link" data-admin-go="venue">Set fields and hours</button></li>
-            <li><button type="button" class="link" data-admin-go="scheduler">Build the weekend grid</button></li>
+            <li><button type="button" class="link" data-admin-go="pool-scheduler">Build the pool grid</button></li>
+            <li><button type="button" class="link" data-admin-go="bracket-scheduler">Draw the bracket</button></li>
             <li><button type="button" class="link" data-admin-go="rain">Post a rain notice</button></li>
             <li><button type="button" class="link" data-admin-go="teams">Review team packets</button></li>
           </ul>
@@ -3434,58 +3457,33 @@ export async function eventAdmin(slug) {
           </form>
           ${venuePhotoDesk(slug, plan.photos || [])}
         </section>
-        <section class="card" data-admin-pane="scheduler" hidden>
-          <h2>Scheduler</h2>
-          <p class="muted">Order of operations: set fields and hours, import or build the pool, play the games, then draw the bracket from standings. ${ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported")
+        <section class="card" data-admin-pane="pool-scheduler" hidden>
+          <h2>Pool scheduler</h2>
+          <p class="muted">Set days and hours, then import or build pool play. ${ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported")
             ? "This weekend has an imported pool grid. Drawing a bracket does not change imported pool games."
-            : "A diamond is only used while it is open that day."}</p>
+            : "A diamond is only used while it is open that day."} Single vs double elimination lives on the bracket scheduler, not here.</p>
           ${scheduleImportDesk()}
           <form class="form wide" id="auto-form">
-            <label>Format
-              <select name="format">
-                <option value="pool-to-bracket" ${!ev.format || ev.format === "pool-to-bracket" || ev.format === "imported" ? "selected" : ""}>Pool play, then single-elim bracket</option>
-                <option value="pool-double-elim" ${ev.format === "pool-double-elim" ? "selected" : ""}>Pool play, then double-elim bracket</option>
-                <option value="round-robin" ${ev.format === "round-robin" ? "selected" : ""}>Round robin</option>
-                <option value="pool-only" ${ev.format === "pool-only" ? "selected" : ""}>Pool play only</option>
-                <option value="single-elim" ${ev.format === "single-elim" ? "selected" : ""}>Single elimination</option>
-                <option value="double-elim" ${ev.format === "double-elim" ? "selected" : ""}>Double elimination</option>
-              </select>
-            </label>
             <div class="form-grid two">
               <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml((ev.scheduler && ev.scheduler.days && ev.scheduler.days.length ? ev.scheduler.days : [ev.start, ev.end].filter(Boolean)).join("\n") || "")}</textarea></label>
               <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="${escapeHtml(String((ev.scheduler && ev.scheduler.games_per_team) || 2))}"></label>
               <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
               <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
             </div>
-            ${flightPlanDesk(flightPlanList(ev), teams, fields)}
-            <p class="muted">Save the format and named brackets without building games if you only need to switch pool / bracket style.</p>
+            <p class="muted">Save days and hours without building games.</p>
             <div class="actions">
-              <button class="btn ghost" id="save-scheduler-settings" type="button">Save weekend settings</button>
+              <button class="btn ghost" id="save-scheduler-settings" type="button">Save pool settings</button>
             </div>
             <div class="setup-block">
               <h3>Pool play</h3>
               <p class="muted">Setup-time action. Run once before the tournament. ${ev.scheduler && ev.scheduler.origin === "imported" ? "Imported games stay; this will not replace them." : ""}</p>
               <label class="check"><input type="checkbox" name="replace"${games.length || ev.format === "imported" || (ev.scheduler && ev.scheduler.origin === "imported") ? "" : " checked"}> Clear and rebuild the schedule (keeps completed games). This deletes every unplayed weekend game, not only pool pairings.</label>
-              <label class="check"><input type="checkbox" name="draw_bracket"${ev.scheduler && ev.scheduler.draw_bracket ? " checked" : ""}> Also post a blank bracket now (TBD placeholders you can print for the fence before seeds are known)</label>
               <div class="actions">
                 <button class="btn" type="submit">Build pool schedule</button>
                 <button class="btn ghost" id="clear-schedule" type="button">Clear schedule</button>
               </div>
             </div>
-            <div class="setup-block">
-              <h3>Bracket</h3>
-              <p class="muted">After pool play. Seeds from standings. ${games.filter((g) => g.status === "final").length ? "" : "No pool results yet. Enter scores, or use Draw empty bracket slots to post a blank bracket."}</p>
-              <label class="check"><input type="checkbox" name="consolation"${!ev.scheduler || ev.scheduler.consolation !== false ? " checked" : ""}> Include consolation / placement games (only for a bracket that does not set its own)</label>
-              <div class="actions">
-                <button class="btn ghost" id="preview-bracket" type="button">Preview bracket</button>
-                <button class="btn" id="build-bracket" type="button"${games.filter((g) => g.status === "final").length ? "" : " disabled"}>Write bracket from standings</button>
-                <button class="btn ghost" id="draw-empty-bracket" type="button">Draw empty bracket slots</button>
-                <button class="btn ghost" id="clear-bracket" type="button">Clear bracket</button>
-              </div>
-              <div id="bracket-preview" hidden></div>
-            </div>
           </form>
-          ${bracketImportDesk()}
           <h3>Games by field</h3>
           ${games.length ? table(["Game", "When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
             <td>${gameNoCell(g)}</td>
@@ -3519,6 +3517,28 @@ export async function eventAdmin(slug) {
             </div>
             <button class="btn" type="submit"${teams.length < 2 ? " disabled" : ""}>Add game</button>
           </form>
+        </section>
+        <section class="card" data-admin-pane="bracket-scheduler" hidden>
+          <h2>Bracket scheduler</h2>
+          <p class="muted">After pool play — or immediately for a bracket-only weekend. Name each tree, pick single or double elim on the card, then preview or write. Consolation games are added only when you check that box on the card. ${games.filter((g) => g.status === "final").length ? "" : "No pool results yet. Enter scores, or use Draw empty bracket slots to post a blank bracket."}</p>
+          <form class="form wide" id="bracket-form">
+            ${flightPlanDesk(flightPlanList(ev), teams, fields)}
+            <p class="muted">Save named brackets without writing games if you only need to change the split or single vs double.</p>
+            <div class="actions">
+              <button class="btn ghost" id="save-bracket-settings" type="button">Save bracket settings</button>
+            </div>
+            <div class="setup-block">
+              <h3>Draw</h3>
+              <div class="actions">
+                <button class="btn ghost" id="preview-bracket" type="button">Preview bracket</button>
+                <button class="btn" id="build-bracket" type="button"${games.filter((g) => g.status === "final").length || weekendFormatValue(ev.format) === "single-elim" ? "" : " disabled"}>Write bracket from standings</button>
+                <button class="btn ghost" id="draw-empty-bracket" type="button">Draw empty bracket slots</button>
+                <button class="btn ghost" id="clear-bracket" type="button">Clear bracket</button>
+              </div>
+              <div id="bracket-preview" hidden></div>
+            </div>
+          </form>
+          ${bracketImportDesk()}
           ${customBracketDesk(ev, teams, plan.bracket || [])}
         </section>
         <section class="card" data-admin-pane="rain" hidden>
@@ -3686,11 +3706,18 @@ export async function eventAdmin(slug) {
       end_time: fd.get("end_time") || "18:00",
       hours_start: fd.get("start_time") || "08:00",
       hours_end: fd.get("end_time") || "18:00",
-      consolation: fd.get("consolation") === "on",
+      consolation: false,
       replace: fd.get("replace") === "on",
-      draw_bracket: fd.get("draw_bracket") === "on",
-      format: fd.get("format") || ev.format || "pool-to-bracket",
-      bracket_plan: readFlightPlan(document.getElementById("auto-form") || document.getElementById("guide-form")),
+      draw_bracket: false,
+      format: ev.format || "pool-to-bracket",
+    };
+  }
+  function bracketBody() {
+    const plan = readFlightPlan(document.getElementById("bracket-form") || document.getElementById("guide-form"));
+    return {
+      format: ev.format || "pool-to-bracket",
+      consolation: false,
+      bracket_plan: plan,
     };
   }
   document.getElementById("save-scheduler-settings")?.addEventListener("click", async () => {
@@ -3699,7 +3726,14 @@ export async function eventAdmin(slug) {
     delete body.draw_bracket;
     try {
       await adminPost(slug, "/settings", body);
-      flashSaved("Weekend settings saved");
+      flashSaved("Pool settings saved");
+      eventAdmin(slug);
+    } catch (err) { showErr(err); }
+  });
+  document.getElementById("save-bracket-settings")?.addEventListener("click", async () => {
+    try {
+      await adminPost(slug, "/settings", bracketBody());
+      flashSaved("Bracket settings saved");
       eventAdmin(slug);
     } catch (err) { showErr(err); }
   });
@@ -3736,10 +3770,9 @@ export async function eventAdmin(slug) {
       <div class="table-wrap"><table class="card-table"><thead><tr><th>Bracket</th><th>Label</th><th>Round</th><th>Home</th><th>Away</th><th>Field</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   document.getElementById("preview-bracket")?.addEventListener("click", async () => {
-    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
+    const body = bracketBody();
     body.preview = true;
     body.empty = !games.filter((g) => g.status === "final").length;
-    delete body.replace;
     try {
       const out = await adminPost(slug, "/bracket/preview", body);
       renderBracketPreview(out);
@@ -3747,9 +3780,7 @@ export async function eventAdmin(slug) {
     } catch (err) { showErr(err); }
   });
   document.getElementById("build-bracket").addEventListener("click", async () => {
-    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
-    delete body.replace;
-    delete body.draw_bracket;
+    const body = bracketBody();
     const open = games.filter((g) => g.status !== "final").length;
     if (open && games.some((g) => g.status === "final") && !confirm("Pool play is not finished (" + open + " games still open). Draw from the current standings anyway?")) return;
     if (open && games.some((g) => g.status === "final")) body.confirm = true;
@@ -3762,9 +3793,8 @@ export async function eventAdmin(slug) {
     } catch (err) { showErr(err); }
   });
   document.getElementById("draw-empty-bracket")?.addEventListener("click", async () => {
-    const body = schedulerBody(new FormData(document.getElementById("auto-form")));
+    const body = bracketBody();
     body.empty = true;
-    delete body.replace;
     try {
       await adminPost(slug, "/settings", body);
       const out = await adminPost(slug, "/bracket/build", body);

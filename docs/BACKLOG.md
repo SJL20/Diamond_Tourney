@@ -618,9 +618,9 @@ season book — do not change metric formulas.
 
 **High. Owner could not tell what the buttons did — and he is the domain expert.**
 
-On `/t/<slug>/admin#admin-scheduler`, the two primary buttons sit side by side
-with no indication that they belong to different moments in the weekend, and the
-checkbox labels describe implementation rather than consequence.
+On `/t/<slug>/admin#admin-pool-scheduler` and `#admin-bracket-scheduler`, the
+two primary actions sit on separate director tabs so pool build and bracket
+draw are not side-by-side. Old `#admin-scheduler` links open the pool tab.
 
 ### What each control actually does
 
@@ -632,8 +632,8 @@ checkbox labels describe implementation rather than consequence.
   Skips anything `status === "final"`.
 - **Also draw empty bracket slots now** — builds the bracket skeleton with TBD
   placeholders alongside the pool schedule.
-- **If you draw a bracket, include consolation games** — adds losers-bracket and
-  placement games.
+- **Consolation / placement games** — opt-in on the bracket card only. Off by
+  default. This is not a losers bracket (that is double elim).
 
 ### Problems
 
@@ -1607,13 +1607,14 @@ Requirements:
 Gold and Silver need not match. Gold double elim, Silver single elim is common —
 the top flight is worth more games, the lower flight has to finish earlier.
 
-Per flight: single elim, double elim, 4GG double elim, round robin, or pool to
-bracket.
+Per flight: single elim, double elim, or 4GG double elim. Weekend format is
+pool-then-bracket / pool only / round robin / bracket only. Single vs double
+is not chosen on the weekend format.
 
 ## 26f. Per-flight options
 
 - **Third place game** — on or off, per flight
-- **Consolation side** — on or off
+- **Consolation side** — on or off, default off. Never added unless the director checks it.
 - **If-necessary game** in double elim, where the losers-bracket winner must beat
   the winners-bracket team twice
 - **Re-seed between rounds** vs a fixed bracket. Fixed is standard in youth
@@ -1656,7 +1657,8 @@ change that breaks the structure; do not block it. The director is the authority
 - [x] Preview shown, with a plain-language summary, before anything is written
 - [x] Third place and if-necessary games configurable per flight
 - [x] **Reproduce Keystone Clash 2026: 8 teams, one flight, 4GG double elim,
-      14 games with correct advancement**
+      14 games with correct advancement** (auto-draw: 14 without IFN, 15 with IFN;
+      losers tree feeds LF into the championship vs the WF winner)
 - [x] **Reproduce Scarecrow Slugfest: 14 teams, 8/6 Gold/Silver, byes as above**
 
 

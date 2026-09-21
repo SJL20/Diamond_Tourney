@@ -516,6 +516,7 @@ function inferSide(round, side) {
   const r = String(round || "").toUpperCase();
   if (r === "LF" || /^L(\d|QF|SF)/.test(r)) return "losers";
   if (/^(C|3RD|5TH|7TH|CONS)/.test(r)) return "consolation";
+  if (r === "WF" || r === "IFN" || r === "GF" || r === "F") return "championship";
   return "championship";
 }
 
@@ -530,6 +531,13 @@ function loserId(g) {
 }
 
 function advanceFlight(app, games) {
+  const deShape = games.some(function (g) {
+    const r = String(g.get("round") || "").toUpperCase();
+    const kind = g.get("bracket_kind") || "";
+    const side = inferSide(g.get("round"), g.get("side"));
+    return r === "WF" || r === "IFN" || side === "losers" || kind === "losers";
+  });
+  if (deShape) return;
   const champ = games.filter(function (g) {
     const kind = g.get("bracket_kind") || "";
     if (kind === "losers") return false;
