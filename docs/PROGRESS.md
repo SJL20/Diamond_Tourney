@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 121 unit/integration cases + 13 acceptance checks |
+| Tests | 123 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -211,6 +211,26 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Mobile site-admin account would not load
+
+`/account` showed **Could not load this account** after a successful login
+when `GET /api/account/home` was not 200. After the bracket updates, a site
+admin home mapped every weekend through full `eventJson` (bracket plan,
+fields, packet). That is too much for a phone. The page also used three
+PocketBase clients, so a phone that reloads after the password manager saves
+could send an empty `Authorization` header.
+
+Account and admin lists now return slim cards. One shared client keeps the
+token in memory, `localStorage`, and a first-party cookie, and sends
+`Bearer`. Superuser home no longer throws on missing `display_name` / follow
+rules. If the primary site-admin address already has a `users` row, boot
+promotes it to verified `region_admin`. Day-to-day admin is still that
+verified address, not a new `/_/` superuser. The address is not added to a
+public page.
+
+Covered by `test_account_home_site_admin_cards_are_slim` and
+`test_region_admin_account_home_is_site_admin`.
 
 ### 2026-09-21 — Stats sort and follow a team or tournament
 

@@ -1,4 +1,5 @@
 import { canAdminEvent, flashSaved, isDirector as recordIsDirector, isSiteAdmin, pageShell } from "./chrome.js";
+import { authHeader, pb as eventPb } from "./client.js";
 import { battingAverage, era, ipToOuts } from "./metrics.js";
 import {
   asLineList,
@@ -12,7 +13,6 @@ import {
 } from "./display.js";
 
 const eventRoot = () => document.getElementById("app");
-const eventPb = new PocketBase(location.origin);
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -196,10 +196,6 @@ async function bindFollowToggle() {
     if (kind === "team" && out.id) btn.dataset.followClub = out.id;
     paint(!active);
   });
-}
-
-function authHeader() {
-  return eventPb.authStore.token ? { Authorization: eventPb.authStore.token } : {};
 }
 
 // Packet files (insurance, rosters, birth certificates) are protected, so a
