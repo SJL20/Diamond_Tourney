@@ -897,6 +897,18 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 }
 .chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
 .stats-opt { margin: 8px 0 12px; }
+button.stat-col {
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  min-height: 44px;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+button.stat-col.on { color: var(--navy); text-decoration: underline; }
 .muted-row { color: var(--muted); }
 
 .error { color: var(--loss); }

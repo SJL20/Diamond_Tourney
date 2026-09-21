@@ -1061,6 +1061,12 @@ function accountHome(app, auth) {
       } catch (err) {}
     }
   } catch (err) {}
+  let following = { teams: [], tournaments: [] };
+  try {
+    following = require(__hooks + "/follow.js").listFollowing(app, auth);
+  } catch (err) {
+    following = { teams: [], tournaments: [] };
+  }
   return {
     user: {
       id: auth.id,
@@ -1072,6 +1078,7 @@ function accountHome(app, auth) {
     },
     created: created,
     joined: joined,
+    following: following,
   };
 }
 

@@ -39,6 +39,19 @@ function localHints() {
   </div>`;
 }
 
+function takeAfterLogin() {
+  let next = "";
+  try {
+    next = sessionStorage.getItem("dt-after-login") || "";
+    sessionStorage.removeItem("dt-after-login");
+  } catch (err) {
+    return "";
+  }
+  if (!next.startsWith("/t/")) return "";
+  if (next.indexOf("..") !== -1 || /[^A-Za-z0-9/_-]/.test(next)) return "";
+  return next;
+}
+
 function bindLogin(form) {
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -46,7 +59,9 @@ function bindLogin(form) {
     const err = document.getElementById("gate-error");
     try {
       await loginWithPassword(flowPb, data.get("email"), data.get("password"));
-      goFlow("/account");
+      const next = takeAfterLogin();
+      if (next) location.assign(next);
+      else goFlow("/account");
     } catch (e) {
       err.hidden = false;
       err.textContent = "Login failed. Check the email and password.";
@@ -106,7 +121,7 @@ function bindRegister(form) {
         : mailFailureText(out.verify_reason) + " Log in to open the account page.";
       return;
     }
-    location.assign("/account");
+    location.assign(takeAfterLogin() || "/account");
   });
 }
 
@@ -217,6 +232,54 @@ export async function startGate(forcedTab) {
   if (document.getElementById("find-form")) bindFind(document.getElementById("find-form"));
 }
 
+function viaLine(row) {
+  if (row.via === "team") {
+    return row.team ? `Because you follow ${row.team}` : "A team you follow is in this tournament";
+  }
+  if (row.via === "both") {
+    return row.team ? `You follow this tournament and ${row.team}` : "You follow this tournament";
+  }
+  return "You follow this tournament";
+}
+
+function followingBlocks(following) {
+  const tournaments = following.tournaments || [];
+  const teams = following.teams || [];
+  const tournamentList = tournaments.length ? `<ul class="list">${tournaments.map((row) => `
+    <li>
+      <div>
+        <b>${escapeHtml(row.name)}</b>
+        <span class="muted">${escapeHtml(viaLine(row))}</span>
+      </div>
+      <div class="list-actions">
+        <a class="btn" data-link href="/t/${escapeHtml(row.slug)}">Open board</a>
+        ${row.via === "event" || row.via === "both"
+          ? `<button class="btn ghost" type="button" data-unfollow-event="${escapeHtml(row.slug)}">Unfollow</button>`
+          : ""}
+      </div>
+    </li>`).join("")}</ul>` : `<section class="empty">You are not following a tournament yet. Open a board and choose Follow this tournament, or follow a team that is in one.</section>`;
+  const teamList = teams.length ? `<ul class="list">${teams.map((row) => `
+    <li>
+      <div>
+        <b>${escapeHtml(row.name)}</b>
+        <span class="muted">On this team's fan list. Your email stays off the public page.</span>
+      </div>
+      <div class="list-actions">
+        <button class="btn ghost" type="button" data-unfollow-team="${escapeHtml(row.id)}">Leave fan list</button>
+      </div>
+    </li>`).join("")}</ul>` : `<section class="empty">You are not on a team fan list yet.</section>`;
+  return `
+    <section id="following-tournaments">
+      <h2>Tournaments you follow</h2>
+      ${tournamentList}
+    </section>
+    <section id="following-teams">
+      <h2>Teams you follow</h2>
+      <p class="muted">Following a team adds you to its fan list. This page does not email that list, and your address is not shown on the public team page.</p>
+      ${teamList}
+    </section>`;
+}
+
 function eventCards(events, empty, mode) {
   if (!events.length) return `<section class="empty">${empty}</section>`;
   return `<ul class="list">${events.map((ev) => `
@@ -293,6 +356,7 @@ export async function accountHome() {
     ${justCard}
     ${book}
     ${confirmCard}
+    ${followingBlocks(home.following || { teams: [], tournaments: [] })}
     <section class="card" id="update-password">
       <h2>Update your password</h2>
       <form class="form wide" id="password-form">
@@ -332,6 +396,20 @@ export async function accountHome() {
       else note.textContent = "The confirmation email did not send. Try again in a little while.";
     });
   }
+  const dropFollow = async (body) => {
+    const sent = await fetch("/api/account/unfollow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: flowPb.authStore.token },
+      body: JSON.stringify(body),
+    });
+    if (sent.ok) accountHome();
+  };
+  flowRoot().querySelectorAll("[data-unfollow-event]").forEach((btn) => {
+    btn.addEventListener("click", () => dropFollow({ kind: "event", slug: btn.dataset.unfollowEvent }));
+  });
+  flowRoot().querySelectorAll("[data-unfollow-team]").forEach((btn) => {
+    btn.addEventListener("click", () => dropFollow({ kind: "club", id: btn.dataset.unfollowTeam }));
+  });
   document.getElementById("password-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const note = document.getElementById("password-note");

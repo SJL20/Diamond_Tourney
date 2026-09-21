@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 119 unit/integration cases + 13 acceptance checks |
+| Tests | 121 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -211,6 +211,31 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Stats sort and follow a team or tournament
+
+The full stats board (`/t/{slug}/stats`) and the Keystone popup stats page
+sort hitting by hits, average, OPS, or RBIs. Average is the default, highest
+first. Pitching sorts by innings, ERA, strikeouts, or wins. ERA is the
+default, lowest first. A scorebook that did not publish OPS or wins shows an
+em dash, and that blank sorts last. Nothing is stored as a guessed 0. Leaders
+and awards stay ranked by average and ERA.
+
+A login can follow a public tournament or a team. Following a team adds that
+login to the team's fan list. The account page lists tournaments followed
+directly and tournaments a followed team is in. Fan rows live in `follows`
+(`1700000035_follows.js`). Collection rules are closed, so the list API cannot
+read someone else's address. Public team pages still omit email, phone, and
+birthdate. This pass does not email the fan list.
+
+Covered by `FollowAndStatsTests` (121 cases, acceptance still green).
+A first list call came back empty because PocketBase rejected sorting
+`follows` on `created`; that field is not on this collection. The list now
+uses an unsorted filter. A browser pass on the local board confirmed the
+popup and `/t/keystone-clash-2026/stats` open hitting on average and pitching
+on ERA, the other sort keys reorder the rows, win cells stay an em dash, and
+a login that follows Keystone Clash and Pittsburgh Passion sees both on the
+account page. The public team page does not show an email.
 
 ### 2026-09-21 — Create-account password confirm and verification mail
 

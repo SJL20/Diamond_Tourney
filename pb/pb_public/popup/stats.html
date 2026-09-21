@@ -122,14 +122,22 @@ const COLS = {
     {k:'era',    l:'ERA',     t:'n', def:'asc'},
     {k:'ip',     l:'IP',      t:'ip', def:'desc'},
     {k:'k',      l:'K',       t:'n', def:'desc'},
+    {k:'w',      l:'W',       t:'n', def:'desc'},
   ]
 };
-let sortKey = 'ops', sortDir = 'desc';
+let sortKey = 'avg', sortDir = 'desc';
+
+function blankStat(v){
+  return v == null || v === '';
+}
 
 function val(row, c){
-  if(c.t === 'ip') return ipNum(row[c.k]);
-  if(c.t === 'n')  return parseFloat(row[c.k]);
-  return String(row[c.k]).toLowerCase();
+  if(c.t === 's') return String(row[c.k] == null ? '' : row[c.k]).toLowerCase();
+  const raw = row[c.k];
+  if(blankStat(raw)) return null;
+  if(c.t === 'ip') return ipNum(raw);
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 function rows(){
@@ -139,6 +147,11 @@ function rows(){
   const dir = sortDir === 'asc' ? 1 : -1;
   return r.sort((a,b) => {
     const A = val(a,c), B = val(b,c);
+    if(c.t !== 's'){
+      if(A == null && B == null) return String(a.player).localeCompare(String(b.player));
+      if(A == null) return 1;
+      if(B == null) return -1;
+    }
     if(A < B) return -1*dir;
     if(A > B) return  1*dir;
     return String(a.player).localeCompare(String(b.player));
@@ -156,6 +169,7 @@ function draw(){
     const cells = cols.map(c => {
       if(c.k === 'player') return `<td class="pl">${esc(r.player)}</td>`;
       if(c.k === 'team')   return `<td class="tm">${esc(r.team)}</td>`;
+      if(blankStat(r[c.k])) return '<td>—</td>';
       return `<td>${esc(r[c.k])}</td>`;
     }).join('');
     const cls = !r.q ? 'unq' : (i < 3 ? 'top' : '');
@@ -182,13 +196,13 @@ function setView(v){
   view = v;
   document.getElementById('t-hit').setAttribute('aria-selected', v === 'hitting');
   document.getElementById('t-pit').setAttribute('aria-selected', v === 'pitching');
-  sortKey = v === 'hitting' ? 'ops' : 'era';
+  sortKey = v === 'hitting' ? 'avg' : 'era';
   sortDir = v === 'hitting' ? 'desc' : 'asc';
   document.getElementById('qlabel').textContent = v === 'hitting'
     ? `Qualified only (${DATA.minAB}+ AB)` : `Qualified only (${DATA.minIP}+ IP)`;
   document.getElementById('legend').innerHTML = v === 'hitting'
-    ? `<b>Qualifying:</b> ${DATA.minAB} or more at-bats across the tournament. Players below the line are greyed out and only appear when the filter is off.`
-    : `<b>Qualifying:</b> ${DATA.minIP} or more innings pitched. ERA is earned runs per seven innings. Players below the line are greyed out and only appear when the filter is off.`;
+    ? `<b>Qualifying:</b> ${DATA.minAB} or more at-bats across the tournament. Players below the line are greyed out and only appear when the filter is off. Average is the default sort. A blank OPS was not on the scorebook.`
+    : `<b>Qualifying:</b> ${DATA.minIP} or more innings pitched. ERA is earned runs per seven innings. ERA is the default sort. Players below the line are greyed out and only appear when the filter is off. A blank W was not on the scorebook.`;
   draw();
 }
 
