@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 121 unit/integration cases + 13 acceptance checks |
+| Tests | 122 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -211,6 +211,12 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Master team holds the club
+
+The master `teams` row keeps the name, age, coach name, and public GameChanger link. Coach email, phone, a second contact, and a pending owner email stay on private `team_contacts`. Co-owner emails stay on private `team_co_owners`. A coach joins a weekend with the team already on the account. A director creates the team, adds it to the weekend, and passes ownership with `POST /api/teams/{id}/transfer`. An email with no account yet is stored as pending and attaches when that person registers and confirms. Old Keystone and Harbor rows still keep a blank `event_teams.team`. The September 21 database overview (passwords, backups, unique indexes, score locks) was read with this change. Those items need the owner or a separate pass. This change does not rotate production logins or turn on backups.
+
+Proved by `test_master_profile_and_email_handoff` in the diamond suite (122 cases) and the acceptance checks. A browser pass covers the one-button join and the director create-and-hand-off form.
 
 ### 2026-09-21 — Master team before event signup
 

@@ -51,7 +51,7 @@ function listGcMonitor(app) {
       teams = [];
     }
     for (const team of teams) {
-      const url = String(team.get("gamechanger_url") || "").trim();
+      const url = String(host.linkedGcUrl(app, team) || "").trim();
       if (!host.isGameChangerUrl(url)) continue;
       pushUnique(seen, watch, {
         kind: "event_team",

@@ -724,6 +724,107 @@ class HostedSignupTests(unittest.TestCase):
             })
         self.assertIn("closed", str(shut.exception).lower())
 
+    def test_master_profile_and_email_handoff(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "handoff-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Handoff Open",
+            "slug": slug,
+            "venue": "North Fields",
+            "ages": "10U",
+        })
+        owner_email = f"owner.{uuid.uuid4().hex[:8]}@local.test"
+        gc = "https://web.gc.com/team/handoff-hawks"
+        created = request(BASE, "POST", "/api/teams", td, {
+            "name": "Handoff Hawks",
+            "age_group": "10U",
+            "coach_name": "Pat Coach",
+            "gamechanger_url": gc,
+            "coach_email": f"dugout.{uuid.uuid4().hex[:6]}@local.test",
+            "coach_phone": "412-555-0199",
+            "co_owners": "assist@local.test",
+            "owner_email": owner_email,
+        })
+        self.assertEqual(created["handoff"]["state"], "pending")
+        self.assertEqual(created["gamechanger_url"], gc)
+        self.assertEqual(created["contact"]["coach_phone"], "412-555-0199")
+        self.assertIn("assist@local.test", created["co_owners"])
+        from urllib.parse import quote
+        public = request(BASE, "GET", "/api/collections/teams/records?filter=" + quote(f'id="{created["id"]}"'))
+        self.assertEqual(len(public["items"]), 1)
+        row = public["items"][0]
+        blob = json.dumps(row)
+        self.assertNotIn("412-555-0199", blob)
+        self.assertNotIn(owner_email, blob)
+        self.assertNotIn("assist@local.test", blob)
+        self.assertEqual(row.get("gamechanger_url"), gc)
+
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_id": created["id"],
+            "as_director": True,
+        })
+        self.assertTrue(joined["team"]["gc_linked"])
+        self.assertEqual(joined["team"]["gamechanger_url"], gc)
+        self.assertEqual(joined["team"]["contact"]["coach_phone"], "412-555-0199")
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        stored = request(
+            BASE, "GET",
+            "/api/collections/event_teams/records/" + joined["team"]["id"],
+            admin,
+        )
+        self.assertFalse(stored.get("contact_email"))
+        self.assertFalse(stored.get("gamechanger_url"))
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        board_blob = json.dumps(board)
+        self.assertNotIn("412-555-0199", board_blob)
+        self.assertNotIn(owner_email, board_blob)
+        self.assertIn(gc, board_blob)
+
+        stranger_email = f"stranger.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": stranger_email,
+            "password": "Stranger123!",
+            "passwordConfirm": "Stranger123!",
+            "display_name": "Stranger",
+            "intent": "team",
+        })
+        confirm_account(stranger_email)
+        stranger = auth(BASE, stranger_email, "Stranger123!")
+        hidden = request(BASE, "GET", f"/api/teams/{created['id']}", stranger)
+        self.assertNotIn("412-555-0199", json.dumps(hidden))
+        with self.assertRaises(RuntimeError) as stolen:
+            request(BASE, "POST", f"/api/teams/{created['id']}/transfer", stranger, {"email": stranger_email})
+        self.assertIn("owner", str(stolen.exception).lower())
+
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": owner_email,
+            "password": "OwnerPass123!",
+            "passwordConfirm": "OwnerPass123!",
+            "display_name": "Pat Coach",
+            "intent": "team",
+        })
+        confirm_account(owner_email)
+        owner = auth(BASE, owner_email, "OwnerPass123!")
+        home = request(BASE, "GET", "/api/account/home", owner)
+        self.assertEqual(home["user"]["team"]["id"], created["id"])
+        self.assertEqual(home["user"]["team"]["contact"]["coach_phone"], "412-555-0199")
+        slug2 = "handoff-two-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Handoff Second",
+            "slug": slug2,
+            "venue": "North Fields",
+            "ages": "10U",
+        })
+        again = request(BASE, "POST", f"/api/events/{slug2}/signup", owner, {"team_id": created["id"]})
+        self.assertEqual(again["team"]["team"], created["id"])
+        self.assertTrue(again["team"]["gc_linked"])
+        with self.assertRaises(RuntimeError) as blocked:
+            request(BASE, "POST", f"/api/teams/{created['id']}/transfer", td, {"email": stranger_email})
+        self.assertIn("owner", str(blocked.exception).lower())
+
     def test_tm_link_rejects_non_tm(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
         with self.assertRaises(RuntimeError) as bad:

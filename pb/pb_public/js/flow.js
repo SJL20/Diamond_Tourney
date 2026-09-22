@@ -200,7 +200,7 @@ export async function startGate(forcedTab) {
     ${tab === "register" ? `
       <section class="card">
         <h2>Create an account</h2>
-        <p class="muted">Directors create weekends. A team account creates its team on the account page before it can join a weekend. Creating the account emails a confirmation link and opens your account page, where you can update your password.</p>
+        <p class="muted">Directors create weekends. A team account creates its team on the account page before it can join a weekend with one click. Creating the account emails a confirmation link and opens your account page, where you can update your password.</p>
         <form class="form wide" id="register-form">
           <label>Your name <input name="display_name" required placeholder="Pat Rivera"></label>
           <label>Email <input name="email" type="email" autocomplete="email" required></label>
@@ -333,11 +333,37 @@ export async function accountHome() {
       </section>`;
   let book = "";
   const mine = home.user.team;
+  const ageOptions = ["6U", "8U", "10U", "12U", "14U", "16U", "18U"];
+  const contact = (mine && mine.contact) || {};
   if (mine) {
     book = `<section class="card">
       <h2>Your team</h2>
-      <p>${escapeHtml(mine.name)} is the team this account takes to tournaments. Event signup uses this record.</p>
-      <p><a class="btn" data-link href="/teams/${escapeHtml(mine.slug)}/home">Open team book</a></p>
+      <p>This record is the team. Tournaments you join use it. A weekend does not keep a second copy of the name, contacts, or GameChanger link.</p>
+      <form class="form wide" id="edit-team-form">
+        <label>Team name <input name="name" required value="${escapeHtml(mine.name || "")}"></label>
+        <label>Age group
+          <select name="age_group">
+            <option value="">—</option>
+            ${ageOptions.map((a) => `<option value="${a}" ${mine.age_group === a ? "selected" : ""}>${a}</option>`).join("")}
+          </select>
+        </label>
+        <label>Coach name <input name="coach_name" value="${escapeHtml(mine.coach_name || "")}"></label>
+        <label>GameChanger team URL <input name="gamechanger_url" type="url" value="${escapeHtml(mine.gamechanger_url || "")}" placeholder="https://web.gc.com/team/…"></label>
+        <label>Coach email <input name="coach_email" type="email" value="${escapeHtml(contact.coach_email || "")}"></label>
+        <label>Coach phone <input name="coach_phone" type="text" inputmode="tel" value="${escapeHtml(contact.coach_phone || "")}"></label>
+        <fieldset class="setup-block">
+          <legend>Second contact</legend>
+          <label>Name <input name="alt_name" value="${escapeHtml(contact.alt_name || "")}"></label>
+          <label>Email <input name="alt_email" type="email" value="${escapeHtml(contact.alt_email || "")}"></label>
+          <label>Phone <input name="alt_phone" type="text" inputmode="tel" value="${escapeHtml(contact.alt_phone || "")}"></label>
+        </fieldset>
+        <label>Co-owner emails <textarea name="co_owners" rows="2" placeholder="one email per line">${escapeHtml((mine.co_owners || []).join("\n"))}</textarea></label>
+        <div class="actions">
+          <button class="btn" type="submit">Save team</button>
+          <a class="btn ghost" data-link href="/teams/${escapeHtml(mine.slug)}/home">Open team book</a>
+        </div>
+        <p class="error" id="edit-team-err" hidden></p>
+      </form>
     </section>`;
   } else if (home.user.role === "team_coach" && verified) {
     book = `<section class="card" id="create-team">
@@ -348,9 +374,20 @@ export async function accountHome() {
         <label>Age group
           <select name="age_group">
             <option value="">—</option>
-            ${["6U", "8U", "10U", "12U", "14U", "16U", "18U"].map((a) => `<option value="${a}">${a}</option>`).join("")}
+            ${ageOptions.map((a) => `<option value="${a}">${a}</option>`).join("")}
           </select>
         </label>
+        <label>Coach name <input name="coach_name" value="${escapeHtml(home.user.display_name || "")}"></label>
+        <label>GameChanger team URL <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…"></label>
+        <label>Coach email <input name="coach_email" type="email" value="${escapeHtml(home.user.email || "")}"></label>
+        <label>Coach phone <input name="coach_phone" type="text" inputmode="tel" placeholder="412-555-0100"></label>
+        <fieldset class="setup-block">
+          <legend>Second contact</legend>
+          <label>Name <input name="alt_name"></label>
+          <label>Email <input name="alt_email" type="email"></label>
+          <label>Phone <input name="alt_phone" type="text" inputmode="tel"></label>
+        </fieldset>
+        <label>Co-owner emails <textarea name="co_owners" rows="2" placeholder="one email per line"></textarea></label>
         <button class="btn" type="submit">Save team</button>
         <p class="error" id="create-team-err" hidden></p>
       </form>
@@ -359,6 +396,11 @@ export async function accountHome() {
     book = `<section class="card">
       <h2>Create your team</h2>
       <p>After this email is confirmed, create the team on this page. Tournaments sign up that team.</p>
+    </section>`;
+  } else if (!mine) {
+    book = `<section class="card">
+      <h2>Teams you add</h2>
+      <p>On a tournament's signup page, create the team with its name, contacts, and GameChanger link, add it to the weekend, then pass ownership to the coach's email.</p>
     </section>`;
   }
   flowRoot().innerHTML = gateChrome("account", `
@@ -395,6 +437,26 @@ export async function accountHome() {
       ${eventCards(home.joined, "No team signups on this email yet.", "joined")}
     </section>
   `);
+  const editTeam = document.getElementById("edit-team-form");
+  if (editTeam && mine) {
+    editTeam.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const err = document.getElementById("edit-team-err");
+      const body = Object.fromEntries(new FormData(ev.target));
+      const res = await fetch("/api/teams/" + encodeURIComponent(mine.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: flowPb.authStore.token },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        err.hidden = false;
+        err.textContent = await res.text();
+        return;
+      }
+      flashSaved("Team saved");
+      accountHome();
+    });
+  }
   const createTeam = document.getElementById("create-team-form");
   if (createTeam) {
     createTeam.addEventListener("submit", async (ev) => {

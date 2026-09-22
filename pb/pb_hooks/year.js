@@ -52,7 +52,7 @@ function clubKey(app, eventTeam) {
         id: "team:" + master.id,
         name: master.get("name") || eventTeam.get("name"),
         slug: master.get("slug") || eventTeam.get("slug"),
-        gc: !!eventTeam.get("gamechanger_url"),
+        gc: !!(master.get("gamechanger_url") || eventTeam.get("gamechanger_url")),
       };
     } catch (err) {}
   }

@@ -8,9 +8,9 @@ PocketBase collections are the database. This file is the map: which table is th
 
 **One team, created before any event signup.**
 
-`teams` is the master record: name, slug, age group, public W-L, logo. A coach creates it on the account page after the email is confirmed (`POST /api/teams`). That row is stored on `users.team`. A director creates the same kind of row before adding the club to a weekend.
+`teams` is the master record: name, slug, age group, coach name, public GameChanger link, public W-L, logo. A coach creates it on the account page after the email is confirmed (`POST /api/teams`). That row is stored on `users.team`. A director creates the same kind of row, then adds it to a weekend, then passes ownership to an email (`POST /api/teams/{id}/transfer`). If that email has no account yet, the team waits and attaches when they register and confirm.
 
-`event_teams` is one weekend's entry: pool, seed, packet, paid flag, GameChanger link for that event. `event_teams.team` points at `teams`. Signup refuses a request that does not already have that id.
+`event_teams` is one weekend's entry: pool, seed, packet, paid flag. `event_teams.team` points at `teams`. Signup refuses a request that does not already have that id. A coach who already owns the team joins with that id only. Name, contacts, co-owners, and the GameChanger link are not typed again on the weekend.
 
 ```
 teams (master)
@@ -26,7 +26,7 @@ CSV import is the director bulk door. For each new name it writes the master `te
 
 Rows already on the board (Keystone Clash, Harbor Eight, older director signups) keep a blank `event_teams.team`. Nothing in this change guesses which master team they belong to. A blank link stays blank until someone attaches it on purpose.
 
-Coach email and phone stay on `team_contacts`. They are not columns on `teams`. `teams` is publicly readable.
+Coach email, phone, the second contact, and a pending owner email stay on `team_contacts` keyed by the master team. Co-owner emails stay on `team_co_owners`. None of those are columns on `teams`. `teams` is publicly readable. The GameChanger link on `teams` is a public page URL.
 
 ## Why `teams` looked unused
 
@@ -65,13 +65,14 @@ Checked against hooks, the public pages, and the tests. "Unused" means nothing i
 | `event_boxes` | Raw box (JSON plus file). Child tables hold the lines. |
 | `pools` | Pool name and the tiebreak JSON the standings use. |
 | `fields` | Diamonds for one event (`fields.event`). |
-| `team_contacts` | Private coach email and phone. Rules are closed. Hooks are the only reader. |
+| `team_contacts` | Private coach email and phone for the master team, plus a pending owner email. Rules are closed. Hooks are the only reader. |
 | `team_docs` | Packet files. Protected. Not a public list. |
 | `box_submissions` | Score-email links and coach uploads. |
 | `event_co_owners` | Extra directors by email. Addresses stay off public pages. |
 | `sync_log` | Mail and sync failures. |
 | `venue_photos` | Park photos and the map PDF. |
 | `import_maps` | A director's remembered CSV column map. Closed. |
+| `team_co_owners` | Extra emails that can open the team with the owner. Closed. Not a second team. |
 | `follows` | A login following an event or a `club_teams` row. Closed. |
 | `login_resets` | Password-reset tokens for the admin login path. |
 | `club_teams` | Year-series identity used by `/year/{year}`, `/admin/teams`, and follows. Not the master team. |
@@ -88,7 +89,7 @@ Checked against hooks, the public pages, and the tests. "Unused" means nothing i
 ### Fields that mislead
 
 - `pools.tiebreak_notes` is a sentence copied onto some seed pools. Standings read `pools.tiebreak` and `events.tiebreak`, not that sentence.
-- `event_teams.contact_email` is a copy of the address also stored on `team_contacts`. Signup still writes both because older API rules match the coach by that column. New code must not add another email column on a public collection.
+- `event_teams.contact_email` and `event_teams.gamechanger_url` remain on old rows (Keystone, Harbor, earlier signups). A weekend entry that has `event_teams.team` set does not get a new copy of the email or the GameChanger link. Readers use the master row when that link is filled, and the old event columns when it is not.
 - `fields` was a region directory. It is now per event. The seed diamond "Central Park Complex" has no event, so no weekend board shows it.
 - `event_teams.name` is the name copied from the master team at signup. Public reads prefer the master name when `event_teams.team` is set. The id is the identity. The copied name is the label for rows that have no link yet.
 

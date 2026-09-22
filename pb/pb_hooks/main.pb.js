@@ -187,6 +187,45 @@ routerAdd("POST", "/api/teams", (e) => {
   }
 }, $apis.requireAuth());
 
+routerAdd("GET", "/api/teams/{id}", (e) => {
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("Log in to see this team.");
+  const team = e.app.findRecordById("teams", e.request.pathValue("id"));
+  return e.json(200, host.masterProfile(e.app, team, e.auth));
+}, $apis.requireAuth());
+
+routerAdd("PATCH", "/api/teams/{id}", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("Log in before editing a team.");
+  sb.requireVerified(e.auth);
+  const team = e.app.findRecordById("teams", e.request.pathValue("id"));
+  try {
+    return e.json(200, host.updateMasterTeam(e.app, team, e.requestInfo().body || {}, e.auth));
+  } catch (err) {
+    if (err && err.status) throw err;
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/teams/{id}/transfer", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("Log in before passing a team to an email.");
+  sb.requireVerified(e.auth);
+  const team = e.app.findRecordById("teams", e.request.pathValue("id"));
+  const body = e.requestInfo().body || {};
+  try {
+    const handoff = host.transferTeam(e.app, team, body.email || body.owner_email || "", e.auth);
+    const profile = host.masterProfile(e.app, e.app.findRecordById("teams", team.id), e.auth);
+    profile.handoff = handoff;
+    return e.json(200, profile);
+  } catch (err) {
+    if (err && err.status) throw err;
+    throw new BadRequestError(String(err && err.message ? err.message : err));
+  }
+}, $apis.requireAuth());
+
 routerAdd("GET", "/api/account/following", (e) => {
   if (!e.auth) throw new UnauthorizedError("login required");
   return e.json(200, require(__hooks + "/follow.js").listFollowing(e.app, e.auth));
@@ -331,7 +370,7 @@ routerAdd("POST", "/api/events/{slug}/signup", (e) => {
   if (!packet.complete && packet.required.length && !director) {
     throw new BadRequestError("Upload the required team documents: " + packet.required_labels.join(", "));
   }
-  const out = host.teamJson(rec);
+  const out = host.teamJson(rec, e.app);
     out.packet = host.packetSummary(e.app, event, rec, host.canSeeTeamPacket(event, rec, e.auth, e.app));
     if (team.mail) out.mail = team.mail;
     if (team.contact && host.canSeeTeamPacket(event, rec, e.auth, e.app)) out.contact = team.contact;
