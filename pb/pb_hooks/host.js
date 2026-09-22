@@ -1263,11 +1263,12 @@ function removeEventTeam(app, event, team, auth) {
     return false;
   }
 
+  const siteAdmin = sb.isSiteAdmin(auth);
   const schedule = app.findRecordsByFilter("event_schedule", "event = {:e}", "", 2000, 0, { e: event.id });
   for (let i = 0; i < schedule.length; i++) {
     const row = schedule[i];
     if (!involving(row, ["home", "away"])) continue;
-    if (row.get("status") === "final") {
+    if (row.get("status") === "final" && !siteAdmin) {
       throw new BadRequestError("This team has a final pool game. Keep the score on the board; you cannot remove them.");
     }
   }
@@ -1275,7 +1276,7 @@ function removeEventTeam(app, event, team, auth) {
   for (let i = 0; i < tree.length; i++) {
     const row = tree[i];
     if (!involving(row, ["home_team", "away_team", "winner"])) continue;
-    if (row.get("status") === "final") {
+    if (row.get("status") === "final" && !siteAdmin) {
       throw new BadRequestError("This team has a final bracket game. Keep the score on the board; you cannot remove them.");
     }
   }
@@ -1291,6 +1292,11 @@ function removeEventTeam(app, event, team, auth) {
   }
   for (let i = 0; i < tree.length; i++) {
     const row = tree[i];
+    if (!involving(row, ["home_team", "away_team", "winner"])) continue;
+    if (siteAdmin) {
+      try { app.delete(row); } catch (err) {}
+      continue;
+    }
     let changed = false;
     if (row.get("home_team") === teamId) {
       row.set("home_team", "");
@@ -1993,19 +1999,77 @@ function masterHasFinal(app, eventTeamId) {
   return false;
 }
 
-function removeMasterTeam(app, id, body) {
+function deleteFiltered(app, collection, filter, params) {
+  for (let guard = 0; guard < 40; guard++) {
+    let rows = [];
+    try {
+      rows = app.findRecordsByFilter(collection, filter, "", 200, 0, params);
+    } catch (err) {
+      return;
+    }
+    if (!rows || !rows.length) return;
+    for (let i = 0; i < rows.length; i++) {
+      try { app.delete(rows[i]); } catch (err) {}
+    }
+    if (rows.length < 200) return;
+  }
+}
+
+function clearSeasonBook(app, teamId) {
+  let games = [];
+  try {
+    games = app.findRecordsByFilter("team_games", "team = {:t}", "", 500, 0, { t: teamId });
+  } catch (err) {
+    games = [];
+  }
+  for (let i = 0; i < games.length; i++) {
+    deleteFiltered(app, "hitting_game", "game = {:g}", { g: games[i].id });
+    deleteFiltered(app, "pitching_game", "game = {:g}", { g: games[i].id });
+    if (games[i].get("staging")) {
+      games[i].set("staging", "");
+      try { app.save(games[i]); } catch (err) {}
+    }
+  }
+  let staged = [];
+  try {
+    staged = app.findRecordsByFilter("staging_games", "team = {:t}", "", 500, 0, { t: teamId });
+  } catch (err) {
+    staged = [];
+  }
+  for (let i = 0; i < staged.length; i++) {
+    if (staged[i].get("applied_game")) {
+      staged[i].set("applied_game", "");
+      try { app.save(staged[i]); } catch (err) {}
+    }
+  }
+  deleteFiltered(app, "staging_games", "team = {:t}", { t: teamId });
+  deleteFiltered(app, "team_games", "team = {:t}", { t: teamId });
+  deleteFiltered(app, "players", "team = {:t}", { t: teamId });
+}
+
+function clearOptionalTeamPointer(app, collection, teamId) {
+  for (let guard = 0; guard < 40; guard++) {
+    let rows = [];
+    try {
+      rows = app.findRecordsByFilter(collection, "team = {:t}", "", 200, 0, { t: teamId });
+    } catch (err) {
+      return;
+    }
+    if (!rows || !rows.length) return;
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].set("team", "");
+      try { app.save(rows[i]); } catch (err) {
+        try { app.delete(rows[i]); } catch (err2) {}
+      }
+    }
+    if (rows.length < 200) return;
+  }
+}
+
+function removeMasterTeam(app, id, body, auth) {
   if (!confirmed(body)) throw new BadRequestError("Confirm the remove.");
   const team = app.findRecordById("teams", id);
   const name = team.get("name") || "";
-  if (countWhere(app, "players", "team = {:t}", { t: id })) {
-    throw new BadRequestError("This team has a roster. It stays.");
-  }
-  if (countWhere(app, "team_games", "team = {:t}", { t: id })) {
-    throw new BadRequestError("This team has a season book. It stays.");
-  }
-  if (countWhere(app, "staging_games", "team = {:t}", { t: id })) {
-    throw new BadRequestError("This team has a score sheet waiting for review. It stays.");
-  }
   const weekends = [];
   try {
     eachPage(app, "event_teams", "team = {:t}", "", { t: id }, function (row) {
@@ -2013,18 +2077,25 @@ function removeMasterTeam(app, id, body) {
     });
   } catch (err) {}
   for (let i = 0; i < weekends.length; i++) {
-    if (masterHasFinal(app, weekends[i].id)) {
-      throw new BadRequestError("This team has a final game. It stays.");
+    let event = null;
+    try { event = app.findRecordById("events", weekends[i].get("event")); } catch (err) { event = null; }
+    if (!event) {
+      try { app.delete(app.findRecordById("event_teams", weekends[i].id)); } catch (err) {}
+      continue;
     }
+    const fresh = app.findRecordById("event_teams", weekends[i].id);
+    removeEventTeam(app, event, fresh, auth);
   }
   clearOwners(app, id, "");
-  for (let i = 0; i < weekends.length; i++) {
-    const row = app.findRecordById("event_teams", weekends[i].id);
-    row.set("team", "");
-    app.save(row);
+  clearSeasonBook(app, id);
+  clearOptionalTeamPointer(app, "posts", id);
+  deleteFiltered(app, "follows", "target = {:t}", { t: "team:" + id });
+  try {
+    app.delete(app.findRecordById("teams", id));
+  } catch (err) {
+    throw new BadRequestError("This team is still tied to another record. It was not deleted.");
   }
-  app.delete(team);
-  return { ok: true, id: id, name: name, unlinked: weekends.length };
+  return { ok: true, id: id, name: name, removed_weekends: weekends.length };
 }
 
 function listAdminMasters(app) {

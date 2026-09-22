@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 136 unit/integration cases + 13 acceptance checks |
+| Tests | 137 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -213,6 +213,12 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-22 — Site admin can edit and delete any master team
+
+`/admin/teams` gives each master team a Details button. Opening it loads the name, age, coach name, GameChanger link, private coach email and phone, second contact, and co-owners, then saves them. The list does not show those emails. Remove deletes that master team even when it has a roster, a season book, or a weekend with a final score. The weekend entry and that team's games on the weekend go with it. A director still cannot remove a weekend team that already has a final score.
+
+Proved by `test_site_admin_attaches_leftovers_and_removes_duplicates` and `test_site_admin_removes_a_team_that_has_a_final_score`. A browser pass opens Details, saves a coach phone, and removes a roster team.
 
 ### 2026-09-22 — Attach leftovers can point at a chosen master
 
