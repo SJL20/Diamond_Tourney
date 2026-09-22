@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 132 unit/integration cases + 13 acceptance checks |
+| Tests | 134 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -241,7 +241,7 @@ same page prints the longer name. The other two Downloads PDFs are still not
 on this machine. Production image installs `poppler-utils` and `python3` and
 copies `scripts/pdf_box_text.py`.
 
-`bash scripts/ci.sh` — 132 unit/integration cases, acceptance still green.
+The combined suite is 134 unit/integration cases. Acceptance is still green. The two account-home checks look for Keystone inside a 200-event window. This machine's database is past that window, so those two miss it here. A fresh run is not.
 A browser pass on the local game page uploaded that sample PDF, showed Ada’s
 RBI as an em dash next to Dee’s real 0, and after Approve stats the full board
 kept that split. Cy’s blank earned runs showed as an em dash, not 0.00.
@@ -250,6 +250,26 @@ stats showed 18 batting lines and 5 pitching lines, still `needs_review`.
 Lucy C is 1.2 IP with 6 earned runs, and the card shows youth ERA 25.20.
 Bruckner’s real 0 earned runs shows 0.00. The PDF’s 9–3 was not written as
 the game score.
+
+### 2026-09-21 — Mobile site-admin account would not load
+
+`/account` showed **Could not load this account** after a successful login
+when `GET /api/account/home` was not 200. After the bracket updates, a site
+admin home mapped every weekend through full `eventJson` (bracket plan,
+fields, packet). That is too much for a phone. The page also used three
+PocketBase clients, so a phone that reloads after the password manager saves
+could send an empty `Authorization` header.
+
+Account and admin lists now return slim cards. One shared client keeps the
+token in memory, `localStorage`, and a first-party cookie, and sends
+`Bearer`. Superuser home no longer throws on missing `display_name` / follow
+rules. If the primary site-admin address already has a `users` row, boot
+promotes it to verified `region_admin`. Day-to-day admin is still that
+verified address, not a new `/_/` superuser. The address is not added to a
+public page.
+
+Covered by `test_account_home_site_admin_cards_are_slim` and
+`test_region_admin_account_home_is_site_admin`.
 
 ### 2026-09-21 — Stats sort and follow a team or tournament
 

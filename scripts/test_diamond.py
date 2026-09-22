@@ -807,6 +807,33 @@ class AccountAndYearTests(unittest.TestCase):
         clubs = request(BASE, "GET", "/api/admin/clubs", token)
         self.assertIn("clubs", clubs)
 
+    def test_account_home_site_admin_cards_are_slim(self):
+        token = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertTrue(home["user"]["site_admin"])
+        self.assertEqual(home["user"]["role"], "region_admin")
+        self.assertIn("following", home)
+        card = next(e for e in home["created"] if e.get("slug") == "keystone-clash-2026")
+        self.assertTrue(card["name"])
+        self.assertNotIn("bracket_plan", card)
+        self.assertNotIn("packet", card)
+        self.assertNotIn("fields", card)
+        self.assertNotIn("scheduler", card)
+        admin_card = next(
+            e for e in request(BASE, "GET", "/api/admin/events", token)["events"]
+            if e.get("slug") == "keystone-clash-2026"
+        )
+        self.assertNotIn("bracket_plan", admin_card)
+        bearer = request(BASE, "GET", "/api/account/home", "Bearer " + token)
+        self.assertTrue(bearer["user"]["site_admin"])
+
+    def test_region_admin_account_home_is_site_admin(self):
+        token = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertTrue(home["user"]["site_admin"])
+        self.assertEqual(home["user"]["email"], "owner@local.test")
+        self.assertIn("keystone-clash-2026", [e["slug"] for e in home["created"]])
+
     def test_forgot_and_reset_password(self):
         email = f"reset.{uuid.uuid4().hex[:8]}@local.test"
         request(BASE, "POST", "/api/account/register", None, {
