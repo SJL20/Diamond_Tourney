@@ -709,7 +709,28 @@ function liveStatsNote(mins, packetNote) {
 }
 
 function sortHitLeaders(a, b) {
+  if (a.avg == null && b.avg == null) return 0;
+  if (a.avg == null) return 1;
+  if (b.avg == null) return -1;
   return (b.avg || 0) - (a.avg || 0);
+}
+
+function addStat(bucket, field, raw) {
+  if (raw == null || raw === "") return;
+  const n = Number(raw);
+  if (n !== n) return;
+  if (bucket[field] == null) bucket[field] = 0;
+  bucket[field] += n;
+}
+
+function readCount(row, field) {
+  const blank = decodeJsonField(row.get("blank"));
+  if (Array.isArray(blank)) {
+    for (let i = 0; i < blank.length; i++) {
+      if (blank[i] === field) return null;
+    }
+  }
+  return row.get(field);
 }
 
 function sortPitLeaders(a, b) {
@@ -728,13 +749,13 @@ function eventLeaders(app, eventId, opts) {
   const hit = {};
   for (const row of hitRows) {
     const id = row.get("event_player");
-    if (!hit[id]) hit[id] = { event_player: id, ab: 0, r: 0, h: 0, rbi: 0, bb: 0, so: 0 };
-    hit[id].ab += Number(row.get("ab") || 0);
-    hit[id].r += Number(row.get("r") || 0);
-    hit[id].h += Number(row.get("h") || 0);
-    hit[id].rbi += Number(row.get("rbi") || 0);
-    hit[id].bb += Number(row.get("bb") || 0);
-    hit[id].so += Number(row.get("so") || 0);
+    if (!hit[id]) hit[id] = { event_player: id, ab: null, r: null, h: null, rbi: null, bb: null, so: null };
+    addStat(hit[id], "ab", readCount(row, "ab"));
+    addStat(hit[id], "r", readCount(row, "r"));
+    addStat(hit[id], "h", readCount(row, "h"));
+    addStat(hit[id], "rbi", readCount(row, "rbi"));
+    addStat(hit[id], "bb", readCount(row, "bb"));
+    addStat(hit[id], "so", readCount(row, "so"));
   }
   const hitting = Object.values(hit).map(function (r) {
     try {
@@ -744,9 +765,17 @@ function eventLeaders(app, eventId, opts) {
       const team = app.findRecordById("event_teams", p.get("event_team"));
       r.team = team.get("name");
     } catch (err) {}
-    r.avg = r.ab ? (r.h / r.ab) : 0;
-    r.avg_display = r.ab ? (r.h / r.ab).toFixed(3).replace(/^0/, "") : ".000";
-    r.q = r.ab >= minAb;
+    if (r.ab == null || r.h == null) {
+      r.avg = null;
+      r.avg_display = "—";
+    } else if (r.ab > 0) {
+      r.avg = r.h / r.ab;
+      r.avg_display = r.avg.toFixed(3).replace(/^0/, "");
+    } else {
+      r.avg = 0;
+      r.avg_display = ".000";
+    }
+    r.q = r.ab != null && r.ab >= minAb;
     return r;
   });
   const gatedHit = hitting.filter(function (r) { return r.q; }).sort(sortHitLeaders);
@@ -754,13 +783,13 @@ function eventLeaders(app, eventId, opts) {
   const pit = {};
   for (const row of pitRows) {
     const id = row.get("event_player");
-    if (!pit[id]) pit[id] = { event_player: id, ip_outs: 0, h: 0, r: 0, er: 0, bb: 0, so: 0 };
-    pit[id].ip_outs += Number(row.get("ip_outs") || 0);
-    pit[id].h += Number(row.get("h") || 0);
-    pit[id].r += Number(row.get("r") || 0);
-    pit[id].er += Number(row.get("er") || 0);
-    pit[id].bb += Number(row.get("bb") || 0);
-    pit[id].so += Number(row.get("so") || 0);
+    if (!pit[id]) pit[id] = { event_player: id, ip_outs: null, h: null, r: null, er: null, bb: null, so: null };
+    addStat(pit[id], "ip_outs", readCount(row, "ip_outs"));
+    addStat(pit[id], "h", readCount(row, "h"));
+    addStat(pit[id], "r", readCount(row, "r"));
+    addStat(pit[id], "er", readCount(row, "er"));
+    addStat(pit[id], "bb", readCount(row, "bb"));
+    addStat(pit[id], "so", readCount(row, "so"));
   }
   const pitching = Object.values(pit).map(function (r) {
     try {
@@ -770,8 +799,8 @@ function eventLeaders(app, eventId, opts) {
       const team = app.findRecordById("event_teams", p.get("event_team"));
       r.team = team.get("name");
     } catch (err) {}
-    r.ip = Math.floor(r.ip_outs / 3) + "." + (r.ip_outs % 3);
-    r.era = era(r.er, r.ip_outs);
+    r.ip = r.ip_outs == null ? "" : (Math.floor(r.ip_outs / 3) + "." + (r.ip_outs % 3));
+    r.era = r.er == null ? null : era(r.er, r.ip_outs);
     r.era_display = r.era == null ? "—" : r.era.toFixed(2);
     r.q = r.ip_outs >= minIpOuts;
     return r;

@@ -121,6 +121,45 @@ function upsertPlayer(app, teamId, name, jersey) {
   return rec;
 }
 
+function blankNames(rec) {
+  const raw = rec.get("blank");
+  const out = [];
+  if (raw && raw.length !== undefined) {
+    for (let i = 0; i < raw.length; i++) out.push(raw[i]);
+  }
+  return out;
+}
+
+function rememberBlank(rec, field, isBlank) {
+  const blank = blankNames(rec);
+  const idx = blank.indexOf(field);
+  if (isBlank) {
+    if (idx === -1) blank.push(field);
+  } else if (idx !== -1) {
+    blank.splice(idx, 1);
+  } else {
+    return;
+  }
+  rec.set("blank", blank);
+}
+
+function setCount(rec, field, value) {
+  // A missing key stays at the column default. An explicit blank is listed on
+  // `blank` because PocketBase number columns cannot store null. A real 0 is stored.
+  if (value === undefined) return;
+  if (value == null || value === "") {
+    rememberBlank(rec, field, true);
+    return;
+  }
+  const n = Number(value);
+  if (n !== n) {
+    rememberBlank(rec, field, true);
+    return;
+  }
+  rememberBlank(rec, field, false);
+  rec.set(field, n);
+}
+
 function applyBoxLines(app, event, game, hitting, pitching) {
   const sb = require(__hooks + "/softball.js");
   function teamId(side) {
@@ -143,12 +182,12 @@ function applyBoxLines(app, event, game, hitting, pitching) {
       rec.set("event_player", player.id);
       rec.set("schedule_row", game.id);
     }
-    rec.set("ab", Number(row.ab || 0));
-    rec.set("r", Number(row.r || 0));
-    rec.set("h", Number(row.h || 0));
-    rec.set("rbi", Number(row.rbi || 0));
-    rec.set("bb", Number(row.bb || 0));
-    rec.set("so", Number(row.so || 0));
+    setCount(rec, "ab", row.ab);
+    setCount(rec, "r", row.r);
+    setCount(rec, "h", row.h);
+    setCount(rec, "rbi", row.rbi);
+    setCount(rec, "bb", row.bb);
+    setCount(rec, "so", row.so);
     app.save(rec);
   }
   for (const row of pitching || []) {
@@ -170,12 +209,13 @@ function applyBoxLines(app, event, game, hitting, pitching) {
       rec.set("schedule_row", game.id);
     }
     rec.set("ip_outs", outs);
-    rec.set("h", Number(row.h || 0));
-    rec.set("r", Number(row.r || 0));
-    rec.set("er", Number(row.er || 0));
-    rec.set("bb", Number(row.bb || 0));
-    rec.set("so", Number(row.so || row.k || 0));
-    if (row.pitches != null) rec.set("pitches", Number(row.pitches));
+    setCount(rec, "h", row.h);
+    setCount(rec, "r", row.r);
+    setCount(rec, "er", row.er);
+    setCount(rec, "bb", row.bb);
+    setCount(rec, "so", row.so !== undefined ? row.so : row.k);
+    setCount(rec, "pitches", row.pitches);
+    setCount(rec, "strikes", row.strikes);
     app.save(rec);
   }
 }
@@ -390,6 +430,14 @@ function saveBox(app, event, id, body, files, auth) {
   setUserRel(app, box, "submitted_by", auth);
   if (body.note != null) box.set("note", body.note);
   app.save(box);
+  // Body lines win. A PDF with no typed lines is read here and stays needs_review.
+  if (!hasLines) {
+    try {
+      const pdfbox = require(__hooks + "/pdfbox.js");
+      const extracted = pdfbox.extractBoxFile(app, box, rec);
+      if (extracted) pdfbox.applyExtract(app, box, extracted);
+    } catch (err) {}
+  }
   if (hasLines && status === "approved") applyBoxLines(app, event, rec, hitting, pitching);
   if (body.home_runs != null || body.away_runs != null) {
     postScore(app, event, id, body, auth);

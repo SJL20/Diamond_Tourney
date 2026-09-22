@@ -528,7 +528,7 @@ export async function yearPage(year) {
   </tr>`);
   const hit = (board.hitting || []).map((r) => `<tr>
     <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
-    <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg_display}</td>
+    <td>${r.ab ?? "—"}</td><td>${r.h ?? "—"}</td><td>${r.rbi ?? "—"}</td><td>${r.avg_display ?? "—"}</td>
   </tr>`);
   const pit = (board.pitching || []).map((r) => `<tr>
     <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>

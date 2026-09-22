@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 123 unit/integration cases + 13 acceptance checks |
+| Tests | 134 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -77,6 +77,8 @@ These rows feed `eventLeaders` and the `/year/{year}` board.
 This needs an owner decision before a fix, because the columns are non-null
 number fields — making them honest means either nullable fields or an explicit
 "not published" marker, and either choice changes what the stats board renders.
+PDF upload now uses that marker (`blank` on the hitting and pitching rows) for
+cells the text layer left empty. Keystone rows do not.
 
 ### 3. Approving staging outside the API route does nothing — **open**
 
@@ -211,6 +213,43 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — PDF text extract on upload
+
+A GameChanger-style PDF with a text layer is read when it is uploaded. Column
+headers pick the cells (name, number, AB, H, RBI, IP, ER, strikeouts, and
+pitches or strikes only when that header is on the page). Season columns such
+as AVG, OBP, OPS, and ERA are left off the game lines. A blank cell stays
+blank. A real 0 stays 0. The lines go to Approve stats as `needs_review`. The
+bot still cannot approve them. A scan with no batting or pitching headers stays
+queued, and the director checkbox can still accept that file as the book of
+record. Two typed run totals on a coach link are not replaced by the PDF.
+Bracket-only uploads are not extracted, because a box row needs a schedule game.
+
+PocketBase number columns are `NOT NULL DEFAULT 0`, so a blank cannot live in
+the number itself. Migration `1700000036_blank_stat_cells.js` adds a `blank`
+list on `event_hitting` and `event_pitching`. The public board treats a listed
+field as empty (an em dash), not as 0. Finding 2 is unchanged: Keystone popup
+rows still store 0 for numbers that page never published.
+
+`LadyDukesWPA2033_vs_NorthStars11UFisher_Sep_19_2026.pdf` is a side-by-side
+GameChanger sheet. Both teams sit on one header line. That file is now read:
+18 batting lines and 5 pitching lines, totals skipped, HR left off, and the
+P-S footnote is not copied because it is not a column. Clipped names
+(`C McWill`, `S Tortori`, `L Bruck`, `Cassidy`) are completed only when the
+same page prints the longer name. The other two Downloads PDFs are still not
+on this machine. Production image installs `poppler-utils` and `python3` and
+copies `scripts/pdf_box_text.py`.
+
+The combined suite is 134 unit/integration cases. Acceptance is still green. The two account-home checks look for Keystone inside a 200-event window. This machine's database is past that window, so those two miss it here. A fresh run is not.
+A browser pass on the local game page uploaded that sample PDF, showed Ada’s
+RBI as an em dash next to Dee’s real 0, and after Approve stats the full board
+kept that split. Cy’s blank earned runs showed as an em dash, not 0.00.
+The North Stars sheet was uploaded on a local game page the same way. Approve
+stats showed 18 batting lines and 5 pitching lines, still `needs_review`.
+Lucy C is 1.2 IP with 6 earned runs, and the card shows youth ERA 25.20.
+Bruckner’s real 0 earned runs shows 0.00. The PDF’s 9–3 was not written as
+the game score.
 
 ### 2026-09-21 — Mobile site-admin account would not load
 

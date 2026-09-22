@@ -4,6 +4,14 @@ function eventYear(event, fallback) {
   return m ? m[1] : String(fallback || "2026");
 }
 
+function addYearStat(bucket, field, value) {
+  if (value == null || value === "") return;
+  const n = Number(value);
+  if (n !== n) return;
+  if (bucket[field] == null) bucket[field] = 0;
+  bucket[field] += n;
+}
+
 function clubSlug(name) {
   return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "club";
 }
@@ -176,18 +184,18 @@ function yearBoard(app, year) {
     const leaders = require(__hooks + "/diamond.js").eventLeaders(app, ev.id);
     for (const r of leaders.hitting) {
       const key = (r.name_key || "") + "|" + (r.team || "");
-      if (!hitting[key]) hitting[key] = { name_key: r.name_key, team: r.team, ab: 0, h: 0, rbi: 0, so: 0 };
-      hitting[key].ab += r.ab;
-      hitting[key].h += r.h;
-      hitting[key].rbi += r.rbi;
-      hitting[key].so += r.so || 0;
+      if (!hitting[key]) hitting[key] = { name_key: r.name_key, team: r.team, ab: null, h: null, rbi: null, so: null };
+      addYearStat(hitting[key], "ab", r.ab);
+      addYearStat(hitting[key], "h", r.h);
+      addYearStat(hitting[key], "rbi", r.rbi);
+      addYearStat(hitting[key], "so", r.so);
     }
     for (const r of leaders.pitching) {
       const key = (r.name_key || "") + "|" + (r.team || "");
-      if (!pitching[key]) pitching[key] = { name_key: r.name_key, team: r.team, ip_outs: 0, er: 0, so: 0 };
-      pitching[key].ip_outs += r.ip_outs;
-      pitching[key].er += r.er;
-      pitching[key].so += r.so || 0;
+      if (!pitching[key]) pitching[key] = { name_key: r.name_key, team: r.team, ip_outs: null, er: null, so: null };
+      addYearStat(pitching[key], "ip_outs", r.ip_outs);
+      addYearStat(pitching[key], "er", r.er);
+      addYearStat(pitching[key], "so", r.so);
     }
   }
 
@@ -203,14 +211,26 @@ function yearBoard(app, year) {
   });
 
   const hitRows = Object.values(hitting).map(function (r) {
-    r.avg = r.ab ? r.h / r.ab : 0;
-    r.avg_display = r.ab ? (r.h / r.ab).toFixed(3).replace(/^0/, "") : ".000";
+    if (r.ab == null || r.h == null) {
+      r.avg = null;
+      r.avg_display = "—";
+    } else if (r.ab > 0) {
+      r.avg = r.h / r.ab;
+      r.avg_display = r.avg.toFixed(3).replace(/^0/, "");
+    } else {
+      r.avg = 0;
+      r.avg_display = ".000";
+    }
     return r;
-  }).filter(function (r) { return r.ab >= 8; }).sort(function (a, b) { return b.avg - a.avg; });
+  }).filter(function (r) { return r.ab >= 8; }).sort(function (a, b) {
+    if (a.avg == null) return 1;
+    if (b.avg == null) return -1;
+    return b.avg - a.avg;
+  });
 
   const pitRows = Object.values(pitching).map(function (r) {
-    r.ip = Math.floor(r.ip_outs / 3) + "." + (r.ip_outs % 3);
-    r.era = r.ip_outs ? (r.er * 7) / (r.ip_outs / 3) : null;
+    r.ip = r.ip_outs == null ? "" : (Math.floor(r.ip_outs / 3) + "." + (r.ip_outs % 3));
+    r.era = (r.er == null || !r.ip_outs) ? null : (r.er * 7) / (r.ip_outs / 3);
     r.era_display = r.era == null ? "—" : r.era.toFixed(2);
     return r;
   }).filter(function (r) { return r.ip_outs >= 9; }).sort(function (a, b) {

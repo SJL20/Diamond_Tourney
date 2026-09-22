@@ -11,7 +11,7 @@ During an event window: a final score or box arrives (Slack `#event-scores` or w
 1. Auth as `bot`.
 2. List work:
    - `GET /api/bot/gc-monitor` — coach-supplied public GameChanger team and box URLs to poll (`python3 scripts/bot_gc_monitor.py --list`).
-   - `GET /api/bot/event-boxes` — queued GC PDFs and public box URLs still waiting for typed/OCR lines.
+   - `GET /api/bot/event-boxes` — queued GC PDFs and public box URLs. If hitting or pitching is already filled from a PDF text extract, leave those lines for the director. Read the file yourself only when the note says it has no text layer or no headers.
 3. Open each public GC URL (no login). Read posted scores and lines only. Unreadable cell → `null` + QC note.
 4. POST extracted lines to `/api/bot/event-box`:
 
@@ -50,4 +50,4 @@ CLI: `python3 scripts/bot_c_event_box.py --list` then `--event SLUG --game ID --
 9. Leader gates default: min 8 AB, min 3.0 IP.
 10. After a final, standings and the next bracket slot update (`advanceBracket`). Do not pick all-tournament by eye — `/t/{slug}/awards` is the number sheet.
 
-Do not invent Friday/Saturday pool boxes or player lines the public page does not show. PDF upload OCR remains a supported door alongside this monitor loop.
+Do not invent Friday/Saturday pool boxes or player lines the public page does not show. A PDF with a text layer is read on upload into the director review list. A scan with no text layer stays queued beside this monitor loop.

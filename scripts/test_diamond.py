@@ -18,6 +18,7 @@ from lib.exif import strip_exif
 from lib.standings import sort_pool, parse_order, win_pct
 from scripts.bot_gc_monitor import is_public_gc_url, load_watch
 from scripts.pb_client import auth, request, request_multipart
+from scripts.pdf_box_text import headerless_pdf_bytes, sample_pdf_bytes
 
 BASE = os.environ.get("PB_URL") or f"http://127.0.0.1:{os.environ.get('PB_PORT', '8097')}"
 
@@ -4652,6 +4653,188 @@ class FollowAndStatsTests(unittest.TestCase):
         cleared = request(BASE, "GET", "/api/account/following", team_token)
         self.assertEqual(cleared["teams"], [])
         self.assertEqual(cleared["tournaments"], [])
+
+
+class PdfUploadExtractTests(unittest.TestCase):
+    """A GameChanger-style PDF text layer fills the review queue and does not publish itself."""
+
+    def _weekend(self, td, name):
+        slug = name + "-" + uuid.uuid4().hex[:8]
+        created = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": name.replace("-", " ").title(),
+            "slug": slug,
+            "format": "pool-only",
+            "fields": [{"name": "Main"}],
+        })
+        slug = created["event"]["slug"]
+        email = f"pdf.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "CoachScore1!",
+            "passwordConfirm": "CoachScore1!",
+            "display_name": "PDF Coach",
+            "intent": "team",
+        })
+        confirm_account(email)
+        mgr = auth(BASE, email, "CoachScore1!")
+        request(BASE, "POST", f"/api/events/{slug}/signup", mgr, {
+            "team_name": "FAKE Hawks 10U",
+            "pool": "A",
+            "contact_email": email,
+        })
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "FAKE Heat 10U",
+            "pool": "A",
+            "as_director": True,
+        })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-only",
+        })
+        game = auto["schedule"][0]
+        return slug, game, mgr
+
+    def _lines(self, box, kind, name):
+        return next(row for row in box[kind] if row.get("name") == name)
+
+    def test_pdf_text_waits_for_approve_and_keeps_blank_cells(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        slug, game, mgr = self._weekend(td, "pdf-extract")
+        pdf = sample_pdf_bytes(game["home"], game["away"])
+        uploaded = request_multipart(BASE, f"/api/events/{slug}/schedule/{game['id']}/box", mgr, {
+            "source": "gc_pdf",
+            "original_name": "LadyDukes_style_box.pdf",
+        }, {"file": ("LadyDukes_style_box.pdf", pdf, "application/pdf")})
+        box = uploaded["box"]
+        self.assertEqual(box["status"], "needs_review")
+        self.assertEqual(box["source"], "gc_pdf")
+        self.assertIn("PDF text extract", box["note"])
+        ada = self._lines(box, "hitting", "FAKE Ada L")
+        self.assertEqual(ada["jersey"], "17")
+        self.assertEqual(ada["ab"], 3)
+        self.assertEqual(ada["h"], 2)
+        self.assertIsNone(ada["rbi"])
+        self.assertEqual(ada["so"], 0)
+        self.assertNotIn("avg", ada)
+        bea = self._lines(box, "hitting", "FAKE Bea M")
+        self.assertEqual(bea["h"], 3)
+        self.assertEqual(bea["ab"], 2)
+        dee = self._lines(box, "hitting", "FAKE Dee R")
+        self.assertEqual(dee["rbi"], 0)
+        cy = self._lines(box, "pitching", "FAKE Cy P")
+        self.assertEqual(cy["ip"], "3.1")
+        self.assertIsNone(cy["er"])
+        self.assertEqual(cy["pitches"], 48)
+        self.assertEqual(cy["strikes"], 30)
+        blob = json.dumps(box)
+        self.assertNotIn("FAKE Zed Q", blob)
+        self.assertNotIn(".400", blob)
+        self.assertNotIn("TEAM TOTALS", blob)
+        before = request(BASE, "GET", f"/api/event/{slug}/board")
+        self.assertNotIn("FAKE Ada L", json.dumps(before["leaders"]))
+        stored = request(
+            BASE, "GET",
+            f'/api/collections/event_hitting/records?perPage=50&filter=schedule_row="{game["id"]}"',
+            td,
+        )
+        self.assertEqual(stored["totalItems"], 0)
+        with self.assertRaises(RuntimeError) as bot_review:
+            request(BASE, "POST", f"/api/events/{slug}/boxes/{box['id']}/review", bot, {"status": "approved"})
+        self.assertIn("bot cannot", str(bot_review.exception).lower())
+        approved = request(BASE, "POST", f"/api/events/{slug}/boxes/{box['id']}/review", td, {"status": "approved"})
+        self.assertEqual(approved["box"]["status"], "approved")
+        after = request(BASE, "GET", f"/api/event/{slug}/board")
+        full = after["leaders"]["full_hitting"]
+        ada_pub = next(row for row in full if row.get("player") == "FAKE Ada L #17")
+        self.assertIsNone(ada_pub["rbi"])
+        self.assertEqual(ada_pub["h"], 2)
+        dee_pub = next(row for row in full if row.get("player") == "FAKE Dee R #8")
+        self.assertEqual(dee_pub["rbi"], 0)
+        cy_pub = next(row for row in after["leaders"]["full_pitching"] if row.get("player") == "FAKE Cy P #12")
+        self.assertEqual(cy_pub["era"], "—")
+        rows = request(
+            BASE, "GET",
+            f'/api/collections/event_hitting/records?perPage=50&expand=event_player&filter=schedule_row="{game["id"]}"',
+            td,
+        )
+        ada_row = next(
+            row for row in rows["items"]
+            if row.get("expand", {}).get("event_player", {}).get("name_key") == "FAKE Ada L #17"
+        )
+        self.assertIn("rbi", ada_row.get("blank") or [])
+
+    def test_scan_without_headers_stays_queued_and_checkbox_can_accept_the_file(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug, game, mgr = self._weekend(td, "pdf-scan")
+        quiet = request_multipart(BASE, f"/api/events/{slug}/schedule/{game['id']}/box", mgr, {
+            "source": "gc_pdf",
+            "original_name": "scan.pdf",
+        }, {"file": ("scan.pdf", headerless_pdf_bytes(), "application/pdf")})
+        self.assertEqual(quiet["box"]["status"], "queued")
+        self.assertEqual(quiet["box"]["hitting"], [])
+        self.assertIn("no batting or pitching headers", quiet["box"]["note"])
+        accepted = request_multipart(BASE, f"/api/events/{slug}/schedule/{game['id']}/box", td, {
+            "source": "director_pdf",
+            "approve_file": "true",
+            "original_name": "scan.pdf",
+        }, {"file": ("scan.pdf", headerless_pdf_bytes(), "application/pdf")})
+        self.assertEqual(accepted["box"]["status"], "approved")
+        self.assertEqual(accepted["box"]["hitting"], [])
+
+    def test_token_pdf_extract_does_not_replace_the_typed_score(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "pdf-token-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "PDF Token",
+            "slug": slug,
+            "format": "pool-only",
+            "fields": [{"name": "Field 1"}],
+        })
+        home = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "FAKE Hawks 10U",
+            "pool": "A",
+            "as_director": True,
+        })["team"]
+        request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "FAKE Heat 10U",
+            "pool": "A",
+            "as_director": True,
+        })
+        made = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "FAKE Hawks 10U",
+            "away": "FAKE Heat 10U",
+            "date": "2026-09-18",
+            "time": "08:00",
+            "field": "Field 1",
+            "pool": "A",
+        })
+        game = made["game"]
+        ran = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T14:00:00.000Z",
+        })
+        token = next(row["token"] for row in ran["invites"] if row["team_id"] == home["id"])
+        pdf = sample_pdf_bytes(game["home"], game["away"])
+        uploaded = request_multipart(BASE, f"/api/box/{token}", None, {
+            "home_runs": "4",
+            "away_runs": "1",
+            "method": "gc_pdf",
+            "original_name": "book.pdf",
+            "submitted_by": "FAKE coach",
+        }, {"file": ("book.pdf", pdf, "application/pdf")})
+        self.assertEqual(uploaded["state"], "one_book")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(item for item in board["schedule"] if item["id"] == game["id"])
+        self.assertEqual(row["home_runs"], 4)
+        self.assertEqual(row["away_runs"], 1)
+        detail = request(BASE, "GET", f"/api/events/{slug}/schedule/{game['id']}", td)
+        self.assertEqual(detail["box"]["status"], "needs_review")
+        self.assertEqual(self._lines(detail["box"], "hitting", "FAKE Ada L")["rbi"], None)
+        self.assertNotIn("FAKE Ada L", json.dumps(board["leaders"]))
 
 
 if __name__ == "__main__":
