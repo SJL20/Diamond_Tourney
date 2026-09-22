@@ -545,36 +545,168 @@ export async function findPage() {
   return startGate("find");
 }
 
+function teamAdminError(text) {
+  const box = document.getElementById("team-admin-err");
+  if (!box) return;
+  box.hidden = !text;
+  box.textContent = text || "";
+}
+
+async function teamAdminFail(res) {
+  let text = "";
+  try { text = await res.text(); } catch (err) { text = ""; }
+  try {
+    const body = JSON.parse(text);
+    text = body.message || text;
+  } catch (err) {}
+  teamAdminError(text || "Could not save that change.");
+}
+
 export async function adminTeams() {
   const u = who();
   if (!isSiteAdmin(u)) {
     flowRoot().innerHTML = gateChrome("admin", `<section class="card"><p>Site admin only.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
     return;
   }
-  const res = await fetch("/api/admin/clubs", { headers: { ...authHeader() } });
-  if (!res.ok) {
+  const headers = { ...authHeader() };
+  const [clubRes, masterRes, attachRes] = await Promise.all([
+    fetch("/api/admin/clubs", { headers }),
+    fetch("/api/admin/teams", { headers }),
+    fetch("/api/admin/teams/attach", { headers }),
+  ]);
+  if (!clubRes.ok || !masterRes.ok || !attachRes.ok) {
     flowRoot().innerHTML = gateChrome("admin", `<section class="card empty">Could not load team profiles.</section>`);
     return;
   }
-  const data = await res.json();
+  const clubs = (await clubRes.json()).clubs || [];
+  const masterBody = await masterRes.json();
+  const masters = masterBody.teams || [];
+  const preview = await attachRes.json();
+  const eventLine = (preview.events || []).map((ev) => `${escapeHtml(ev.name || ev.slug)} (${ev.rows})`).join(", ");
+  const suggestionLabel = (g) => {
+    if (g.action === "create") return "Suggested: new master team";
+    if (g.action === "link") return "Suggested: " + (g.master_name || "existing team");
+    return "Suggested: leave unlinked";
+  };
+  const groupRows = (preview.groups || []).map((g) => {
+    const why = g.reason || (g.match === "gamechanger" ? "Same GameChanger link" : g.match === "name" ? "Exact name" : "");
+    const places = (g.weekends || []).slice(0, 3).map((w) => w.event_name || w.name).filter(Boolean);
+    const extra = (g.weekends || []).length > places.length ? " +" + ((g.weekends || []).length - places.length) : "";
+    return `<tr data-attach-row="${escapeHtml(g.key)}">
+      <td><b>${escapeHtml(g.name)}</b><br><span class="muted">${escapeHtml(why)}${places.length ? " · " + escapeHtml(places.join(", ") + extra) : ""}</span></td>
+      <td>${(g.weekends || []).length}</td>
+      <td>
+        <select data-attach-mode="${escapeHtml(g.key)}">
+          <option value="suggested">${escapeHtml(suggestionLabel(g))}</option>
+          <option value="create">Create a new master team</option>
+          <option value="skip">Leave unlinked</option>
+          <option value="pick">Choose a different master team</option>
+        </select>
+        <div data-attach-pick="${escapeHtml(g.key)}" hidden>
+          <input data-attach-find="${escapeHtml(g.key)}" placeholder="Type a master team name" autocomplete="off">
+          <div class="attach-hits" data-attach-hits="${escapeHtml(g.key)}"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
   flowRoot().innerHTML = gateChrome("admin", `
     <section class="page-head">
       <h1>Team profiles</h1>
-      <p class="muted">Admin is by team, not by email. A login can attach later. GameChanger is optional — leave it blank if they score on paper. <a data-link href="/admin/events">Remove tournaments</a></p>
+      <p class="muted">Site admin only. Rename a team here, or remove a duplicate. A roster, a season book, or a final game stays. <a data-link href="/admin/events">Remove tournaments</a> before attaching leftover weekend teams.</p>
+      <p class="error" id="team-admin-err" hidden></p>
+    </section>
+    <section class="card" id="attach-card">
+      <h2>Attach leftover weekend teams</h2>
+      <p class="muted">Each row starts on the suggestion. Switch a row to another master team, a new master team, or leave it unlinked. Delete the test tournament and Keystone Clash first if those clubs should stay off the master list. Scores and player lines stay as they are.</p>
+      <p>${preview.unlinked
+        ? `${preview.unlinked} weekend teams are not on a master team yet. Suggestions: ${preview.will_link} join one that already exists. ${preview.will_create} new master teams cover ${preview.create_rows} weekend rows. ${preview.skipped} left unlinked.`
+        : "Every weekend team already points at a master team."}</p>
+      ${eventLine ? `<p class="muted">Tournaments in this pass: ${eventLine}</p>` : ""}
+      ${groupRows ? `<label>Find a leftover <input id="attach-find" placeholder="Type a name"></label>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Weekend team</th><th>Weekends</th><th>Master team</th></tr></thead>
+        <tbody>${groupRows}</tbody>
+      </table></div>` : ""}
+      ${preview.groups_truncated ? `<p class="muted">Showing the first 400 groups. The rest use the suggestion.</p>` : ""}
+      <button class="btn" type="button" id="attach-go" ${preview.unlinked ? "" : "disabled"}>Attach leftover teams</button>
     </section>
     <section class="card">
-      <h2>Add a team</h2>
+      <h2>Master teams</h2>
+      <p class="muted">This is the team a coach owns. ${masters.length} on file${masterBody.truncated ? " (first 2,000)" : ""}.</p>
+      <label>Find a team <input id="master-find" placeholder="Type a name"></label>
+      <div id="master-list"></div>
+    </section>
+    <section class="card">
+      <h2>Year-board profiles</h2>
+      <p class="muted">Older club rows used by the year board. Removing one drops that profile. Weekend teams and scores stay.</p>
       <form class="form wide" id="club-new">
+        <h3>Add a profile</h3>
         <label>Team name <input name="name" required placeholder="Hawks 10U"></label>
         <label>Age group <input name="ages" placeholder="10U"></label>
         <label>GameChanger URL (optional) <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…"></label>
         <label>Contact email <input name="contact_email" type="email"></label>
         <label>Notes <input name="notes" placeholder="No GC this season; scorebook at the field"></label>
         <button class="btn" type="submit">Save team</button>
-        <p class="error" id="club-err" hidden></p>
       </form>
+      <label>Find a profile <input id="club-find" placeholder="Type a name"></label>
+      <div id="club-list"></div>
     </section>
-    <section class="grid">${(data.clubs || []).map((c) => `
+  `);
+
+  const showMasters = (query) => {
+    const q = String(query || "").trim().toLowerCase();
+    const matched = masters.filter((t) => !q || String(t.name || "").toLowerCase().includes(q));
+    const slice = matched.slice(0, 40);
+    const box = document.getElementById("master-list");
+    box.innerHTML = slice.map((t) => `
+      <form class="card form wide" data-master="${t.id}">
+        <h3>${escapeHtml(t.name)}</h3>
+        <p class="muted">${escapeHtml(t.age_group || "Age not set")} · ${t.gc_linked ? "GameChanger linked" : "No GameChanger"} · ${t.owner_state === "owner" ? "Has an owner" : t.owner_state === "pending" ? "Waiting on an email" : "No owner yet"} · ${escapeHtml(t.slug)}</p>
+        <label>Name <input name="name" value="${escapeHtml(t.name)}" required></label>
+        <div class="actions">
+          <button class="btn ghost" type="submit">Update</button>
+          <button class="btn danger" type="button" data-remove-master="${t.id}" data-remove-name="${escapeHtml(t.name)}">Remove</button>
+        </div>
+      </form>`).join("") || `<p class="empty">${q ? "No master team matches that name." : "No master teams yet."}</p>`;
+    if (matched.length > slice.length) {
+      box.insertAdjacentHTML("beforeend", `<p class="muted">Showing 40 of ${matched.length}. Type more of the name.</p>`);
+    }
+    box.querySelectorAll("[data-master]").forEach((form) => {
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const name = new FormData(form).get("name");
+        const res2 = await fetch("/api/teams/" + form.dataset.master, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ name }),
+        });
+        if (!res2.ok) return teamAdminFail(res2);
+        flashSaved("Team renamed");
+        adminTeams();
+      });
+    });
+    box.querySelectorAll("[data-remove-master]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.removeName || "this team";
+        if (!confirm("Remove " + name + "? A roster, a season book, or a final game blocks this. Weekend entries stay on their tournaments.")) return;
+        const res2 = await fetch("/api/admin/teams/" + btn.dataset.removeMaster + "/remove", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ confirm: true }),
+        });
+        if (!res2.ok) return teamAdminFail(res2);
+        flashSaved("Team removed");
+        adminTeams();
+      });
+    });
+  };
+
+  const showClubs = (query) => {
+    const q = String(query || "").trim().toLowerCase();
+    const matched = clubs.filter((c) => !q || String(c.name || "").toLowerCase().includes(q));
+    const slice = matched.slice(0, 40);
+    const box = document.getElementById("club-list");
+    box.innerHTML = slice.map((c) => `
       <form class="card form wide" data-club="${c.id}">
         <h3>${escapeHtml(c.name)}</h3>
         <p class="muted">${c.gc_linked ? "GameChanger linked" : "No GameChanger — stats from this host only"} · ${escapeHtml(c.slug)}</p>
@@ -583,34 +715,129 @@ export async function adminTeams() {
         <label>GameChanger URL <input name="gamechanger_url" type="url" value="${escapeHtml(c.gamechanger_url)}"></label>
         <label>Contact email <input name="contact_email" type="email" value="${escapeHtml(c.contact_email)}"></label>
         <label>Notes <input name="notes" value="${escapeHtml(c.notes)}"></label>
-        <button class="btn ghost" type="submit">Update</button>
-      </form>`).join("") || `<div class="card empty">No team profiles yet.</div>`}
-    </section>
-  `);
-  const send = async (id, form) => {
-    const body = Object.fromEntries(new FormData(form));
-    const res2 = await fetch(id ? "/api/admin/clubs/" + id : "/api/admin/clubs", {
+        <div class="actions">
+          <button class="btn ghost" type="submit">Update</button>
+          <button class="btn danger" type="button" data-remove-club="${c.id}" data-remove-name="${escapeHtml(c.name)}">Remove</button>
+        </div>
+      </form>`).join("") || `<p class="empty">${q ? "No profile matches that name." : "No team profiles yet."}</p>`;
+    if (matched.length > slice.length) {
+      box.insertAdjacentHTML("beforeend", `<p class="muted">Showing 40 of ${matched.length}. Type more of the name.</p>`);
+    }
+    box.querySelectorAll("[data-club]").forEach((form) => {
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const body = Object.fromEntries(new FormData(form));
+        const res2 = await fetch("/api/admin/clubs/" + form.dataset.club, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify(body),
+        });
+        if (!res2.ok) return teamAdminFail(res2);
+        flashSaved("Club saved");
+        adminTeams();
+      });
+    });
+    box.querySelectorAll("[data-remove-club]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.removeName || "this profile";
+        if (!confirm("Remove " + name + " from the year board? Weekend teams and scores stay.")) return;
+        const res2 = await fetch("/api/admin/clubs/" + btn.dataset.removeClub + "/remove", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader() },
+          body: JSON.stringify({ confirm: true }),
+        });
+        if (!res2.ok) return teamAdminFail(res2);
+        flashSaved("Profile removed");
+        adminTeams();
+      });
+    });
+  };
+
+  showMasters("");
+  showClubs("");
+  document.getElementById("master-find").addEventListener("input", (ev) => showMasters(ev.target.value));
+  document.getElementById("club-find").addEventListener("input", (ev) => showClubs(ev.target.value));
+  document.getElementById("club-new").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const body = Object.fromEntries(new FormData(ev.target));
+    const res2 = await fetch("/api/admin/clubs", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(body),
     });
-    if (!res2.ok) {
-      const err = document.getElementById("club-err");
-      if (err) { err.hidden = false; err.textContent = await res2.text(); }
-      return;
-    }
+    if (!res2.ok) return teamAdminFail(res2);
     flashSaved("Club saved");
     adminTeams();
-  };
-  document.getElementById("club-new").addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    send("", ev.target);
   });
-  flowRoot().querySelectorAll("[data-club]").forEach((form) => {
-    form.addEventListener("submit", (ev) => {
-      ev.preventDefault();
-      send(form.dataset.club, form);
+  const attachFind = document.getElementById("attach-find");
+  if (attachFind) {
+    attachFind.addEventListener("input", () => {
+      const q = attachFind.value.trim().toLowerCase();
+      flowRoot().querySelectorAll("[data-attach-row]").forEach((row) => {
+        row.hidden = !!(q && row.textContent.toLowerCase().indexOf(q) < 0);
+      });
     });
+  }
+  const pickBoxes = {};
+  const findBoxes = {};
+  const hitBoxes = {};
+  flowRoot().querySelectorAll("[data-attach-pick]").forEach((el) => { pickBoxes[el.dataset.attachPick] = el; });
+  flowRoot().querySelectorAll("[data-attach-find]").forEach((el) => { findBoxes[el.dataset.attachFind] = el; });
+  flowRoot().querySelectorAll("[data-attach-hits]").forEach((el) => { hitBoxes[el.dataset.attachHits] = el; });
+  flowRoot().querySelectorAll("[data-attach-mode]").forEach((sel) => {
+    const key = sel.dataset.attachMode;
+    const pick = pickBoxes[key];
+    const find = findBoxes[key];
+    const hitBox = hitBoxes[key];
+    sel.addEventListener("change", () => {
+      const choosing = sel.value === "pick";
+      if (pick) pick.hidden = !choosing;
+      if (!choosing) delete sel.dataset.masterId;
+    });
+    if (!find || !hitBox) return;
+    find.addEventListener("input", () => {
+      const q = find.value.trim().toLowerCase();
+      const matched = q ? masters.filter((t) => String(t.name || "").toLowerCase().includes(q)).slice(0, 8) : [];
+      hitBox.innerHTML = matched.map((t) => `<button type="button" class="btn ghost" data-pick-id="${t.id}">${escapeHtml(t.name)}${t.age_group ? " · " + escapeHtml(t.age_group) : ""}</button>`).join("")
+        || (q ? `<p class="muted">No master team matches.</p>` : "");
+      hitBox.querySelectorAll("[data-pick-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          sel.dataset.masterId = btn.dataset.pickId;
+          find.value = btn.textContent;
+          hitBox.innerHTML = "";
+        });
+      });
+    });
+  });
+  document.getElementById("attach-go").addEventListener("click", async () => {
+    const choices = [];
+    const missing = [];
+    flowRoot().querySelectorAll("[data-attach-mode]").forEach((sel) => {
+      const key = sel.dataset.attachMode;
+      if (sel.value === "suggested") return;
+      if (sel.value === "create") choices.push({ key, action: "create" });
+      else if (sel.value === "skip") choices.push({ key, action: "skip" });
+      else if (sel.value === "pick") {
+        if (!sel.dataset.masterId) missing.push(key);
+        else choices.push({ key, master_id: sel.dataset.masterId });
+      }
+    });
+    if (missing.length) {
+      teamAdminError("Choose a master team for each row set to a different team, or switch that row back to the suggestion.");
+      return;
+    }
+    const names = (preview.events || []).map((ev) => ev.name || ev.slug).filter(Boolean);
+    const listed = names.slice(0, 8).join(", ");
+    const more = names.length > 8 ? " and " + (names.length - 8) + " more" : "";
+    if (!confirm("Attach leftover weekend teams" + (listed ? " from " + listed + more : "") + "? Rows you changed use your choice. The others use the suggestion. Scores and player lines stay.")) return;
+    const res2 = await fetch("/api/admin/teams/attach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({ confirm: true, choices }),
+    });
+    if (!res2.ok) return teamAdminFail(res2);
+    flashSaved("Weekend teams attached");
+    adminTeams();
   });
 }
 

@@ -24,7 +24,7 @@ A coach with no master team sees "Create your team" on the account page. The eve
 
 CSV import is the director bulk door. For each new name it writes the master `teams` row first, then the `event_teams` row that points at it. The same slug on a later import reuses the master row.
 
-Rows already on the board (Keystone Clash, Harbor Eight, older director signups) keep a blank `event_teams.team`. Nothing in this change guesses which master team they belong to. A blank link stays blank until someone attaches it on purpose.
+Rows already on the board keep a blank `event_teams.team` until a site admin runs **Attach leftover teams** on `/admin/teams`. That button is the one-time pass. It does not run on deploy. Delete the weekends you do not want in the master list first (the test tournament, Keystone Clash). The pass groups a blank link by the public GameChanger URL, then by the exact team name. `Hawks` and `Hawks 10U` stay two teams. A name that already belongs to more than one master team is left unlinked. Each group starts on that suggestion. A site admin can switch a group to a different master team, to a new master team, or leave it unlinked. Scores and player lines are not written.
 
 Coach email, phone, the second contact, and a pending owner email stay on `team_contacts` keyed by the master team. Co-owner emails stay on `team_co_owners`. None of those are columns on `teams`. `teams` is publicly readable. The GameChanger link on `teams` is a public page URL.
 
@@ -42,7 +42,7 @@ Before the master-team link, signup wrote `event_teams` and `club_teams` and nev
 
 `users.team` is still one team per coach account. A director account can create many master teams and is not attached to them.
 
-`club_teams` is still written, because the year board and Follow-a-team use it for weekends that have no master link. New signups set both `event_teams.team` and `event_teams.club`. The year board prefers `event_teams.team` when it is set (`team:{id}`), then `club_teams`, then the single weekend row. An old weekend and a new weekend for the same club stay two year-board rows until a later pass attaches the old row. Do not guess that attachment from the name.
+`club_teams` is still written, because the year board and Follow-a-team use it for weekends that have no master link. New signups set both `event_teams.team` and `event_teams.club`. The year board prefers `event_teams.team` when it is set (`team:{id}`), then `club_teams`, then the single weekend row. `/admin/teams` is where a site admin renames a master team, removes a duplicate, and removes a year-board profile. Removing a profile clears `event_teams.club` and leaves the weekend row. Removing a master team is refused when that team has a roster, a season book, a score sheet in review, or a final game. An empty duplicate is deleted, and its weekend rows stay with a blank link.
 
 ## Collection inventory
 
@@ -101,7 +101,7 @@ Checked against hooks, the public pages, and the tests. "Unused" means nothing i
 4. **Hooks bypass collection rules.** A closed rule does not protect a route that loads the row with `app.findRecordsByFilter` and returns the email. Check both the migration and the hook.
 5. **New API rules start with** `@request.auth.id != '' && (...)`. An empty id must not match an empty column. Authorize by ownership (`created_by`, co-owner, `users.team`, `event_teams.account`), not by the `event_td` role. Registration hands that role out.
 6. **Migrations are additive.** A new file with the next number. Do not edit a migration that already ran. Do not list events and delete the ones missing from a keep-set. `scripts/check_migration_safety.py` fails CI on that pattern.
-7. **Do not invent a link.** Unreadable or missing identity stays null. Matching "Hawks" to "Hawks 10U" by guess is a bad link.
+7. **Do not invent a link.** Unreadable or missing identity stays null. Matching "Hawks" to "Hawks 10U" by guess is a bad link. The site-admin attach pass may join rows that share a GameChanger URL or the exact same name. It is a button, not a migration.
 8. **A new collection needs a writer and a reader** in the same change, or it is named in this file as unused. `inquiries`, `orgs`, and `seasons` are the examples to avoid.
 9. **Metric formulas do not move with schema work.** Youth ERA base is 7. IP stays integer outs. An unpublished stat is null, not 0.
 10. **Bots write staging and event boxes.** They do not approve staging, delete approved rows, or create master teams.
@@ -109,6 +109,6 @@ Checked against hooks, the public pages, and the tests. "Unused" means nothing i
 ## What a later pass still has to do
 
 - Point follows and the year board at `teams` only, then stop writing `club_teams`.
-- Attach old `event_teams` rows to a master team when a person says they are the same club. No automatic name match.
+- The site-admin attach button covers a blank `event_teams.team`. It still does not treat a shorter name as the same club.
 - Let one coach account hold more than one master team. `users.team` is a single relation today.
 - Give `posts`, `inquiries`, `orgs`, and `seasons` a real page, or leave them listed here as unused.

@@ -329,6 +329,41 @@ routerAdd("POST", "/api/admin/clubs/{id}", (e) => {
   return e.json(200, { club: host.saveClub(e.app, e.requestInfo().body || {}, e.request.pathValue("id")) });
 }, $apis.requireAuth());
 
+routerAdd("POST", "/api/admin/clubs/{id}/remove", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, host.removeClub(e.app, e.request.pathValue("id"), e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/admin/teams", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, host.listAdminMasters(e.app));
+}, $apis.requireAuth());
+
+routerAdd("GET", "/api/admin/teams/attach", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, host.attachLeftovers(e.app, e.auth, {}));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/admin/teams/attach", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, host.attachLeftovers(e.app, e.auth, e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/admin/teams/{id}/remove", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const host = require(__hooks + "/host.js");
+  sb.requireRole(e, ["region_admin"]);
+  return e.json(200, host.removeMasterTeam(e.app, e.request.pathValue("id"), e.requestInfo().body || {}));
+}, $apis.requireAuth());
+
 routerAdd("GET", "/api/year/{year}/board", (e) => {
   const year = require(__hooks + "/year.js");
   return e.json(200, year.yearBoard(e.app, e.request.pathValue("year")));

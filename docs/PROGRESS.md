@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 135 unit/integration cases + 13 acceptance checks |
+| Tests | 136 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -213,6 +213,20 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-22 — Attach leftovers can point at a chosen master
+
+Each leftover group on `/admin/teams` still starts on the suggestion: the same GameChanger link, the exact same name, a new master team, or left unlinked when that name already belongs to more than one master. A site admin can switch that row to a different master team, force a new master team, or leave it unlinked. The button still runs only when they confirm it.
+
+Proved by the choice override in `test_site_admin_attaches_leftovers_and_removes_duplicates`. A browser pass shows the suggestion selected and a typed pick of another master team.
+
+### 2026-09-22 — Site admin can clean teams and attach leftovers
+
+`/admin/teams` is still the Teams screen. A site admin can rename a master team and a year-board profile, and can remove a duplicate. Removing a year-board profile leaves the weekend row and its scores. Removing a master team is refused when that team has a roster, a season book, a score sheet in review, or a final game. An empty duplicate is deleted. Its weekend rows stay, with the master link cleared.
+
+Attach leftover teams is a button on that page, not a migration. It runs only when a site admin confirms it, after they delete weekends that should not be copied (the test tournament, Keystone Clash). A shared GameChanger link, or the exact same name, becomes one master team. Hawks and Hawks 10U stay separate. A name that already matches more than one master team is skipped. Coach email is copied onto the private season contact. The public team row does not gain an email. Scores and player lines are not written.
+
+Proved by `test_site_admin_attaches_leftovers_and_removes_duplicates` in the diamond suite. A browser pass covers the Teams page: the attach preview, removing a year-board profile, and the roster block on a master team.
 
 ### 2026-09-21 — Master team holds the club
 
