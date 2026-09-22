@@ -1,8 +1,8 @@
 import { flashSaved, isSiteAdmin, loginWithPassword, pageShell } from "./chrome.js";
+import { apiSend, authHeader, markSiteAdminRecord, pb as flowPb } from "./client.js";
 import { stampDataTh } from "./display.js";
 
 const flowRoot = () => document.getElementById("app");
-const flowPb = new PocketBase(location.origin);
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -190,7 +190,7 @@ export async function startGate(forcedTab) {
         <h2>Log in</h2>
         <p class="muted">Opens your tournaments and any season book on this account.</p>
         <form class="form wide" id="login-form">
-          <label>Email <input name="email" type="email" autocomplete="username" required></label>
+          <label>Email <input name="email" type="email" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
           <button class="btn" type="submit">Enter account</button>
         </form>
@@ -303,16 +303,21 @@ export async function accountHome() {
     goFlow("/login");
     return;
   }
-  const res = await fetch("/api/account/home", {
-    headers: { Authorization: flowPb.authStore.token },
-  });
-  if (!res.ok) {
-    flowRoot().innerHTML = gateChrome("account", `<section class="card empty">Could not load this account.</section>`);
+  const res = await apiSend("/api/account/home");
+  if (!res.ok || !res.data || !res.data.user) {
+    flowRoot().innerHTML = gateChrome("account", `<section class="card empty">
+      <p>Could not load this account.</p>
+      <p class="muted">${escapeHtml(res.message || "The account page did not come back. Try again on this same login.")}</p>
+      <p><button class="btn" type="button" id="account-retry">Try again</button></p>
+    </section>`);
+    const retry = document.getElementById("account-retry");
+    if (retry) retry.addEventListener("click", () => accountHome());
     return;
   }
-  const home = await res.json();
+  const home = res.data;
   const name = home.user.display_name || home.user.email;
   const admin = !!home.user.site_admin;
+  if (admin) markSiteAdminRecord();
   const verified = home.user.verified !== false;
   let just = null;
   try {
@@ -484,7 +489,7 @@ export async function accountHome() {
       const note = document.getElementById("resend-note");
       const sent = await fetch("/api/account/resend", {
         method: "POST",
-        headers: { Authorization: flowPb.authStore.token },
+        headers: authHeader(),
       });
       const out = await sent.json().catch(() => ({}));
       note.hidden = false;
@@ -501,7 +506,7 @@ export async function accountHome() {
   const dropFollow = async (body) => {
     const sent = await fetch("/api/account/unfollow", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: flowPb.authStore.token },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(body),
     });
     if (sent.ok) accountHome();
@@ -546,7 +551,7 @@ export async function adminTeams() {
     flowRoot().innerHTML = gateChrome("admin", `<section class="card"><p>Site admin only.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
     return;
   }
-  const res = await fetch("/api/admin/clubs", { headers: { Authorization: flowPb.authStore.token } });
+  const res = await fetch("/api/admin/clubs", { headers: { ...authHeader() } });
   if (!res.ok) {
     flowRoot().innerHTML = gateChrome("admin", `<section class="card empty">Could not load team profiles.</section>`);
     return;
@@ -586,7 +591,7 @@ export async function adminTeams() {
     const body = Object.fromEntries(new FormData(form));
     const res2 = await fetch(id ? "/api/admin/clubs/" + id : "/api/admin/clubs", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: flowPb.authStore.token },
+      headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(body),
     });
     if (!res2.ok) {
@@ -625,7 +630,7 @@ export async function yearPage(year) {
   </tr>`);
   const hit = (board.hitting || []).map((r) => `<tr>
     <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
-    <td>${r.ab}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.avg_display}</td>
+    <td>${r.ab ?? "—"}</td><td>${r.h ?? "—"}</td><td>${r.rbi ?? "—"}</td><td>${r.avg_display ?? "—"}</td>
   </tr>`);
   const pit = (board.pitching || []).map((r) => `<tr>
     <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
@@ -801,7 +806,7 @@ export async function adminEvents() {
     flowRoot().innerHTML = gateChrome("adminEvents", `<section class="card"><p>Site admin only.</p><p><a class="btn" data-link href="/login">Log in</a></p></section>`);
     return;
   }
-  const res = await fetch("/api/admin/events", { headers: { Authorization: flowPb.authStore.token } });
+  const res = await fetch("/api/admin/events", { headers: { ...authHeader() } });
   if (!res.ok) {
     flowRoot().innerHTML = gateChrome("adminEvents", `<section class="card empty">Could not load tournaments.</section>`);
     return;
@@ -851,7 +856,7 @@ export async function adminEvents() {
       if (!confirm("Hide " + btn.dataset.archive + " from Find? The public link stops listing it.")) return;
       const res2 = await fetch("/api/admin/events/" + encodeURIComponent(btn.dataset.archive) + "/archive", {
         method: "POST",
-        headers: { Authorization: flowPb.authStore.token },
+        headers: { ...authHeader() },
       });
       if (!res2.ok) return showErr(res2);
       flashSaved("Tournament removed from Find");
@@ -872,7 +877,7 @@ export async function adminEvents() {
       if (!confirm("Permanently delete " + slug + "? This cannot be undone.")) return;
       const res2 = await fetch("/api/admin/events/" + encodeURIComponent(slug) + "/delete", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: flowPb.authStore.token },
+        headers: { "Content-Type": "application/json", ...authHeader() },
         body: JSON.stringify({ confirm: true, slug }),
       });
       if (!res2.ok) return showErr(res2);

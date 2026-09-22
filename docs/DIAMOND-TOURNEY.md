@@ -62,6 +62,7 @@ Allowed:
   - Season book → `POST /api/bot/ingest` → `staging_games`. **Coach must Approve.** Bots never approve staging and never delete approved rows.
   - Tournament → `POST /api/bot/event-box` (lines + score) or `POST /api/bot/event-update` (score only). Use `needs_review` when the page is messy.
 - GC mobile PDF / screenshot / pasted box remains a supported door (`GET /api/bot/event-boxes`).
+- A PDF upload with a text layer is read on the server into `needs_review`. Headers pick the columns. A blank cell stays blank. A scan with no text layer stays queued for a person. The bot still cannot approve.
 
 Forbidden:
 

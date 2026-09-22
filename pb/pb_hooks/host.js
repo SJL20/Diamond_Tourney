@@ -1510,20 +1510,70 @@ function searchEvents(app, q) {
   return out;
 }
 
+function eventCardJson(rec, app, auth, extra) {
+  const sb = require(__hooks + "/softball.js");
+  let admin = false;
+  try { admin = !!(auth && sb.isEventAdmin(rec, auth, app)); } catch (err) { admin = false; }
+  const out = {
+    id: rec.id,
+    name: rec.get("name") || "",
+    slug: rec.get("slug") || "",
+    venue: rec.get("venue") || "",
+    ages: rec.get("ages") || "",
+    status: rec.get("status") || "",
+    public: !!rec.get("public"),
+    signup_open: !!rec.get("signup_open"),
+    created_by: rec.get("created_by") || "",
+    can_admin: admin,
+    start: dateStr(rec.get("start")),
+    end: dateStr(rec.get("end")),
+  };
+  if (extra) {
+    const keys = Object.keys(extra);
+    for (let i = 0; i < keys.length; i++) out[keys[i]] = extra[keys[i]];
+  }
+  return out;
+}
+
+function accountUserJson(auth, siteAdmin) {
+  const sb = require(__hooks + "/softball.js");
+  let email = "";
+  try { email = sb.normalizeEmail(auth.email()); } catch (err) { email = ""; }
+  let role = "";
+  try { role = auth.get("role") || ""; } catch (err) { role = ""; }
+  let display = "";
+  try { display = auth.get("display_name") || ""; } catch (err) { display = ""; }
+  let verified = false;
+  try { verified = sb.isVerifiedAccount(auth); } catch (err) { verified = !!siteAdmin; }
+  return {
+    id: auth.id,
+    email: email,
+    role: siteAdmin ? "region_admin" : role,
+    display_name: display || (siteAdmin ? "Site admin" : ""),
+    site_admin: !!siteAdmin,
+    verified: verified,
+  };
+}
+
 function accountHome(app, auth) {
-  const siteAdmin = require(__hooks + "/softball.js").isSiteAdmin(auth);
-  let created = [];
+  const sb = require(__hooks + "/softball.js");
+  let siteAdmin = false;
+  try { siteAdmin = sb.isSiteAdmin(auth); } catch (err) { siteAdmin = false; }
+  const created = [];
   const seenCreated = {};
   try {
     const filter = siteAdmin ? "" : "created_by = {:u}";
-    created = app.findRecordsByFilter("events", filter, "-id", 200, 0, { u: auth.id }).map(function (rec) {
-      seenCreated[rec.id] = true;
-      return eventJson(rec, app, auth);
-    });
+    const rows = app.findRecordsByFilter("events", filter, "-id", 200, 0, { u: auth.id });
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        seenCreated[rows[i].id] = true;
+        created.push(eventCardJson(rows[i], app, auth));
+      } catch (err) {}
+    }
   } catch (err) {}
   if (!siteAdmin) {
     try {
-      const email = require(__hooks + "/softball.js").normalizeEmail(auth.email());
+      const email = sb.normalizeEmail(auth.email());
       const rows = app.findRecordsByFilter(
         "event_co_owners",
         "account = {:u} || email = {:e}",
@@ -1537,7 +1587,7 @@ function accountHome(app, auth) {
         if (!evId || seenCreated[evId]) continue;
         seenCreated[evId] = true;
         try {
-          created.push(eventJson(app.findRecordById("events", evId), app, auth));
+          created.push(eventCardJson(app.findRecordById("events", evId), app, auth));
         } catch (err) {}
       }
     } catch (err) {}
@@ -1562,7 +1612,7 @@ function accountHome(app, auth) {
       if (!evId || seen[evId]) continue;
       seen[evId] = true;
       try {
-        const row = eventJson(app.findRecordById("events", evId), app);
+        const row = eventCardJson(app.findRecordById("events", evId), app);
         row.team_name = t.get("name");
         row.gc_linked = isGameChangerUrl(linkedGcUrl(app, t));
         joined.push(row);
@@ -1575,24 +1625,19 @@ function accountHome(app, auth) {
   } catch (err) {
     following = { teams: [], tournaments: [] };
   }
+  const user = accountUserJson(auth, siteAdmin);
+  user.team = (function () {
+    let teamId = "";
+    try { teamId = auth.get("team") || ""; } catch (err) { teamId = ""; }
+    if (!teamId) return null;
+    try {
+      return masterProfile(app, app.findRecordById("teams", teamId), auth);
+    } catch (err) {
+      return null;
+    }
+  })();
   return {
-    user: {
-      id: auth.id,
-      email: auth.email(),
-      role: siteAdmin ? (auth.get("role") || "region_admin") : (auth.get("role") || ""),
-      display_name: auth.get("display_name") || (siteAdmin ? "Site admin" : ""),
-      site_admin: siteAdmin,
-      verified: require(__hooks + "/softball.js").isVerifiedAccount(auth),
-      team: (function () {
-        const teamId = auth.get("team") || "";
-        if (!teamId) return null;
-        try {
-          return masterProfile(app, app.findRecordById("teams", teamId), auth);
-        } catch (err) {
-          return null;
-        }
-      })(),
-    },
+    user: user,
     created: created,
     joined: joined,
     following: following,
@@ -1600,9 +1645,14 @@ function accountHome(app, auth) {
 }
 
 function listAdminEvents(app) {
-  return app.findRecordsByFilter("events", "", "-start", 2000, 0).map(function (rec) {
-    return eventJson(rec, app);
-  });
+  const out = [];
+  try {
+    const rows = app.findRecordsByFilter("events", "", "-start", 400, 0);
+    for (let i = 0; i < rows.length; i++) {
+      try { out.push(eventCardJson(rows[i], app)); } catch (err) {}
+    }
+  } catch (err) {}
+  return out;
 }
 
 function archiveEvent(app, event) {

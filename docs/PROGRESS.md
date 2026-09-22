@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 122 unit/integration cases + 13 acceptance checks |
+| Tests | 135 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -77,6 +77,8 @@ These rows feed `eventLeaders` and the `/year/{year}` board.
 This needs an owner decision before a fix, because the columns are non-null
 number fields — making them honest means either nullable fields or an explicit
 "not published" marker, and either choice changes what the stats board renders.
+PDF upload now uses that marker (`blank` on the hitting and pitching rows) for
+cells the text layer left empty. Keystone rows do not.
 
 ### 3. Approving staging outside the API route does nothing — **open**
 
@@ -216,7 +218,7 @@ what the next session should pick up.
 
 The master `teams` row keeps the name, age, coach name, and public GameChanger link. Coach email, phone, a second contact, and a pending owner email stay on private `team_contacts`. Co-owner emails stay on private `team_co_owners`. A coach joins a weekend with the team already on the account. A director creates the team, adds it to the weekend, and passes ownership with `POST /api/teams/{id}/transfer`. An email with no account yet is stored as pending and attaches when that person registers and confirms. Old Keystone and Harbor rows still keep a blank `event_teams.team`. The September 21 database overview (passwords, backups, unique indexes, score locks) was read with this change. Those items need the owner or a separate pass. This change does not rotate production logins or turn on backups.
 
-Proved by `test_master_profile_and_email_handoff` in the diamond suite (122 cases) and the acceptance checks. A browser pass covers the one-button join and the director create-and-hand-off form.
+Proved by `test_master_profile_and_email_handoff` in the diamond suite and the acceptance checks. A browser pass covers the one-button join and the director create-and-hand-off form.
 
 ### 2026-09-21 — Master team before event signup
 
@@ -231,11 +233,68 @@ then the weekend row. The map of every collection, including the unused ones
 no master link. Old Keystone and Harbor rows were not guessed onto a master
 team. `/admin/teams` still edits `club_teams`.
 
-Proved by the diamond suite (121 cases) and acceptance checks. A browser pass
+Proved by the diamond suite and acceptance checks. A browser pass
 on a new weekend refused signup until a team existed: the director saved
 Harbor Lights 10U and then picked it, and a coach saved Coach Lights 10U on
 the account page and joined with that record. Both board rows store
 `event_teams.team`.
+
+### 2026-09-21 — PDF text extract on upload
+
+A GameChanger-style PDF with a text layer is read when it is uploaded. Column
+headers pick the cells (name, number, AB, H, RBI, IP, ER, strikeouts, and
+pitches or strikes only when that header is on the page). Season columns such
+as AVG, OBP, OPS, and ERA are left off the game lines. A blank cell stays
+blank. A real 0 stays 0. The lines go to Approve stats as `needs_review`. The
+bot still cannot approve them. A scan with no batting or pitching headers stays
+queued, and the director checkbox can still accept that file as the book of
+record. Two typed run totals on a coach link are not replaced by the PDF.
+Bracket-only uploads are not extracted, because a box row needs a schedule game.
+
+PocketBase number columns are `NOT NULL DEFAULT 0`, so a blank cannot live in
+the number itself. Migration `1700000036_blank_stat_cells.js` adds a `blank`
+list on `event_hitting` and `event_pitching`. The public board treats a listed
+field as empty (an em dash), not as 0. Finding 2 is unchanged: Keystone popup
+rows still store 0 for numbers that page never published.
+
+`LadyDukesWPA2033_vs_NorthStars11UFisher_Sep_19_2026.pdf` is a side-by-side
+GameChanger sheet. Both teams sit on one header line. That file is now read:
+18 batting lines and 5 pitching lines, totals skipped, HR left off, and the
+P-S footnote is not copied because it is not a column. Clipped names
+(`C McWill`, `S Tortori`, `L Bruck`, `Cassidy`) are completed only when the
+same page prints the longer name. The other two Downloads PDFs are still not
+on this machine. Production image installs `poppler-utils` and `python3` and
+copies `scripts/pdf_box_text.py`.
+
+The combined suite is 134 unit/integration cases. Acceptance is still green. The two account-home checks look for Keystone inside a 200-event window. This machine's database is past that window, so those two miss it here. A fresh run is not.
+A browser pass on the local game page uploaded that sample PDF, showed Ada’s
+RBI as an em dash next to Dee’s real 0, and after Approve stats the full board
+kept that split. Cy’s blank earned runs showed as an em dash, not 0.00.
+The North Stars sheet was uploaded on a local game page the same way. Approve
+stats showed 18 batting lines and 5 pitching lines, still `needs_review`.
+Lucy C is 1.2 IP with 6 earned runs, and the card shows youth ERA 25.20.
+Bruckner’s real 0 earned runs shows 0.00. The PDF’s 9–3 was not written as
+the game score.
+
+### 2026-09-21 — Mobile site-admin account would not load
+
+`/account` showed **Could not load this account** after a successful login
+when `GET /api/account/home` was not 200. After the bracket updates, a site
+admin home mapped every weekend through full `eventJson` (bracket plan,
+fields, packet). That is too much for a phone. The page also used three
+PocketBase clients, so a phone that reloads after the password manager saves
+could send an empty `Authorization` header.
+
+Account and admin lists now return slim cards. One shared client keeps the
+token in memory, `localStorage`, and a first-party cookie, and sends
+`Bearer`. Superuser home no longer throws on missing `display_name` / follow
+rules. If the primary site-admin address already has a `users` row, boot
+promotes it to verified `region_admin`. Day-to-day admin is still that
+verified address, not a new `/_/` superuser. The address is not added to a
+public page.
+
+Covered by `test_account_home_site_admin_cards_are_slim` and
+`test_region_admin_account_home_is_site_admin`.
 
 ### 2026-09-21 — Stats sort and follow a team or tournament
 

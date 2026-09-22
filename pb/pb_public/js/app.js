@@ -7,9 +7,8 @@ import {
 } from "./event.js";
 import { accountHome, adminEvents, adminTeams, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
 import { bindEventChrome, collapseSetupOnPhone, flashSaved, isSiteAdmin, measureChrome, pageShell } from "./chrome.js";
+import { authHeader, clearAuth, pb } from "./client.js";
 import { formatDateDisplay, stampDataTh } from "./display.js";
-
-const pb = new PocketBase(location.origin);
 const app = document.getElementById("app");
 
 const ROUTES = [
@@ -367,7 +366,7 @@ async function review(slug) {
       const id = btn.closest("[data-staging]").dataset.staging;
       const res = await fetch(`/api/coach/staging/${id}/decision`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: pb.authStore.token },
+        headers: { "Content-Type": "application/json", ...authHeader() },
         body: JSON.stringify({ decision: btn.dataset.act }),
       });
       if (!res.ok) {
@@ -458,7 +457,7 @@ document.addEventListener("click", (e) => {
     go(a.getAttribute("href"));
   }
   if (e.target.id === "logout") {
-    pb.authStore.clear();
+    clearAuth();
     go("/");
   }
 });

@@ -310,26 +310,63 @@ function seasonTables(app, teamId) {
 // New site admins and bot accounts are granted by this verified address.
 const PRIMARY_SITE_ADMIN_EMAIL = "ladydukeslafever@gmail.com";
 
+function safeAuthGet(auth, field) {
+  if (!auth) return "";
+  try { return auth.get(field); } catch (err) { return ""; }
+}
+
+function authEmail(auth) {
+  if (!auth) return "";
+  if (typeof auth === "string") return normalizeEmail(auth);
+  try {
+    if (typeof auth.email === "function") return normalizeEmail(auth.email());
+  } catch (err) {}
+  return normalizeEmail(safeAuthGet(auth, "email"));
+}
+
+function isPrimarySiteAdminEmail(auth) {
+  return authEmail(auth) === PRIMARY_SITE_ADMIN_EMAIL;
+}
+
 function isSiteAdmin(auth) {
   if (!auth) return false;
   try { if (auth.isSuperuser()) return true; } catch (err) {}
   if (isPrimarySiteAdmin(auth)) return true;
-  return auth.get("role") === "region_admin" && !!auth.get("verified");
+  return safeAuthGet(auth, "role") === "region_admin" && !!safeAuthGet(auth, "verified");
 }
 
 function isPrimarySiteAdmin(auth) {
   if (!auth) return false;
   try { if (auth.isSuperuser()) return false; } catch (err) {}
-  let email = "";
-  try { email = auth.email ? auth.email() : ""; } catch (err) { email = ""; }
-  return normalizeEmail(email) === PRIMARY_SITE_ADMIN_EMAIL && !!auth.get("verified");
+  return isPrimarySiteAdminEmail(auth) && !!safeAuthGet(auth, "verified");
+}
+
+function promotePrimarySiteAdmin(app) {
+  if (!app) return false;
+  try {
+    const user = app.findAuthRecordByEmail("users", PRIMARY_SITE_ADMIN_EMAIL);
+    if (!user) return false;
+    let dirty = false;
+    if (user.get("role") !== "region_admin") {
+      user.set("role", "region_admin");
+      dirty = true;
+    }
+    if (!user.get("verified")) {
+      user.set("verified", true);
+      dirty = true;
+    }
+    if (dirty) app.save(user);
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 function isVerifiedAccount(auth) {
   if (!auth) return false;
   try { if (auth.isSuperuser()) return true; } catch (err) {}
   if (isPrimarySiteAdmin(auth)) return true;
-  return !!auth.get("verified");
+  return !!safeAuthGet(auth, "verified");
 }
 
 function requireVerified(auth) {
@@ -484,10 +521,10 @@ function linkCoOwnerAccount(app, user) {
 function requireRole(e, roles) {
   const auth = e.auth;
   if (!auth) throw new UnauthorizedError("login required");
-  if (auth.isSuperuser()) return auth;
-  const role = auth.get("role");
-  const allowed = roles.indexOf(role) !== -1 || (roles.indexOf("region_admin") !== -1 && isPrimarySiteAdmin(auth));
-  if (!allowed) throw new ForbiddenError("role not allowed");
+  try { if (auth.isSuperuser()) return auth; } catch (err) {}
+  if (isSiteAdmin(auth) && roles.indexOf("region_admin") !== -1) return auth;
+  const role = safeAuthGet(auth, "role");
+  if (roles.indexOf(role) === -1) throw new ForbiddenError("role not allowed");
   if (role === "region_admin" && !isVerifiedAccount(auth)) {
     throw new ForbiddenError("Confirm your email before you do that. Resend the confirmation from your account page.");
   }
@@ -527,6 +564,8 @@ module.exports = {
   PRIMARY_SITE_ADMIN_EMAIL: PRIMARY_SITE_ADMIN_EMAIL,
   isSiteAdmin: isSiteAdmin,
   isPrimarySiteAdmin: isPrimarySiteAdmin,
+  isPrimarySiteAdminEmail: isPrimarySiteAdminEmail,
+  promotePrimarySiteAdmin: promotePrimarySiteAdmin,
   isVerifiedAccount: isVerifiedAccount,
   requireVerified: requireVerified,
   isEventOwner: isEventOwner,

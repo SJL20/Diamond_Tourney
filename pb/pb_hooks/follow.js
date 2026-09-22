@@ -43,7 +43,10 @@ function publicEvent(app, id) {
 }
 
 function listFollowing(app, auth) {
-  requireUser(auth);
+  if (!auth) throw new UnauthorizedError("login required");
+  let superuser = false;
+  try { superuser = !!(auth.isSuperuser && auth.isSuperuser()); } catch (err) { superuser = false; }
+  if (superuser) return { teams: [], tournaments: [] };
   let rows = [];
   try {
     rows = app.findRecordsByFilter("follows", "user = {:u}", "", 200, 0, { u: auth.id });

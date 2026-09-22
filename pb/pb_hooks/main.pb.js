@@ -163,8 +163,27 @@ routerAdd("GET", "/api/geo/lookup", (e) => {
 
 routerAdd("GET", "/api/account/home", (e) => {
   const host = require(__hooks + "/host.js");
+  const sb = require(__hooks + "/softball.js");
   if (!e.auth) throw new UnauthorizedError("login required");
-  return e.json(200, host.accountHome(e.app, e.auth));
+  try {
+    return e.json(200, host.accountHome(e.app, e.auth));
+  } catch (err) {
+    let siteAdmin = false;
+    try { siteAdmin = sb.isSiteAdmin(e.auth); } catch (e2) { siteAdmin = false; }
+    return e.json(200, {
+      user: {
+        id: e.auth.id,
+        email: (function () { try { return sb.normalizeEmail(e.auth.email()); } catch (e3) { return ""; } })(),
+        role: siteAdmin ? "region_admin" : "",
+        display_name: siteAdmin ? "Site admin" : "",
+        site_admin: siteAdmin,
+        verified: (function () { try { return sb.isVerifiedAccount(e.auth); } catch (e4) { return siteAdmin; } })(),
+      },
+      created: [],
+      joined: [],
+      following: { teams: [], tournaments: [] },
+    });
+  }
 }, $apis.requireAuth());
 
 routerAdd("GET", "/api/teams", (e) => {
@@ -1143,3 +1162,8 @@ onRecordUpdateRequest((e) => {
   }
   e.next();
 }, "staging_games");
+
+onBootstrap((e) => {
+  e.next();
+  try { require(__hooks + "/softball.js").promotePrimarySiteAdmin($app); } catch (err) {}
+});

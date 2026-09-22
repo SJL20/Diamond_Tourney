@@ -91,9 +91,14 @@ export function asLineList(raw) {
 
 export function linePlayer(row) {
   if (!row || typeof row !== "object") return "—";
+  const jersey = row.jersey != null && row.jersey !== "" ? String(row.jersey).trim() : "";
   const named = row.player || row.name_key || row.name;
-  if (named) return String(named);
-  if (row.jersey) return "#" + String(row.jersey);
+  if (named) {
+    const text = String(named);
+    if (jersey && text.indexOf("#") === -1) return text + " #" + jersey;
+    return text;
+  }
+  if (jersey) return "#" + jersey;
   return "—";
 }
 

@@ -13,7 +13,7 @@
       "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends curl unzip && bash scripts/install-pocketbase.sh",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends curl unzip poppler-utils && bash scripts/install-pocketbase.sh",
   "postStartCommand": "bash scripts/ensure-pocketbase.sh",
   "customizations": {
     "vscode": {
