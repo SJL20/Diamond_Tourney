@@ -1877,8 +1877,23 @@ function clubJson(rec) {
   };
 }
 
+function eachPage(app, collection, filter, sort, params, fn) {
+  let offset = 0;
+  for (let guard = 0; guard < 40; guard++) {
+    const rows = app.findRecordsByFilter(collection, filter || "id != ''", sort || "", 200, offset, params || {});
+    if (!rows || !rows.length) return;
+    for (let i = 0; i < rows.length; i++) fn(rows[i]);
+    if (rows.length < 200) return;
+    offset += rows.length;
+  }
+}
+
 function listClubs(app) {
-  return app.findRecordsByFilter("club_teams", "", "name", 200, 0).map(clubJson);
+  const out = [];
+  eachPage(app, "club_teams", "id != ''", "name", null, function (rec) {
+    if (out.length < 2000) out.push(clubJson(rec));
+  });
+  return out;
 }
 
 function saveClub(app, body, id) {
@@ -1900,6 +1915,530 @@ function saveClub(app, body, id) {
   if (body.contact_email != null) rec.set("contact_email", body.contact_email);
   app.save(rec);
   return clubJson(rec);
+}
+
+function confirmed(body) {
+  return !!(body && (body.confirm === true || body.confirm === "true"));
+}
+
+function removeClub(app, id, body) {
+  if (!confirmed(body)) throw new BadRequestError("Confirm the remove. Weekend teams and scores stay.");
+  const club = app.findRecordById("club_teams", id);
+  const name = club.get("name") || "";
+  let unlinked = 0;
+  for (let guard = 0; guard < 40; guard++) {
+    let rows = [];
+    try {
+      rows = app.findRecordsByFilter("event_teams", "club = {:c}", "", 200, 0, { c: id });
+    } catch (err) {
+      break;
+    }
+    if (!rows || !rows.length) break;
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].set("club", "");
+      app.save(rows[i]);
+      unlinked++;
+    }
+    if (rows.length < 200) break;
+  }
+  app.delete(club);
+  return { ok: true, id: id, name: name, unlinked: unlinked };
+}
+
+function normTeamName(name) {
+  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normGcKey(url) {
+  if (!isGameChangerUrl(url)) return "";
+  return gcRef(url).toLowerCase();
+}
+
+function countWhere(app, collection, filter, params) {
+  try {
+    const rows = app.findRecordsByFilter(collection, filter, "", 1, 0, params || {});
+    return rows && rows.length ? rows.length : 0;
+  } catch (err) {
+    return 0;
+  }
+}
+
+function masterHasFinal(app, eventTeamId) {
+  try {
+    const games = app.findRecordsByFilter(
+      "event_schedule",
+      "home = {:t} || away = {:t}",
+      "",
+      200,
+      0,
+      { t: eventTeamId },
+    );
+    for (let i = 0; i < games.length; i++) {
+      if (games[i].get("status") === "final") return true;
+    }
+  } catch (err) {}
+  try {
+    const tree = app.findRecordsByFilter(
+      "bracket_games",
+      "home_team = {:t} || away_team = {:t} || winner = {:t}",
+      "",
+      200,
+      0,
+      { t: eventTeamId },
+    );
+    for (let i = 0; i < tree.length; i++) {
+      if (tree[i].get("status") === "final") return true;
+    }
+  } catch (err) {}
+  return false;
+}
+
+function removeMasterTeam(app, id, body) {
+  if (!confirmed(body)) throw new BadRequestError("Confirm the remove.");
+  const team = app.findRecordById("teams", id);
+  const name = team.get("name") || "";
+  if (countWhere(app, "players", "team = {:t}", { t: id })) {
+    throw new BadRequestError("This team has a roster. It stays.");
+  }
+  if (countWhere(app, "team_games", "team = {:t}", { t: id })) {
+    throw new BadRequestError("This team has a season book. It stays.");
+  }
+  if (countWhere(app, "staging_games", "team = {:t}", { t: id })) {
+    throw new BadRequestError("This team has a score sheet waiting for review. It stays.");
+  }
+  const weekends = [];
+  try {
+    eachPage(app, "event_teams", "team = {:t}", "", { t: id }, function (row) {
+      weekends.push(row);
+    });
+  } catch (err) {}
+  for (let i = 0; i < weekends.length; i++) {
+    if (masterHasFinal(app, weekends[i].id)) {
+      throw new BadRequestError("This team has a final game. It stays.");
+    }
+  }
+  clearOwners(app, id, "");
+  for (let i = 0; i < weekends.length; i++) {
+    const row = app.findRecordById("event_teams", weekends[i].id);
+    row.set("team", "");
+    app.save(row);
+  }
+  app.delete(team);
+  return { ok: true, id: id, name: name, unlinked: weekends.length };
+}
+
+function listAdminMasters(app) {
+  const owned = {};
+  const pending = {};
+  try {
+    eachPage(app, "users", "team != ''", "", null, function (user) {
+      const teamId = user.get("team");
+      if (teamId) owned[teamId] = true;
+    });
+  } catch (err) {}
+  try {
+    eachPage(app, "team_contacts", "pending_owner_email != '' && team != ''", "", null, function (row) {
+      if (row.get("event_team")) return;
+      const teamId = row.get("team");
+      if (teamId) pending[teamId] = true;
+    });
+  } catch (err) {}
+  const out = [];
+  let truncated = false;
+  eachPage(app, "teams", "id != ''", "name", null, function (rec) {
+    if (out.length >= 2000) {
+      truncated = true;
+      return;
+    }
+    const row = masterTeamJson(rec);
+    row.owner_state = owned[rec.id] ? "owner" : (pending[rec.id] ? "pending" : "none");
+    out.push(row);
+  });
+  return { teams: out, truncated: truncated };
+}
+
+function loadUnlinkedEventTeams(app) {
+  const out = [];
+  const seen = {};
+  function take(row) {
+    if (!row || seen[row.id] || row.get("team")) return;
+    seen[row.id] = true;
+    out.push(row);
+  }
+  try {
+    eachPage(app, "event_teams", "team = ''", "name", null, take);
+  } catch (err) {
+    eachPage(app, "event_teams", "id != ''", "name", null, take);
+  }
+  return out;
+}
+
+function eventLabel(app, id, cache) {
+  if (!id) return { name: "", slug: "" };
+  if (cache[id]) return cache[id];
+  try {
+    const event = app.findRecordById("events", id);
+    cache[id] = { name: event.get("name") || "", slug: event.get("slug") || "" };
+  } catch (err) {
+    cache[id] = { name: "", slug: "" };
+  }
+  return cache[id];
+}
+
+function pushIndex(map, key, ref) {
+  if (!key) return;
+  if (!map[key]) map[key] = [];
+  map[key].push(ref);
+}
+
+function leftoverPlan(app) {
+  const byGc = {};
+  const byName = {};
+  eachPage(app, "teams", "id != ''", "name", null, function (rec) {
+    const ref = {
+      id: rec.id,
+      key: "",
+      name: rec.get("name") || "",
+    };
+    pushIndex(byGc, normGcKey(rec.get("gamechanger_url")), ref);
+    pushIndex(byName, normTeamName(rec.get("name")), ref);
+  });
+  const rows = loadUnlinkedEventTeams(app);
+  const buckets = {};
+  const order = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const gc = normGcKey(row.get("gamechanger_url"));
+    const nameKey = normTeamName(row.get("name"));
+    let match = "";
+    let key = "";
+    if (gc) {
+      match = "gamechanger";
+      key = "gc:" + gc;
+    } else if (nameKey) {
+      match = "name";
+      key = "name:" + nameKey;
+    } else {
+      match = "skip";
+      key = "blank:" + row.id;
+    }
+    if (!buckets[key]) {
+      buckets[key] = { key: key, match: match, rows: [], gc: gc, nameKey: nameKey };
+      order.push(key);
+    }
+    buckets[key].rows.push(row);
+  }
+  const gcKeys = [];
+  const nameKeys = [];
+  for (let i = 0; i < order.length; i++) {
+    const bucket = buckets[order[i]];
+    if (bucket.match === "gamechanger") gcKeys.push(order[i]);
+    else nameKeys.push(order[i]);
+  }
+  const labels = {};
+  const groups = [];
+  function decide(key) {
+    const bucket = buckets[key];
+    const display = String((bucket.rows[0] && bucket.rows[0].get("name")) || "").trim();
+    let gcUrl = "";
+    for (let i = 0; i < bucket.rows.length; i++) {
+      const url = String(bucket.rows[i].get("gamechanger_url") || "").trim();
+      if (normGcKey(url)) {
+        gcUrl = url;
+        break;
+      }
+    }
+    const weekends = [];
+    for (let i = 0; i < bucket.rows.length; i++) {
+      const row = bucket.rows[i];
+      const event = eventLabel(app, row.get("event"), labels);
+      weekends.push({
+        id: row.id,
+        name: row.get("name") || "",
+        event_name: event.name,
+        event_slug: event.slug,
+      });
+    }
+    const group = {
+      key: key,
+      match: bucket.match,
+      action: "skip",
+      reason: "",
+      master_id: "",
+      master_key: "",
+      master_name: "",
+      name: display,
+      gamechanger_url: gcUrl,
+      weekends: weekends,
+    };
+    if (bucket.match === "skip") {
+      group.reason = "This weekend team has no name.";
+      groups.push(group);
+      return;
+    }
+    const index = bucket.match === "gamechanger" ? byGc[bucket.gc] : byName[bucket.nameKey];
+    if (index && index.length > 1) {
+      group.reason = bucket.match === "gamechanger"
+        ? "More than one master team already has this GameChanger link."
+        : "More than one master team already uses this exact name.";
+      groups.push(group);
+      return;
+    }
+    if (index && index.length === 1) {
+      group.action = "link";
+      group.master_id = index[0].id || "";
+      group.master_key = index[0].key || "";
+      group.master_name = index[0].name || "";
+      groups.push(group);
+      return;
+    }
+    group.action = "create";
+    group.master_name = display;
+    const virtual = { id: "", key: key, name: display };
+    pushIndex(byName, bucket.nameKey, virtual);
+    pushIndex(byGc, bucket.gc, virtual);
+    groups.push(group);
+  }
+  for (let i = 0; i < gcKeys.length; i++) decide(gcKeys[i]);
+  for (let i = 0; i < nameKeys.length; i++) decide(nameKeys[i]);
+  return groups;
+}
+
+function leftoverPreview(groups) {
+  const events = {};
+  let willLink = 0;
+  let willCreate = 0;
+  let createRows = 0;
+  let skipped = 0;
+  const listed = [];
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const n = group.weekends.length;
+    if (group.action === "link") willLink += n;
+    else if (group.action === "create") {
+      willCreate++;
+      createRows += n;
+    } else skipped += n;
+    for (let w = 0; w < group.weekends.length; w++) {
+      const slug = group.weekends[w].event_slug || "";
+      if (!events[slug]) {
+        events[slug] = { slug: slug, name: group.weekends[w].event_name || slug, rows: 0 };
+      }
+      events[slug].rows++;
+    }
+    if (listed.length < 80) {
+      listed.push({
+        match: group.match,
+        action: group.action,
+        reason: group.reason,
+        name: group.name,
+        master_name: group.master_name,
+        weekends: group.weekends,
+      });
+    }
+  }
+  const eventList = [];
+  for (const slug in events) eventList.push(events[slug]);
+  eventList.sort(function (a, b) {
+    const left = String(a.name || "");
+    const right = String(b.name || "");
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  });
+  let unlinked = 0;
+  for (let i = 0; i < eventList.length; i++) unlinked += eventList[i].rows;
+  return {
+    unlinked: unlinked,
+    will_link: willLink,
+    will_create: willCreate,
+    create_rows: createRows,
+    skipped: skipped,
+    events: eventList,
+    groups: listed,
+    groups_truncated: listed.length < groups.length,
+  };
+}
+
+function actorUserId(auth) {
+  if (!auth) return "";
+  try {
+    if (!auth.collection || auth.collection().name !== "users") return "";
+  } catch (err) {
+    return "";
+  }
+  return auth.id || "";
+}
+
+function fillMasterFromWeekends(app, master, rowIds) {
+  const patch = {};
+  if (!master.get("coach_name")) {
+    for (let i = 0; i < rowIds.length; i++) {
+      try {
+        const name = String(app.findRecordById("event_teams", rowIds[i]).get("contact_name") || "").trim();
+        if (name) {
+          patch.coach_name = name;
+          break;
+        }
+      } catch (err) {}
+    }
+  }
+  if (!master.get("age_group")) {
+    for (let i = 0; i < rowIds.length; i++) {
+      try {
+        const age = String(app.findRecordById("event_teams", rowIds[i]).get("age_group") || "").toUpperCase();
+        if (MASTER_AGES[age]) {
+          patch.age_group = age;
+          break;
+        }
+      } catch (err) {}
+    }
+  }
+  if (!normGcKey(master.get("gamechanger_url"))) {
+    for (let i = 0; i < rowIds.length; i++) {
+      try {
+        const url = String(app.findRecordById("event_teams", rowIds[i]).get("gamechanger_url") || "").trim();
+        if (normGcKey(url)) {
+          patch.gamechanger_url = url;
+          break;
+        }
+      } catch (err) {}
+    }
+  }
+  const contacts = require(__hooks + "/contacts.js");
+  const season = contacts.findForSeasonTeam(app, master.id);
+  let email = season ? String(season.get("coach_email") || "").trim() : "";
+  let phone = season ? String(season.get("coach_phone") || "").trim() : "";
+  if (!email || !phone) {
+    for (let i = 0; i < rowIds.length && (!email || !phone); i++) {
+      let row = null;
+      try { row = app.findRecordById("event_teams", rowIds[i]); } catch (err) { continue; }
+      if (!email) email = String(row.get("contact_email") || "").trim();
+      const eventContact = contacts.findForEventTeam(app, row.id);
+      if (eventContact) {
+        if (!email) email = String(eventContact.get("coach_email") || "").trim();
+        if (!phone) phone = String(eventContact.get("coach_phone") || "").trim();
+      }
+    }
+  }
+  if (email && !(season && season.get("coach_email"))) patch.coach_email = email;
+  if (phone && !(season && season.get("coach_phone"))) patch.coach_phone = phone;
+  if (Object.keys(patch).length) saveMasterProfile(app, master, patch);
+  return master;
+}
+
+function createMasterFromGroup(app, auth, group) {
+  const rec = new Record(app.findCollectionByNameOrId("teams"));
+  rec.set("name", group.name || "Team");
+  rec.set("slug", uniqueTeamSlug(app, slugify(group.name || "team")));
+  const actor = actorUserId(auth);
+  if (actor) rec.set("created_by", actor);
+  rec.set("public_record_wins", 0);
+  rec.set("public_record_losses", 0);
+  rec.set("public_record_ties", 0);
+  app.save(rec);
+  return rec;
+}
+
+function applyLeftoverPlan(app, auth, groups) {
+  const created = {};
+  let attached = 0;
+  let made = 0;
+  let skipped = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    if (group.action === "skip") {
+      skipped += group.weekends.length;
+      continue;
+    }
+    let master = null;
+    try {
+      if (group.action === "create") {
+        master = createMasterFromGroup(app, auth, group);
+        created[group.key] = master;
+        made++;
+      } else if (group.master_id) {
+        master = app.findRecordById("teams", group.master_id);
+      } else if (group.master_key && created[group.master_key]) {
+        master = created[group.master_key];
+      }
+    } catch (err) {
+      skipped += group.weekends.length;
+      continue;
+    }
+    if (!master) {
+      skipped += group.weekends.length;
+      continue;
+    }
+    const ids = [];
+    for (let w = 0; w < group.weekends.length; w++) {
+      let row = null;
+      try { row = app.findRecordById("event_teams", group.weekends[w].id); } catch (err) { continue; }
+      if (row.get("team")) continue;
+      row.set("team", master.id);
+      app.save(row);
+      ids.push(row.id);
+      attached++;
+    }
+    if (ids.length) {
+      try { fillMasterFromWeekends(app, app.findRecordById("teams", master.id), ids); } catch (err) {}
+    }
+  }
+  return { attached: attached, created: made, skipped: skipped };
+}
+
+function selectedEventSlugs(body) {
+  if (!body || body.events == null) return null;
+  const only = {};
+  const list = typeof body.events === "string" ? [body.events] : body.events;
+  if (!list || !list.length) return only;
+  for (let i = 0; i < list.length; i++) {
+    const slug = String(list[i] || "").trim();
+    if (slug) only[slug] = true;
+  }
+  return only;
+}
+
+function groupsForEvents(groups, only) {
+  if (!only) return groups;
+  const out = [];
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const weekends = [];
+    for (let w = 0; w < group.weekends.length; w++) {
+      if (only[group.weekends[w].event_slug]) weekends.push(group.weekends[w]);
+    }
+    if (!weekends.length) continue;
+    out.push({
+      key: group.key,
+      match: group.match,
+      action: group.action,
+      reason: group.reason,
+      master_id: group.master_id,
+      master_key: group.master_key,
+      master_name: group.master_name,
+      name: group.name,
+      gamechanger_url: group.gamechanger_url,
+      weekends: weekends,
+    });
+  }
+  return out;
+}
+
+function attachLeftovers(app, auth, body) {
+  const groups = leftoverPlan(app);
+  if (!confirmed(body)) return leftoverPreview(groups);
+  const chosen = groupsForEvents(groups, selectedEventSlugs(body));
+  const applied = applyLeftoverPlan(app, auth, chosen);
+  const after = leftoverPreview(leftoverPlan(app));
+  return {
+    ok: true,
+    attached: applied.attached,
+    created: applied.created,
+    skipped: applied.skipped,
+    unlinked: after.unlinked,
+    events: after.events,
+  };
 }
 
 function duplicateEvent(app, source, body, auth) {
@@ -2130,6 +2669,10 @@ module.exports = {
   resendVerification: resendVerification,
   listClubs: listClubs,
   saveClub: saveClub,
+  removeClub: removeClub,
+  listAdminMasters: listAdminMasters,
+  removeMasterTeam: removeMasterTeam,
+  attachLeftovers: attachLeftovers,
   applyGuidelines: applyGuidelines,
   requiredDocKinds: requiredDocKinds,
   packetSummary: packetSummary,

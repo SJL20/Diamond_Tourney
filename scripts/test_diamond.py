@@ -3053,6 +3053,175 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         self.assertTrue(any("KEEP" in h for h in hits))
         self.assertTrue(any("deletes" in h for h in hits))
 
+    def test_site_admin_attaches_leftovers_and_removes_duplicates(self):
+        from urllib.parse import quote
+
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        mark = uuid.uuid4().hex[:8]
+        slug_a = "cleanup-a-" + mark
+        slug_b = "cleanup-b-" + mark
+        ev_a = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Cleanup A " + mark,
+            "slug": slug_a,
+        })["event"]
+        ev_b = request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Cleanup B " + mark,
+            "slug": slug_b,
+        })["event"]
+        gc = "https://web.gc.com/team/cleanup-hawks-" + mark
+        email = f"cleanup.{mark}@local.test"
+        phone = "412-555-0199"
+        hawks = request(BASE, "POST", "/api/collections/event_teams/records", admin, {
+            "event": ev_a["id"],
+            "name": "Cleanup Hawks " + mark,
+            "slug": "cleanup-hawks-" + mark,
+            "gamechanger_url": gc,
+            "contact_email": email,
+            "contact_name": "Coach Cleanup",
+            "age_group": "11U",
+        })
+        hawks_b = request(BASE, "POST", "/api/collections/event_teams/records", admin, {
+            "event": ev_b["id"],
+            "name": "Cleanup Hawks " + mark,
+            "slug": "cleanup-hawks-" + mark,
+            "gamechanger_url": gc + "/",
+            "contact_email": email,
+            "age_group": "10U",
+        })
+        foxes = request(BASE, "POST", "/api/collections/event_teams/records", admin, {
+            "event": ev_a["id"],
+            "name": "Cleanup Foxes " + mark,
+            "slug": "cleanup-foxes-" + mark,
+            "age_group": "12U",
+        })
+        other_name = "Cleanup Other " + mark
+        existing = request(BASE, "POST", "/api/teams", owner, {
+            "name": other_name,
+            "age_group": "10U",
+            "gamechanger_url": "https://web.gc.com/team/cleanup-other-" + mark,
+        })
+        request(BASE, "POST", "/api/collections/event_teams/records", admin, {
+            "event": ev_b["id"],
+            "name": "Different Label " + mark,
+            "slug": "cleanup-other-" + mark,
+            "gamechanger_url": "https://web.gc.com/team/cleanup-other-" + mark,
+        })
+        request(BASE, "POST", "/api/collections/event_teams/records", admin, {
+            "event": ev_a["id"],
+            "name": "Cleanup Hawks 10U " + mark,
+            "slug": "cleanup-hawks-10u-" + mark,
+        })
+
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", "/api/admin/teams/attach", td, {"confirm": True})
+        self.assertIn("403", str(denied.exception))
+
+        preview = request(BASE, "GET", "/api/admin/teams/attach", owner)
+        blob = json.dumps(preview)
+        self.assertNotIn(email, blob)
+        self.assertNotIn(phone, blob)
+        self.assertIn(slug_a, blob)
+        self.assertIn(slug_b, blob)
+        held = request(BASE, "POST", "/api/admin/teams/attach", owner, {})
+        self.assertNotIn("attached", held)
+        still = request(
+            BASE, "GET",
+            "/api/collections/event_teams/records/" + hawks["id"],
+            admin,
+        )
+        self.assertFalse(still.get("team"))
+
+        applied = request(BASE, "POST", "/api/admin/teams/attach", owner, {
+            "confirm": True,
+            "events": [slug_a, slug_b],
+        })
+        self.assertGreaterEqual(applied["attached"], 4)
+        linked_a = request(BASE, "GET", "/api/collections/event_teams/records/" + hawks["id"], admin)
+        linked_b = request(BASE, "GET", "/api/collections/event_teams/records/" + hawks_b["id"], admin)
+        self.assertTrue(linked_a.get("team"))
+        self.assertEqual(linked_a["team"], linked_b["team"])
+        master = request(
+            BASE, "GET",
+            "/api/collections/teams/records?filter=" + quote(f'id="{linked_a["team"]}"'),
+            admin,
+        )["items"][0]
+        self.assertEqual(master["age_group"], "10U")
+        self.assertNotIn(email, json.dumps(master))
+        private = request(BASE, "GET", "/api/teams/" + linked_a["team"], owner)
+        self.assertEqual(private["contact"]["coach_email"], email)
+        self.assertEqual(private["coach_name"], "Coach Cleanup")
+        fox = request(BASE, "GET", "/api/collections/event_teams/records/" + foxes["id"], admin)
+        self.assertTrue(fox.get("team"))
+        self.assertNotEqual(fox["team"], linked_a["team"])
+        other_rows = request(
+            BASE, "GET",
+            "/api/collections/event_teams/records?filter=" + quote(
+                f'event="{ev_b["id"]}" && name="Different Label {mark}"'
+            ),
+            admin,
+        )["items"]
+        self.assertEqual(other_rows[0]["team"], existing["id"])
+        split = request(
+            BASE, "GET",
+            "/api/collections/event_teams/records?filter=" + quote(
+                f'name="Cleanup Hawks 10U {mark}"'
+            ),
+            admin,
+        )["items"][0]
+        self.assertTrue(split.get("team"))
+        self.assertNotEqual(split["team"], linked_a["team"])
+
+        second = request(BASE, "GET", "/api/admin/teams/attach", owner)
+        self.assertNotIn(hawks["id"], json.dumps(second))
+
+        club = request(BASE, "POST", "/api/admin/clubs", owner, {
+            "name": "Cleanup Duplicate " + mark,
+            "ages": "10U",
+        })["club"]
+        request(BASE, "PATCH", "/api/collections/event_teams/records/" + foxes["id"], admin, {
+            "club": club["id"],
+        })
+        with self.assertRaises(RuntimeError) as club_denied:
+            request(BASE, "POST", f"/api/admin/clubs/{club['id']}/remove", td, {"confirm": True})
+        self.assertIn("403", str(club_denied.exception))
+        removed = request(BASE, "POST", f"/api/admin/clubs/{club['id']}/remove", owner, {"confirm": True})
+        self.assertTrue(removed["ok"])
+        self.assertGreaterEqual(removed["unlinked"], 1)
+        fox_left = request(BASE, "GET", "/api/collections/event_teams/records/" + foxes["id"], admin)
+        self.assertEqual(fox_left.get("name"), "Cleanup Foxes " + mark)
+        self.assertFalse(fox_left.get("club"))
+        clubs = request(BASE, "GET", "/api/admin/clubs", owner)["clubs"]
+        self.assertFalse(any(c["id"] == club["id"] for c in clubs))
+
+        roster = request(BASE, "POST", "/api/teams", owner, {"name": "Cleanup Roster " + mark})
+        request(BASE, "POST", "/api/collections/players/records", admin, {
+            "team": roster["id"],
+            "display_name": "FAKE P",
+            "name_key": "Fake P #1",
+            "jersey": "1",
+        })
+        with self.assertRaises(RuntimeError) as kept:
+            request(BASE, "POST", f"/api/admin/teams/{roster['id']}/remove", owner, {"confirm": True})
+        self.assertIn("roster", str(kept.exception).lower())
+        request(BASE, "GET", "/api/teams/" + roster["id"], owner)
+
+        empty = request(BASE, "POST", "/api/teams", owner, {"name": "Cleanup Error " + mark})
+        gone = request(BASE, "POST", f"/api/admin/teams/{empty['id']}/remove", owner, {"confirm": True})
+        self.assertTrue(gone["ok"])
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/teams/records/" + empty["id"], admin)
+
+        dropped = request(BASE, "POST", f"/api/admin/teams/{fox['team']}/remove", owner, {"confirm": True})
+        self.assertTrue(dropped["ok"])
+        self.assertGreaterEqual(dropped["unlinked"], 1)
+        fox_open = request(BASE, "GET", "/api/collections/event_teams/records/" + foxes["id"], admin)
+        self.assertFalse(fox_open.get("team"))
+        self.assertEqual(fox_open.get("name"), "Cleanup Foxes " + mark)
+
 
 class SchedulerTeamDropdownTests(unittest.TestCase):
     """Scheduler and custom bracket only accept registered event teams."""
