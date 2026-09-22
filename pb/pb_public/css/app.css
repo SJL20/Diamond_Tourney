@@ -429,6 +429,8 @@ button, input, select, textarea { font: inherit; }
 .lede { font-size: 1.05rem; }
 .muted { color: var(--muted); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+form[data-master-edit] { margin-top: 12px; }
+form[data-master-edit][hidden] { display: none; }
 .attach-hits { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; }
 .attach-hits .btn { text-align: left; }
 

@@ -3216,16 +3216,38 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         self.assertFalse(any(c["id"] == club["id"] for c in clubs))
 
         roster = request(BASE, "POST", "/api/teams", owner, {"name": "Cleanup Roster " + mark})
-        request(BASE, "POST", "/api/collections/players/records", admin, {
+        player = request(BASE, "POST", "/api/collections/players/records", admin, {
             "team": roster["id"],
             "display_name": "FAKE P",
             "name_key": "Fake P #1",
             "jersey": "1",
         })
-        with self.assertRaises(RuntimeError) as kept:
-            request(BASE, "POST", f"/api/admin/teams/{roster['id']}/remove", owner, {"confirm": True})
-        self.assertIn("roster", str(kept.exception).lower())
-        request(BASE, "GET", "/api/teams/" + roster["id"], owner)
+        edit_email = f"edit.{mark}@local.test"
+        edit_phone = "412-555-0177"
+        patched = request(BASE, "PATCH", "/api/teams/" + roster["id"], owner, {
+            "age_group": "12U",
+            "coach_name": "Coach Edit",
+            "coach_phone": edit_phone,
+            "coach_email": edit_email,
+            "gamechanger_url": "https://web.gc.com/team/cleanup-edit-" + mark,
+        })
+        self.assertEqual(patched["age_group"], "12U")
+        self.assertEqual(patched["coach_name"], "Coach Edit")
+        self.assertEqual(patched["contact"]["coach_phone"], edit_phone)
+        self.assertEqual(patched["contact"]["coach_email"], edit_email)
+        public = request(BASE, "GET", "/api/collections/teams/records/" + roster["id"])
+        public_blob = json.dumps(public)
+        self.assertNotIn(edit_phone, public_blob)
+        self.assertNotIn(edit_email, public_blob)
+        with self.assertRaises(RuntimeError) as director_kept:
+            request(BASE, "POST", f"/api/admin/teams/{roster['id']}/remove", td, {"confirm": True})
+        self.assertIn("403", str(director_kept.exception))
+        gone_roster = request(BASE, "POST", f"/api/admin/teams/{roster['id']}/remove", owner, {"confirm": True})
+        self.assertTrue(gone_roster["ok"])
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/teams/records/" + roster["id"], admin)
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/players/records/" + player["id"], admin)
 
         empty = request(BASE, "POST", "/api/teams", owner, {"name": "Cleanup Error " + mark})
         gone = request(BASE, "POST", f"/api/admin/teams/{empty['id']}/remove", owner, {"confirm": True})
@@ -3235,10 +3257,64 @@ class AdminTeamsBracketsTests(unittest.TestCase):
 
         dropped = request(BASE, "POST", f"/api/admin/teams/{fox['team']}/remove", owner, {"confirm": True})
         self.assertTrue(dropped["ok"])
-        self.assertGreaterEqual(dropped["unlinked"], 1)
-        fox_open = request(BASE, "GET", "/api/collections/event_teams/records/" + foxes["id"], admin)
-        self.assertFalse(fox_open.get("team"))
-        self.assertEqual(fox_open.get("name"), "Cleanup Foxes " + mark)
+        self.assertGreaterEqual(dropped["removed_weekends"], 1)
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/event_teams/records/" + foxes["id"], admin)
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/teams/records/" + fox["team"], admin)
+
+    def test_site_admin_removes_a_team_that_has_a_final_score(self):
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "final-drop-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Final Drop Classic",
+            "slug": slug,
+            "venue": "Harbor",
+            "ages": "10U",
+        })
+        hawks = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Final Hawks",
+            "pool": "A",
+            "as_director": True,
+        })["team"]
+        heat = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Final Heat",
+            "pool": "A",
+            "as_director": True,
+        })["team"]
+        added = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Final Hawks",
+            "away": "Final Heat",
+            "date": "2026-10-18",
+            "time": "09:00",
+            "field": "Field 1",
+            "pool": "A",
+        })
+        request(BASE, "POST", f"/api/events/{slug}/schedule/{added['game']['id']}/score", td, {
+            "home_runs": 4, "away_runs": 1, "status": "final", "confirm": True,
+        })
+        with self.assertRaises(RuntimeError) as blocked:
+            request(BASE, "POST", f"/api/events/{slug}/teams/{hawks['id']}/remove", td, {})
+        self.assertIn("final", str(blocked.exception).lower())
+        still = request(BASE, "GET", "/api/collections/event_teams/records/" + hawks["id"], td)
+        self.assertEqual(still["name"], "Final Hawks")
+        removed = request(BASE, "POST", f"/api/events/{slug}/teams/{hawks['id']}/remove", owner, {})
+        self.assertEqual(removed["deleted"], hawks["id"])
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/event_teams/records/" + hawks["id"], td)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        names = [t["name"] for t in board["roster"]]
+        self.assertNotIn("Final Hawks", names)
+        self.assertIn("Final Heat", names)
+        dropped = request(BASE, "POST", f"/api/admin/teams/{heat['team']}/remove", owner, {"confirm": True})
+        self.assertTrue(dropped["ok"])
+        self.assertGreaterEqual(dropped["removed_weekends"], 1)
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/event_teams/records/" + heat["id"], td)
+        with self.assertRaises(RuntimeError):
+            request(BASE, "GET", "/api/collections/teams/records/" + heat["team"])
 
 
 class SchedulerTeamDropdownTests(unittest.TestCase):

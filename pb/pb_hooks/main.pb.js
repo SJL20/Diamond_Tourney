@@ -361,7 +361,7 @@ routerAdd("POST", "/api/admin/teams/{id}/remove", (e) => {
   const sb = require(__hooks + "/softball.js");
   const host = require(__hooks + "/host.js");
   sb.requireRole(e, ["region_admin"]);
-  return e.json(200, host.removeMasterTeam(e.app, e.request.pathValue("id"), e.requestInfo().body || {}));
+  return e.json(200, host.removeMasterTeam(e.app, e.request.pathValue("id"), e.requestInfo().body || {}, e.auth));
 }, $apis.requireAuth());
 
 routerAdd("GET", "/api/year/{year}/board", (e) => {

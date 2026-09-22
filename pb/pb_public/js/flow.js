@@ -550,16 +550,22 @@ function teamAdminError(text) {
   if (!box) return;
   box.hidden = !text;
   box.textContent = text || "";
+  if (text && box.scrollIntoView) box.scrollIntoView({ block: "center" });
 }
 
-async function teamAdminFail(res) {
+async function teamAdminFail(res, local) {
   let text = "";
   try { text = await res.text(); } catch (err) { text = ""; }
   try {
     const body = JSON.parse(text);
     text = body.message || text;
   } catch (err) {}
-  teamAdminError(text || "Could not save that change.");
+  text = text || "Could not save that change.";
+  teamAdminError(text);
+  if (local) {
+    local.hidden = false;
+    local.textContent = text;
+  }
 }
 
 export async function adminTeams() {
@@ -612,7 +618,7 @@ export async function adminTeams() {
   flowRoot().innerHTML = gateChrome("admin", `
     <section class="page-head">
       <h1>Team profiles</h1>
-      <p class="muted">Site admin only. Rename a team here, or remove a duplicate. A roster, a season book, or a final game stays. <a data-link href="/admin/events">Remove tournaments</a> before attaching leftover weekend teams.</p>
+      <p class="muted">Site admin only. Open Details to edit a master team. Remove deletes that team, its roster, and its season book, and takes it off every weekend. <a data-link href="/admin/events">Remove tournaments</a> before attaching leftover weekend teams.</p>
       <p class="error" id="team-admin-err" hidden></p>
     </section>
     <section class="card" id="attach-card">
@@ -658,37 +664,95 @@ export async function adminTeams() {
     const matched = masters.filter((t) => !q || String(t.name || "").toLowerCase().includes(q));
     const slice = matched.slice(0, 40);
     const box = document.getElementById("master-list");
+    const ages = ["6U", "8U", "10U", "12U", "14U", "16U", "18U"];
     box.innerHTML = slice.map((t) => `
-      <form class="card form wide" data-master="${t.id}">
+      <article class="card" data-master-card="${t.id}">
         <h3>${escapeHtml(t.name)}</h3>
         <p class="muted">${escapeHtml(t.age_group || "Age not set")} · ${t.gc_linked ? "GameChanger linked" : "No GameChanger"} · ${t.owner_state === "owner" ? "Has an owner" : t.owner_state === "pending" ? "Waiting on an email" : "No owner yet"} · ${escapeHtml(t.slug)}</p>
-        <label>Name <input name="name" value="${escapeHtml(t.name)}" required></label>
         <div class="actions">
-          <button class="btn ghost" type="submit">Update</button>
+          <button class="btn ghost" type="button" data-expand-master="${t.id}">Details</button>
           <button class="btn danger" type="button" data-remove-master="${t.id}" data-remove-name="${escapeHtml(t.name)}">Remove</button>
         </div>
-      </form>`).join("") || `<p class="empty">${q ? "No master team matches that name." : "No master teams yet."}</p>`;
+        <form class="form wide" data-master-edit="${t.id}" hidden>
+          <label>Team name <input name="name" required></label>
+          <label>Age group
+            <select name="age_group">
+              <option value="">—</option>
+              ${ages.map((a) => `<option value="${a}">${a}</option>`).join("")}
+            </select>
+          </label>
+          <label>Coach name <input name="coach_name"></label>
+          <label>GameChanger team URL <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…"></label>
+          <label>Coach email <input name="coach_email" type="email" autocomplete="off"></label>
+          <label>Coach phone <input name="coach_phone" type="text" inputmode="tel" autocomplete="off"></label>
+          <fieldset class="setup-block">
+            <legend>Second contact</legend>
+            <label>Name <input name="alt_name"></label>
+            <label>Email <input name="alt_email" type="email" autocomplete="off"></label>
+            <label>Phone <input name="alt_phone" type="text" inputmode="tel" autocomplete="off"></label>
+          </fieldset>
+          <label>Co-owner emails <textarea name="co_owners" rows="2" placeholder="one email per line"></textarea></label>
+          <p class="muted">Coach email and phone stay off the public team page.</p>
+          <p class="error" data-master-err hidden></p>
+          <button class="btn" type="submit">Save team</button>
+        </form>
+      </article>`).join("") || `<p class="empty">${q ? "No master team matches that name." : "No master teams yet."}</p>`;
     if (matched.length > slice.length) {
       box.insertAdjacentHTML("beforeend", `<p class="muted">Showing 40 of ${matched.length}. Type more of the name.</p>`);
     }
-    box.querySelectorAll("[data-master]").forEach((form) => {
+    box.querySelectorAll("[data-expand-master]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const form = box.querySelector('[data-master-edit="' + btn.dataset.expandMaster + '"]');
+        if (!form) return;
+        if (!form.hidden) {
+          form.hidden = true;
+          btn.textContent = "Details";
+          return;
+        }
+        if (!form.dataset.loaded) {
+          const res2 = await fetch("/api/teams/" + btn.dataset.expandMaster, { headers: authHeader() });
+          if (!res2.ok) return teamAdminFail(res2, form.querySelector("[data-master-err]"));
+          const team = await res2.json();
+          const contact = team.contact || {};
+          form.elements.name.value = team.name || "";
+          form.elements.age_group.value = team.age_group || "";
+          form.elements.coach_name.value = team.coach_name || "";
+          form.elements.gamechanger_url.value = team.gamechanger_url || "";
+          form.elements.coach_email.value = contact.coach_email || "";
+          form.elements.coach_phone.value = contact.coach_phone || "";
+          form.elements.alt_name.value = contact.alt_name || "";
+          form.elements.alt_email.value = contact.alt_email || "";
+          form.elements.alt_phone.value = contact.alt_phone || "";
+          form.elements.co_owners.value = (team.co_owners || []).join("\n");
+          form.dataset.loaded = "1";
+        }
+        form.hidden = false;
+        btn.textContent = "Hide details";
+      });
+    });
+    box.querySelectorAll("[data-master-edit]").forEach((form) => {
       form.addEventListener("submit", async (ev) => {
         ev.preventDefault();
-        const name = new FormData(form).get("name");
-        const res2 = await fetch("/api/teams/" + form.dataset.master, {
+        const local = form.querySelector("[data-master-err]");
+        if (local) {
+          local.hidden = true;
+          local.textContent = "";
+        }
+        const data = Object.fromEntries(new FormData(form));
+        const res2 = await fetch("/api/teams/" + form.dataset.masterEdit, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", ...authHeader() },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify(data),
         });
-        if (!res2.ok) return teamAdminFail(res2);
-        flashSaved("Team renamed");
+        if (!res2.ok) return teamAdminFail(res2, local);
+        flashSaved("Team saved");
         adminTeams();
       });
     });
     box.querySelectorAll("[data-remove-master]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const name = btn.dataset.removeName || "this team";
-        if (!confirm("Remove " + name + "? A roster, a season book, or a final game blocks this. Weekend entries stay on their tournaments.")) return;
+        if (!confirm("Delete " + name + "? This removes the master team, its roster, and its season book, and takes it off any weekend.")) return;
         const res2 = await fetch("/api/admin/teams/" + btn.dataset.removeMaster + "/remove", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeader() },

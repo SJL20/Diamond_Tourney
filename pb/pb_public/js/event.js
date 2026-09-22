@@ -3385,7 +3385,7 @@ function bindContactEdits(slug, showErr) {
   });
   document.querySelectorAll("[data-remove-team]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm("Remove this team from the weekend? Unplayed games are deleted. A team with a final score stays on the board.")) return;
+      if (!confirm("Remove this team from the weekend? Their games on this weekend are deleted. A director cannot remove a team that already has a final score.")) return;
       try {
         await adminPost(slug, "/teams/" + btn.dataset.removeTeam + "/remove", {});
         flashSaved("Team removed");
