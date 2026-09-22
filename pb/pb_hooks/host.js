@@ -452,17 +452,29 @@ function eventJson(rec, app, auth, opts) {
   return out;
 }
 
-function teamJson(rec) {
+function teamJson(rec, app) {
+  const masterId = rec.get("team") || "";
+  let name = rec.get("name");
+  let age = rec.get("age_group") || "";
+  const gc = linkedGcUrl(app, rec);
+  if (app && masterId) {
+    try {
+      const master = app.findRecordById("teams", masterId);
+      if (master.get("name")) name = master.get("name");
+      if (master.get("age_group")) age = master.get("age_group");
+    } catch (err) {}
+  }
   return {
     id: rec.id,
-    name: rec.get("name"),
+    name: name,
     slug: rec.get("slug"),
+    team: masterId,
     club: rec.get("club") || "",
     pool: rec.get("pool") || "",
     seed: rec.get("seed") || 0,
-    gamechanger_url: rec.get("gamechanger_url") || "",
-    gc_linked: isGameChangerUrl(rec.get("gamechanger_url")),
-    gc_sync_status: rec.get("gc_sync_status") || (rec.get("gamechanger_url") ? "linked" : "unlinked"),
+    gamechanger_url: gc,
+    gc_linked: isGameChangerUrl(gc),
+    gc_sync_status: rec.get("gc_sync_status") || (gc ? "linked" : "unlinked"),
     signed_up_by: rec.get("signed_up_by") || "",
     gc_last_error: rec.get("gc_last_error") || "",
     host: !!rec.get("is_host"),
@@ -473,7 +485,7 @@ function teamJson(rec) {
     published_ra: rec.get("published_ra"),
     packet_status: rec.get("packet_status") || "",
     packet_note: rec.get("packet_note") || "",
-    age_group: rec.get("age_group") || "",
+    age_group: rec.get("age_group") || age,
     klass: rec.get("klass") || "",
     notes: rec.get("notes") || "",
     paid: !!rec.get("paid"),
@@ -535,21 +547,452 @@ function writeLog(app, eventId, kind, ok, detail) {
   app.save(rec);
 }
 
+function uniqueTeamSlug(app, base) {
+  let slug = base || "team";
+  let n = 2;
+  while (true) {
+    try {
+      app.findFirstRecordByData("teams", "slug", slug);
+      slug = (base || "team") + "-" + n;
+      n++;
+    } catch (err) {
+      return slug;
+    }
+  }
+}
+
+const MASTER_AGES = { "6U": 1, "8U": 1, "10U": 1, "12U": 1, "14U": 1, "16U": 1, "18U": 1 };
+
+function masterTeamJson(rec) {
+  return {
+    id: rec.id,
+    name: rec.get("name") || "",
+    slug: rec.get("slug") || "",
+    age_group: rec.get("age_group") || "",
+    coach_name: rec.get("coach_name") || "",
+    gamechanger_url: rec.get("gamechanger_url") || "",
+    gc_linked: isGameChangerUrl(rec.get("gamechanger_url")),
+  };
+}
+
+function emailList(raw) {
+  const text = Array.isArray(raw) ? raw.join(",") : String(raw || "");
+  const out = [];
+  const seen = {};
+  const parts = text.split(/[\s,;]+/);
+  for (let i = 0; i < parts.length; i++) {
+    const email = parts[i].trim().toLowerCase();
+    if (!email || email.indexOf("@") < 1 || seen[email]) continue;
+    seen[email] = true;
+    out.push(email);
+  }
+  return out;
+}
+
+function findOwnerUser(app, teamId) {
+  if (!teamId) return null;
+  try {
+    return app.findFirstRecordByFilter("users", "team = {:t}", { t: teamId });
+  } catch (err) {
+    return null;
+  }
+}
+
+function ownerState(app, teamId) {
+  if (findOwnerUser(app, teamId)) return "owner";
+  try {
+    const contacts = require(__hooks + "/contacts.js");
+    const row = contacts.findForSeasonTeam(app, teamId);
+    if (row && row.get("pending_owner_email")) return "pending";
+  } catch (err) {}
+  return "none";
+}
+
+function listCoOwnerEmails(app, teamId) {
+  const out = [];
+  try {
+    const rows = app.findRecordsByFilter("team_co_owners", "team = {:t}", "email", 40, 0, { t: teamId });
+    for (let i = 0; i < rows.length; i++) out.push(rows[i].get("email") || "");
+  } catch (err) {}
+  return out;
+}
+
+function replaceCoOwners(app, teamId, raw) {
+  let existing = [];
+  try {
+    existing = app.findRecordsByFilter("team_co_owners", "team = {:t}", "", 80, 0, { t: teamId });
+  } catch (err) {}
+  for (let i = 0; i < existing.length; i++) {
+    try { app.delete(existing[i]); } catch (err) {}
+  }
+  const emails = emailList(raw);
+  for (let i = 0; i < emails.length; i++) {
+    const rec = new Record(app.findCollectionByNameOrId("team_co_owners"));
+    rec.set("team", teamId);
+    rec.set("email", emails[i]);
+    try {
+      const user = app.findFirstRecordByFilter("users", "email = {:e}", { e: emails[i] });
+      if (user) rec.set("user", user.id);
+    } catch (err) {}
+    app.save(rec);
+  }
+  return emails;
+}
+
+function linkCoOwnerUsers(app, user) {
+  if (!app || !user) return;
+  const sb = require(__hooks + "/softball.js");
+  const email = sb.normalizeEmail(user.email ? user.email() : "");
+  if (!email) return;
+  try {
+    const rows = app.findRecordsByFilter("team_co_owners", "email = {:e}", "", 40, 0, { e: email });
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].get("user")) continue;
+      rows[i].set("user", user.id);
+      app.save(rows[i]);
+    }
+  } catch (err) {}
+}
+
+function eventAdminOfTeam(app, teamId, auth) {
+  const sb = require(__hooks + "/softball.js");
+  let rows = [];
+  try {
+    rows = app.findRecordsByFilter("event_teams", "team = {:t}", "", 80, 0, { t: teamId });
+  } catch (err) {
+    return false;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      const event = app.findRecordById("events", rows[i].get("event"));
+      if (sb.isEventAdmin(event, auth, app)) return true;
+    } catch (err) {}
+  }
+  return false;
+}
+
+function canEditMaster(app, team, auth) {
+  if (!auth || !team) return false;
+  const sb = require(__hooks + "/softball.js");
+  if (sb.isSiteAdmin(auth)) return true;
+  if (!sb.isVerifiedAccount(auth)) return false;
+  if (auth.get("team") === team.id) return true;
+  try {
+    if (require(__hooks + "/contacts.js").isCoOwner(app, team.id, auth)) return true;
+  } catch (err) {}
+  if (team.get("created_by") && team.get("created_by") === auth.id) return true;
+  return eventAdminOfTeam(app, team.id, auth);
+}
+
+function canHandOff(app, team, auth) {
+  if (!canEditMaster(app, team, auth)) return false;
+  const sb = require(__hooks + "/softball.js");
+  if (sb.isSiteAdmin(auth)) return true;
+  const owner = findOwnerUser(app, team.id);
+  if (owner) return owner.id === auth.id;
+  if (team.get("created_by") && team.get("created_by") === auth.id) return true;
+  return eventAdminOfTeam(app, team.id, auth);
+}
+
+function clearOwners(app, teamId, keepUserId) {
+  let rows = [];
+  try {
+    rows = app.findRecordsByFilter("users", "team = {:t}", "", 20, 0, { t: teamId });
+  } catch (err) {
+    return;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    if (keepUserId && rows[i].id === keepUserId) continue;
+    const fresh = app.findRecordById("users", rows[i].id);
+    fresh.set("team", "");
+    app.save(fresh);
+  }
+}
+
+function setEventAccounts(app, teamId, userId) {
+  let rows = [];
+  try {
+    rows = app.findRecordsByFilter("event_teams", "team = {:t}", "", 200, 0, { t: teamId });
+  } catch (err) {
+    return;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    rows[i].set("account", userId || "");
+    app.save(rows[i]);
+  }
+}
+
+function claimPendingTeam(app, user) {
+  if (!app || !user || user.get("team")) return;
+  const sb = require(__hooks + "/softball.js");
+  const email = sb.normalizeEmail(user.email ? user.email() : "");
+  if (!email) return;
+  let rows = [];
+  try {
+    rows = app.findRecordsByFilter("team_contacts", "pending_owner_email = {:e}", "", 20, 0, { e: email });
+  } catch (err) {
+    return;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const teamId = rows[i].get("team");
+    if (!teamId) continue;
+    if (findOwnerUser(app, teamId)) continue;
+    const fresh = app.findRecordById("users", user.id);
+    if (fresh.get("team")) return;
+    fresh.set("team", teamId);
+    app.save(fresh);
+    rows[i].set("pending_owner_email", "");
+    app.save(rows[i]);
+    setEventAccounts(app, teamId, fresh.id);
+    return;
+  }
+}
+
+function transferTeam(app, team, rawEmail, auth) {
+  if (!canHandOff(app, team, auth)) {
+    throw new ForbiddenError("Only the owner, or the director who created this team, can pass it to an email.");
+  }
+  const sb = require(__hooks + "/softball.js");
+  const email = sb.normalizeEmail(rawEmail);
+  if (!sb.isValidEmail(email)) throw new BadRequestError("Enter the email that should own this team.");
+  let user = null;
+  try { user = app.findFirstRecordByFilter("users", "email = {:e}", { e: email }); } catch (err) {}
+  if (user) {
+    if (user.get("team") && user.get("team") !== team.id) {
+      throw new BadRequestError("That account already has a team.");
+    }
+    clearOwners(app, team.id, user.id);
+    const fresh = app.findRecordById("users", user.id);
+    fresh.set("team", team.id);
+    app.save(fresh);
+    try {
+      const contacts = require(__hooks + "/contacts.js");
+      const row = contacts.findForSeasonTeam(app, team.id);
+      if (row && row.get("pending_owner_email")) {
+        row.set("pending_owner_email", "");
+        app.save(row);
+      }
+    } catch (err) {}
+    setEventAccounts(app, team.id, fresh.id);
+    return { id: team.id, email: email, state: "owner" };
+  }
+  clearOwners(app, team.id, "");
+  setEventAccounts(app, team.id, "");
+  const contacts = require(__hooks + "/contacts.js");
+  const row = contacts.upsertForSeasonTeam(app, team, {});
+  row.set("pending_owner_email", email);
+  app.save(row);
+  return { id: team.id, email: email, state: "pending" };
+}
+
+function saveMasterProfile(app, team, body) {
+  if (!body) body = {};
+  let changed = false;
+  if (body.name) {
+    const name = String(body.name).trim();
+    if (name && name !== team.get("name")) {
+      team.set("name", name);
+      changed = true;
+    }
+  }
+  const coachName = body.coach_name != null ? body.coach_name : body.contact_name;
+  if (coachName != null) {
+    team.set("coach_name", String(coachName || "").trim());
+    changed = true;
+  }
+  if (body.age_group != null && body.age_group !== "") {
+    const age = String(body.age_group).toUpperCase();
+    if (MASTER_AGES[age]) {
+      team.set("age_group", age);
+      changed = true;
+    }
+  }
+  if (body.gamechanger_url != null) {
+    const gc = String(body.gamechanger_url || "").trim();
+    if (gc && !isGameChangerUrl(gc)) {
+      throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
+    }
+    team.set("gamechanger_url", gc);
+    changed = true;
+  }
+  if (changed) app.save(team);
+  const contacts = require(__hooks + "/contacts.js");
+  const patch = {};
+  if (body.coach_email != null || body.contact_email != null) {
+    patch.coach_email = body.coach_email != null ? body.coach_email : body.contact_email;
+  }
+  if (body.coach_phone != null || body.contact_phone != null) {
+    patch.coach_phone = body.coach_phone != null ? body.coach_phone : body.contact_phone;
+  }
+  if (body.alt_name != null) patch.alt_name = body.alt_name;
+  if (body.alt_email != null) patch.alt_email = body.alt_email;
+  if (body.alt_phone != null) patch.alt_phone = body.alt_phone;
+  if (Object.keys(patch).length) contacts.upsertForSeasonTeam(app, team, patch);
+  if (body.co_owners != null) replaceCoOwners(app, team.id, body.co_owners);
+  return team;
+}
+
+function masterProfile(app, team, auth) {
+  const row = masterTeamJson(team);
+  row.owner_state = ownerState(app, team.id);
+  if (!canEditMaster(app, team, auth)) return row;
+  const contacts = require(__hooks + "/contacts.js");
+  const season = contacts.findForSeasonTeam(app, team.id);
+  row.contact = contacts.contactJson(season);
+  row.co_owners = listCoOwnerEmails(app, team.id);
+  row.pending_owner_email = season ? (season.get("pending_owner_email") || "") : "";
+  return row;
+}
+
+function createMasterTeam(app, body, auth) {
+  if (!auth) throw new UnauthorizedError("Log in before creating a team.");
+  const sb = require(__hooks + "/softball.js");
+  if (!sb.isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before creating a team.");
+  }
+  body = body || {};
+  const name = String(body.name || body.team_name || "").trim();
+  if (!name) throw new BadRequestError("Team name is required");
+  const role = auth.get("role") || "";
+  const siteAdmin = sb.isSiteAdmin(auth);
+  const director = role === "event_td" || siteAdmin;
+  const coach = role === "team_coach";
+  if (!director && !coach) {
+    throw new ForbiddenError("A director or team account can create a team.");
+  }
+  if (coach && !director && auth.get("team")) {
+    let existing = null;
+    try { existing = app.findRecordById("teams", auth.get("team")); } catch (err) {}
+    const label = existing ? existing.get("name") : "this account";
+    throw new BadRequestError("This account already has a team: " + label + ". Sign that team up for an event.");
+  }
+  const ownerEmail = sb.normalizeEmail(body.owner_email || "");
+  if (!director && ownerEmail && ownerEmail !== sb.normalizeEmail(auth.email())) {
+    throw new BadRequestError("This account owns the team it creates.");
+  }
+  const rec = new Record(app.findCollectionByNameOrId("teams"));
+  rec.set("name", name);
+  rec.set("slug", uniqueTeamSlug(app, slugify(name)));
+  const age = String(body.age_group || "").toUpperCase();
+  if (MASTER_AGES[age]) rec.set("age_group", age);
+  const coachName = String(body.coach_name || body.contact_name || "").trim();
+  if (coachName) rec.set("coach_name", coachName);
+  else if (coach && !director) rec.set("coach_name", auth.get("display_name") || "");
+  const gc = String(body.gamechanger_url || "").trim();
+  if (gc && !isGameChangerUrl(gc)) {
+    throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
+  }
+  if (gc) rec.set("gamechanger_url", gc);
+  rec.set("created_by", auth.id);
+  rec.set("public_record_wins", 0);
+  rec.set("public_record_losses", 0);
+  rec.set("public_record_ties", 0);
+  app.save(rec);
+  if (coach && !director && !auth.get("team")) {
+    const fresh = app.findRecordById("users", auth.id);
+    fresh.set("team", rec.id);
+    app.save(fresh);
+  }
+  const profile = {};
+  if (body.coach_email != null || body.contact_email != null || (coach && !director)) {
+    profile.coach_email = body.coach_email || body.contact_email || (coach && !director ? auth.email() : "");
+  }
+  if (body.coach_phone != null || body.contact_phone != null) profile.coach_phone = body.coach_phone || body.contact_phone;
+  if (body.alt_name != null) profile.alt_name = body.alt_name;
+  if (body.alt_email != null) profile.alt_email = body.alt_email;
+  if (body.alt_phone != null) profile.alt_phone = body.alt_phone;
+  if (body.co_owners != null) profile.co_owners = body.co_owners;
+  saveMasterProfile(app, rec, profile);
+  let handoff = null;
+  if (director && ownerEmail) handoff = transferTeam(app, rec, ownerEmail, auth);
+  const out = masterProfile(app, rec, auth);
+  if (handoff) out.handoff = handoff;
+  return out;
+}
+
+function updateMasterTeam(app, team, body, auth) {
+  if (!canEditMaster(app, team, auth)) {
+    throw new ForbiddenError("Only this team's account, a co-owner, or the director who created it can edit it.");
+  }
+  saveMasterProfile(app, team, body || {});
+  const ownerEmail = String((body && body.owner_email) || "").trim();
+  let handoff = null;
+  if (ownerEmail) handoff = transferTeam(app, team, ownerEmail, auth);
+  const out = masterProfile(app, app.findRecordById("teams", team.id), auth);
+  if (handoff) out.handoff = handoff;
+  return out;
+}
+
+function findOrCreateMasterTeam(app, name, auth) {
+  const base = slugify(name);
+  try {
+    return app.findFirstRecordByData("teams", "slug", base);
+  } catch (err) {}
+  const created = createMasterTeam(app, { name: name }, auth);
+  return app.findRecordById("teams", created.id);
+}
+
+function loadMasterTeam(app, body) {
+  const id = String((body && body.team_id) || "").trim();
+  const slug = String((body && body.team_slug) || "").trim();
+  if (!id && !slug) {
+    throw new BadRequestError("Create the team before signing up for an event.");
+  }
+  try {
+    if (id) return app.findRecordById("teams", id);
+    return app.findFirstRecordByData("teams", "slug", slug);
+  } catch (err) {
+    throw new BadRequestError("That team does not exist yet. Create it before signing up for an event.");
+  }
+}
+
+function listMasterTeams(app) {
+  return app.findRecordsByFilter("teams", "", "name", 500, 0).map(function (rec) {
+    const row = masterTeamJson(rec);
+    row.owner_state = ownerState(app, rec.id);
+    return row;
+  });
+}
+
+function linkedGcUrl(app, eventTeam) {
+  const eventUrl = (eventTeam && eventTeam.get("gamechanger_url")) || "";
+  if (!app || !eventTeam) return eventUrl;
+  const masterId = eventTeam.get("team") || "";
+  if (!masterId) return eventUrl;
+  try {
+    const masterUrl = app.findRecordById("teams", masterId).get("gamechanger_url") || "";
+    if (masterUrl) return masterUrl;
+  } catch (err) {}
+  return eventUrl;
+}
+
 function upsertEventTeam(app, event, data) {
   const slug = slugify(data.name);
   let rec;
   let existing = false;
-  try {
-    rec = app.findFirstRecordByFilter(
-      "event_teams",
-      "event = {:e} && slug = {:s}",
-      { e: event.id, s: slug },
-    );
-    existing = true;
-  } catch (err) {
-    rec = new Record(app.findCollectionByNameOrId("event_teams"));
-    rec.set("event", event.id);
-    rec.set("slug", slug);
+  if (data.team) {
+    try {
+      rec = app.findFirstRecordByFilter(
+        "event_teams",
+        "event = {:e} && team = {:t}",
+        { e: event.id, t: data.team },
+      );
+      existing = true;
+    } catch (err) {}
+  }
+  if (!existing) {
+    try {
+      rec = app.findFirstRecordByFilter(
+        "event_teams",
+        "event = {:e} && slug = {:s}",
+        { e: event.id, s: slug },
+      );
+      existing = true;
+    } catch (err) {
+      rec = new Record(app.findCollectionByNameOrId("event_teams"));
+      rec.set("event", event.id);
+      rec.set("slug", slug);
+    }
   }
   if (existing) {
     const ownerId = rec.get("account") || "";
@@ -559,18 +1002,24 @@ function upsertEventTeam(app, event, data) {
     const incomingEmail = String(data.contact_email || "").trim().toLowerCase();
     const claim = !ownerId && incoming && data.verified && storedEmail && storedEmail === incomingEmail;
     const directorFill = data.signed_up_by === "director" && !ownerId;
-    if (!sameOwner && !claim && !directorFill) {
+    const sameMaster = !!(data.team && rec.get("team") === data.team);
+    if (!sameOwner && !claim && !directorFill && !sameMaster) {
       throw new BadRequestError("That team is already signed up for this tournament.");
     }
   }
   rec.set("name", data.name);
+  if (data.team) rec.set("team", data.team);
   if (data.pool) rec.set("pool", data.pool);
-  rec.set("gamechanger_url", data.gamechanger_url || "");
-  rec.set("gc_team_ref", gcRef(data.gamechanger_url));
-  rec.set("contact_name", data.contact_name || "");
-  rec.set("contact_email", data.contact_email || "");
+  if (data.team) {
+    rec.set("gc_sync_status", isGameChangerUrl(data.gamechanger_url) ? "linked" : (rec.get("gc_sync_status") || "unlinked"));
+  } else {
+    rec.set("gamechanger_url", data.gamechanger_url || "");
+    rec.set("gc_team_ref", gcRef(data.gamechanger_url));
+    rec.set("contact_name", data.contact_name || "");
+    rec.set("contact_email", data.contact_email || "");
+    rec.set("gc_sync_status", isGameChangerUrl(data.gamechanger_url) ? "linked" : "unlinked");
+  }
   rec.set("signed_up_by", data.signed_up_by || "team");
-  rec.set("gc_sync_status", isGameChangerUrl(data.gamechanger_url) ? "linked" : "unlinked");
   if (data.account) rec.set("account", data.account);
   if (data.age_group) rec.set("age_group", String(data.age_group).toUpperCase());
   if (data.klass || data.class) rec.set("klass", String(data.klass || data.class).toUpperCase());
@@ -642,39 +1091,48 @@ function createEvent(app, body, auth) {
 
 function signupTeam(app, event, body, auth) {
   if (!event.get("signup_open")) throw new BadRequestError("Signup is closed for this event");
-  const name = (body.team_name || body.name || "").trim();
-  if (!name) throw new BadRequestError("Team name is required");
+  if (!auth) {
+    throw new UnauthorizedError("Log in and create your team before signing up for an event.");
+  }
+  const sb = require(__hooks + "/softball.js");
+  if (!sb.isVerifiedAccount(auth)) {
+    throw new ForbiddenError("Confirm your email before signing up a team.");
+  }
+  const master = loadMasterTeam(app, body);
   const gcUrl = (body.gamechanger_url || "").trim();
   if (gcUrl && !isGameChangerUrl(gcUrl)) {
     throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
   }
-  const director = require(__hooks + "/softball.js").isEventAdmin(event, auth, app);
+  const director = sb.isEventAdmin(event, auth, app);
   const asDirector = director && (body.as_director === true || body.as_director === "true" || body.as_director === "director");
+  const owns = auth.get("team") === master.id;
+  let coOwner = false;
+  try { coOwner = require(__hooks + "/contacts.js").isCoOwner(app, master.id, auth); } catch (err) {}
+  if (!asDirector && !owns && !coOwner) {
+    throw new ForbiddenError("Sign up the team on this account. A director adds other teams.");
+  }
+  if (canEditMaster(app, master, auth)) saveMasterProfile(app, master, body);
+  const freshMaster = app.findRecordById("teams", master.id);
   const team = upsertEventTeam(app, event, {
-    name: name,
+    name: freshMaster.get("name"),
+    team: freshMaster.id,
     pool: body.pool || "",
-    gamechanger_url: gcUrl,
-    contact_name: body.contact_name || (auth ? auth.email() : ""),
-    contact_email: body.contact_email || body.coach_email || (auth ? auth.email() : ""),
+    gamechanger_url: freshMaster.get("gamechanger_url") || "",
     signed_up_by: asDirector ? "director" : "team",
-    account: auth ? auth.id : "",
-    verified: !!(auth && require(__hooks + "/softball.js").isVerifiedAccount(auth)),
-    age_group: body.age_group || "",
+    account: asDirector ? "" : auth.id,
+    verified: true,
+    age_group: body.age_group || freshMaster.get("age_group") || "",
     klass: body.klass || body.class || "",
     notes: body.notes || "",
   });
   if (!team.get("packet_status")) team.set("packet_status", "incomplete");
+  const owner = findOwnerUser(app, freshMaster.id);
+  if (owner && !team.get("account")) {
+    team.set("account", owner.id);
+  }
   app.save(team);
   const contacts = require(__hooks + "/contacts.js");
-  const contactRec = contacts.upsertForEventTeam(app, event, team, {
-    coach_email: body.coach_email || body.contact_email || team.get("contact_email") || "",
-    coach_phone: body.coach_phone || body.contact_phone || "",
-    alt_name: body.alt_name || "",
-    alt_email: body.alt_email || "",
-    alt_phone: body.alt_phone || "",
-    role: body.role || "head_coach",
-  });
-  const contact = contacts.contactJson(contactRec);
+  const contact = contacts.contactJson(contacts.findForSeasonTeam(app, freshMaster.id));
   let mailResult = { sent: false, reason: "not_attempted" };
   try {
     mailResult = require(__hooks + "/mail.js").signupConfirmation(app, event, team, contact);
@@ -682,7 +1140,7 @@ function signupTeam(app, event, body, auth) {
     mailResult = { sent: false, reason: String(err) };
     writeLog(app, event.id, "signup_mail", false, String(err));
   }
-  const row = teamJson(team);
+  const row = teamJson(team, app);
   row.packet = packetSummary(app, event, team);
   row.mail = mailResult;
   row.contact = contact;
@@ -713,9 +1171,25 @@ function updateEventTeam(app, event, team, body, auth) {
           team.set("slug", next);
         }
       }
+      const masterId = team.get("team") || "";
+      if (masterId) {
+        try {
+          const master = app.findRecordById("teams", masterId);
+          master.set("name", name);
+          app.save(master);
+        } catch (err) {}
+      }
     }
     if (body.pool != null) team.set("pool", body.pool);
-    if (body.gamechanger_url != null) {
+    const masterId = team.get("team") || "";
+    if (masterId && body.gamechanger_url != null) {
+      const master = app.findRecordById("teams", masterId);
+      saveMasterProfile(app, master, { gamechanger_url: body.gamechanger_url });
+      team.set("gamechanger_url", "");
+      team.set("gc_team_ref", "");
+      const gcUrl = String(body.gamechanger_url || "").trim();
+      team.set("gc_sync_status", isGameChangerUrl(gcUrl) ? "linked" : "unlinked");
+    } else if (body.gamechanger_url != null) {
       const gcUrl = String(body.gamechanger_url || "").trim();
       if (gcUrl && !isGameChangerUrl(gcUrl)) {
         throw new BadRequestError("If you link a stats page, it must be a GameChanger URL (gc.com or web.gc.com).");
@@ -730,21 +1204,47 @@ function updateEventTeam(app, event, team, body, auth) {
     if (body.paid != null) team.set("paid", body.paid === true || body.paid === "true" || body.paid === "1");
     if (body.registered_at != null) team.set("registered_at", body.registered_at);
   }
-  if (body.contact_name != null) team.set("contact_name", body.contact_name);
-  if (body.contact_email != null || body.coach_email != null) {
-    team.set("contact_email", String(body.coach_email || body.contact_email || "").trim().toLowerCase());
+  const linkedId = team.get("team") || "";
+  if (linkedId) {
+    try {
+      const master = app.findRecordById("teams", linkedId);
+      const patch = {};
+      if (body.contact_name != null) patch.coach_name = body.contact_name;
+      if (body.age_group != null && MASTER_AGES[String(body.age_group).toUpperCase()]) patch.age_group = body.age_group;
+      if (body.coach_email != null || body.contact_email != null) {
+        patch.coach_email = body.coach_email != null ? body.coach_email : body.contact_email;
+      }
+      if (body.coach_phone != null || body.contact_phone != null) {
+        patch.coach_phone = body.coach_phone != null ? body.coach_phone : body.contact_phone;
+      }
+      if (body.alt_name != null) patch.alt_name = body.alt_name;
+      if (body.alt_email != null) patch.alt_email = body.alt_email;
+      if (body.alt_phone != null) patch.alt_phone = body.alt_phone;
+      if (body.co_owners != null) patch.co_owners = body.co_owners;
+      saveMasterProfile(app, master, patch);
+      if (body.owner_email) transferTeam(app, master, body.owner_email, auth);
+    } catch (err) {
+      if (err && err.status) throw err;
+      throw err;
+    }
+  } else {
+    if (body.contact_name != null) team.set("contact_name", body.contact_name);
+    if (body.contact_email != null || body.coach_email != null) {
+      team.set("contact_email", String(body.coach_email || body.contact_email || "").trim().toLowerCase());
+    }
+    contacts.upsertForEventTeam(app, event, team, {
+      coach_email: body.coach_email != null ? body.coach_email : (body.contact_email != null ? body.contact_email : undefined),
+      coach_phone: body.coach_phone != null ? body.coach_phone : body.contact_phone,
+      alt_name: body.alt_name,
+      alt_email: body.alt_email,
+      alt_phone: body.alt_phone,
+      role: body.role,
+    });
   }
   app.save(team);
-  const contactRec = contacts.upsertForEventTeam(app, event, team, {
-    coach_email: body.coach_email != null ? body.coach_email : (body.contact_email != null ? body.contact_email : undefined),
-    coach_phone: body.coach_phone != null ? body.coach_phone : body.contact_phone,
-    alt_name: body.alt_name,
-    alt_email: body.alt_email,
-    alt_phone: body.alt_phone,
-    role: body.role,
-  });
-  const row = teamJson(team);
-  row.contact = contacts.contactJson(contactRec);
+  const row = teamJson(team, app);
+  const season = linkedId ? contacts.findForSeasonTeam(app, linkedId) : null;
+  row.contact = contacts.contactJson(season || contacts.findForEventTeam(app, team.id));
   return row;
 }
 
@@ -935,6 +1435,8 @@ function registerAccount(app, body) {
   rec.set("reset_token", "");
   rec.set("reset_expires", "");
   app.save(rec);
+  try { claimPendingTeam(app, rec); } catch (err) {}
+  try { linkCoOwnerUsers(app, rec); } catch (err) {}
   let verifySent = false;
   let verifyReason = "";
   const out = mail.directorVerify(app, rec, token);
@@ -968,6 +1470,8 @@ function verifyAccount(app, token) {
   user.set("verify_expires", "");
   app.save(user);
   try { require(__hooks + "/softball.js").linkCoOwnerAccount(app, user); } catch (err) {}
+  try { claimPendingTeam(app, user); } catch (err) {}
+  try { linkCoOwnerUsers(app, user); } catch (err) {}
   const welcome = require(__hooks + "/mail.js").directorWelcome(app, user);
   return { verified: true, email: user.email(), welcome_sent: !!(welcome && welcome.sent), welcome_reason: (welcome && welcome.reason) || "" };
 }
@@ -1091,13 +1595,17 @@ function accountHome(app, auth) {
   const joined = [];
   const seen = {};
   try {
+    const teamId = auth.get("team") || "";
+    const joinedFilter = teamId
+      ? "account = {:u} || contact_email = {:e} || team = {:t}"
+      : "account = {:u} || contact_email = {:e}";
     const teams = app.findRecordsByFilter(
       "event_teams",
-      "account = {:u} || contact_email = {:e}",
+      joinedFilter,
       "name",
       80,
       0,
-      { u: auth.id, e: auth.email() },
+      { u: auth.id, e: auth.email(), t: teamId },
     );
     for (const t of teams) {
       const evId = t.get("event");
@@ -1106,7 +1614,7 @@ function accountHome(app, auth) {
       try {
         const row = eventCardJson(app.findRecordById("events", evId), app);
         row.team_name = t.get("name");
-        row.gc_linked = isGameChangerUrl(t.get("gamechanger_url"));
+        row.gc_linked = isGameChangerUrl(linkedGcUrl(app, t));
         joined.push(row);
       } catch (err) {}
     }
@@ -1117,8 +1625,19 @@ function accountHome(app, auth) {
   } catch (err) {
     following = { teams: [], tournaments: [] };
   }
+  const user = accountUserJson(auth, siteAdmin);
+  user.team = (function () {
+    let teamId = "";
+    try { teamId = auth.get("team") || ""; } catch (err) { teamId = ""; }
+    if (!teamId) return null;
+    try {
+      return masterProfile(app, app.findRecordById("teams", teamId), auth);
+    } catch (err) {
+      return null;
+    }
+  })();
   return {
-    user: accountUserJson(auth, siteAdmin),
+    user: user,
     created: created,
     joined: joined,
     following: following,
@@ -1288,7 +1807,7 @@ function confirmPasswordReset(app, token, password) {
 }
 
 function syncGameChangerTeam(app, team) {
-  const url = team.get("gamechanger_url");
+  const url = linkedGcUrl(app, team);
   if (!isGameChangerUrl(url)) {
     team.set("gc_sync_status", "unlinked");
     team.set("gc_last_error", "Missing GameChanger URL");
@@ -1338,7 +1857,7 @@ function syncEvent(app, event) {
 function publicRoster(app, event, auth) {
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: event.id });
   return teams.map(function (t) {
-    const row = teamJson(t);
+    const row = teamJson(t, app);
     row.packet = packetSummary(app, event, t, canSeeTeamPacket(event, t, auth, app));
     return row;
   });
@@ -1464,6 +1983,7 @@ function duplicateEvent(app, source, body, auth) {
     nt.set("gamechanger_url", t.get("gamechanger_url") || "");
     nt.set("gc_team_ref", t.get("gc_team_ref") || "");
     if (t.get("club")) nt.set("club", t.get("club"));
+    if (t.get("team")) nt.set("team", t.get("team"));
     nt.set("packet_status", "incomplete");
     app.save(nt);
     teamMap[t.id] = nt;
@@ -1588,6 +2108,14 @@ module.exports = {
   publicRoster: publicRoster,
   applySettings: applySettings,
   registerAccount: registerAccount,
+  createMasterTeam: createMasterTeam,
+  updateMasterTeam: updateMasterTeam,
+  transferTeam: transferTeam,
+  masterProfile: masterProfile,
+  saveMasterProfile: saveMasterProfile,
+  linkedGcUrl: linkedGcUrl,
+  findOrCreateMasterTeam: findOrCreateMasterTeam,
+  listMasterTeams: listMasterTeams,
   verifyAccount: verifyAccount,
   fileUrl: fileUrl,
   applyAgeGroups: applyAgeGroups,

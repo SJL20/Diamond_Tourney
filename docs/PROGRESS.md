@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 134 unit/integration cases + 13 acceptance checks |
+| Tests | 135 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -213,6 +213,31 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-21 — Master team holds the club
+
+The master `teams` row keeps the name, age, coach name, and public GameChanger link. Coach email, phone, a second contact, and a pending owner email stay on private `team_contacts`. Co-owner emails stay on private `team_co_owners`. A coach joins a weekend with the team already on the account. A director creates the team, adds it to the weekend, and passes ownership with `POST /api/teams/{id}/transfer`. An email with no account yet is stored as pending and attaches when that person registers and confirms. Old Keystone and Harbor rows still keep a blank `event_teams.team`. The September 21 database overview (passwords, backups, unique indexes, score locks) was read with this change. Those items need the owner or a separate pass. This change does not rotate production logins or turn on backups.
+
+Proved by `test_master_profile_and_email_handoff` in the diamond suite and the acceptance checks. A browser pass covers the one-button join and the director create-and-hand-off form.
+
+### 2026-09-21 — Master team before event signup
+
+`teams` is the one team record. A coach creates it on the account page
+(`POST /api/teams`) after the email is confirmed. A director creates it, then
+picks it, on the event signup page. `event_teams.team` points at that row.
+Signup with no master id is refused. CSV import writes the master row first,
+then the weekend row. The map of every collection, including the unused ones
+(`inquiries`, `orgs`, `seasons`), is `docs/DATABASE.md`.
+
+`club_teams` is still the year-board and follow target for weekends that have
+no master link. Old Keystone and Harbor rows were not guessed onto a master
+team. `/admin/teams` still edits `club_teams`.
+
+Proved by the diamond suite and acceptance checks. A browser pass
+on a new weekend refused signup until a team existed: the director saved
+Harbor Lights 10U and then picked it, and a coach saved Coach Lights 10U on
+the account page and joined with that record. Both board rows store
+`event_teams.team`.
 
 ### 2026-09-21 — PDF text extract on upload
 

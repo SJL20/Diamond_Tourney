@@ -33,10 +33,35 @@ function findForEventTeam(app, eventTeamId) {
 
 function findForSeasonTeam(app, teamId) {
   if (!teamId) return null;
+  let rows = [];
   try {
-    return app.findFirstRecordByFilter("team_contacts", "team = {:t}", { t: teamId });
+    rows = app.findRecordsByFilter("team_contacts", "team = {:t}", "", 20, 0, { t: teamId });
   } catch (err) {
     return null;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    if (!rows[i].get("event_team")) return rows[i];
+  }
+  return rows.length ? rows[0] : null;
+}
+
+function isCoOwner(app, teamId, auth) {
+  if (!app || !teamId || !auth) return false;
+  const email = String(auth.email ? auth.email() : "").trim().toLowerCase();
+  const id = auth.id || "";
+  if (!email && !id) return false;
+  try {
+    const rows = app.findRecordsByFilter(
+      "team_co_owners",
+      "team = {:t} && (email = {:e} || user = {:u})",
+      "",
+      1,
+      0,
+      { t: teamId, e: email, u: id },
+    );
+    return !!(rows && rows.length);
+  } catch (err) {
+    return false;
   }
 }
 
@@ -90,8 +115,12 @@ function canSeeEventContact(event, team, auth, app) {
   if (sb.isEventAdmin(event, auth, app)) return true;
   if (!sb.isVerifiedAccount(auth)) return false;
   if (team && team.get("account") && team.get("account") === auth.id) return true;
+  const masterId = team && team.get("team");
+  if (masterId && auth.get("team") === masterId) return true;
+  if (masterId && isCoOwner(app, masterId, auth)) return true;
   if (team && team.get("contact_email") && team.get("contact_email") === auth.email()) return true;
-  return emailsMatch(auth, findForEventTeam(app, team && team.id));
+  if (emailsMatch(auth, findForEventTeam(app, team && team.id))) return true;
+  return emailsMatch(auth, findForSeasonTeam(app, masterId));
 }
 
 function canSeeSeasonContact(team, auth) {
@@ -108,7 +137,8 @@ function attachVisible(app, event, teams, auth) {
     let rec = null;
     try { rec = app.findRecordById("event_teams", row.id); } catch (err) { continue; }
     if (!canSeeEventContact(event, rec, auth, app)) continue;
-    row.contact = contactJson(findForEventTeam(app, rec.id));
+    const masterId = rec.get("team") || "";
+    row.contact = contactJson(findForSeasonTeam(app, masterId) || findForEventTeam(app, rec.id));
     row.age_group = rec.get("age_group") || "";
     row.klass = rec.get("klass") || "";
     row.paid = !!rec.get("paid");
@@ -134,6 +164,18 @@ function contactEmails(app, team) {
     add(rec.get("coach_email"));
     add(rec.get("alt_email"));
   }
+  const season = findForSeasonTeam(app, team && team.get("team"));
+  if (season) {
+    add(season.get("coach_email"));
+    add(season.get("alt_email"));
+  }
+  const masterId = team && team.get("team");
+  if (masterId) {
+    try {
+      const owners = app.findRecordsByFilter("team_co_owners", "team = {:t}", "", 40, 0, { t: masterId });
+      for (let i = 0; i < owners.length; i++) add(owners[i].get("email"));
+    } catch (err) {}
+  }
   return out;
 }
 
@@ -148,4 +190,5 @@ module.exports = {
   attachVisible: attachVisible,
   contactEmails: contactEmails,
   emailsMatch: emailsMatch,
+  isCoOwner: isCoOwner,
 };

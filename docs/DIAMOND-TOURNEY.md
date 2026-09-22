@@ -20,7 +20,7 @@ We keep **one PocketBase box**. We do **not** switch to Vercel + Supabase + Clau
 
 ## Identity (team, not email)
 
-Site admin manages **team profiles** (`/admin/teams`) and can hide or delete weekends (`/admin/events`). The PocketBase Admin account signs in on `/login` as site admin. The event owner can add extra directors by email on **Admin → Tournament setup**. Those addresses never appear on public pages. Email is only a login that can attach to a team. A team can exist with no GameChanger — year totals still follow that club. GameChanger, when present, is an optional public-page link, not the team’s identity.
+The master team is a row in `teams`. It holds the club name, age, coach name, and public GameChanger link. Coach email, phone, and co-owners stay on private rows (`team_contacts`, `team_co_owners`), never on the public team. A coach creates that record on the account page after confirming email, then joins a weekend with one button. A director creates the same record, adds it to the weekend, and passes ownership to an email. `event_teams.team` is the link, so the weekend entry is not a second team. Site admin still edits the older year-club list at `/admin/teams` (`club_teams`). That list is not the master team. The PocketBase Admin account signs in on `/login` as site admin. The event owner can add extra directors by email on **Admin → Tournament setup**. Those addresses never appear on public pages. Email is only a login. A team can exist with no GameChanger. GameChanger, when present, is the club's public page, stored on the master team. The collection map is `docs/DATABASE.md`.
 4. **Pricing (not billed yet):** The Sheet free ≤8 teams; Tournament $79/event; Organization $399/year. Per event, not a February-cancelled monthly plan.
 5. **Narrow to softball and baseball.** Youth ERA base 7, RA/RS tiebreaks, finish-the-inning later. Do not generalize.
 
@@ -31,7 +31,7 @@ Site admin manages **team profiles** (`/admin/teams`) and can hide or delete wee
 | You already have a schedule | **Live** — schedule CSV import + public board (`/directors/import`) |
 | You already have a team list | **Live** — director desk → Teams imports a Google Forms / Excel CSV with column mapping |
 | Start it here | **Live** — native create (`/directors/new`) or link a public Tourney Machine URL (`/directors/link-tm`) |
-| Team signup | **Live** — director or team (`/t/{slug}/signup`). Coach email and phone go in private `team_contacts`, never on the public `teams` collection. GameChanger is optional. Hosted job pings those public pages for reachability. Grok bots poll the same stored URLs for live scores/boxes. |
+| Team signup | **Live** — the master team holds the name, coach, co-owners, contacts, and GameChanger link. A coach joins a weekend with one button. A director creates the team, adds it, then passes ownership to an email. `/t/{slug}/signup` only points `event_teams.team` at that row. See `docs/DATABASE.md`. |
 | Year series | **Live** — GameChanger link is the club identity. `/year/2026` rolls W-L and leaders across weekends. |
 | Import Keystone Clash popup | **Live** — `/directors/import-popup` reads public `data.json` / `stats.json` from https://thedr21.github.io/KeystoneClash/. Stores coach-published GameChanger URLs. Bots may monitor those public GC pages. Individual pool boxes that are not on the popup are not invented. |
 

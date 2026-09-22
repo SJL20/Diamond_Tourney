@@ -274,15 +274,30 @@ function applyMapped(app, event, team, mapped, auth) {
   if (mapped.notes != null && mapped.notes !== "") team.set("notes", mapped.notes);
   if (mapped.timestamp) team.set("registered_at", parseStamp(mapped.timestamp));
   if (mapped.paid) team.set("paid", true);
-  if (mapped.coach_name) team.set("contact_name", mapped.coach_name);
-  if (mapped.coach_email) team.set("contact_email", String(mapped.coach_email).trim().toLowerCase());
+  const masterId = team.get("team") || "";
+  if (masterId) {
+    const master = app.findRecordById("teams", masterId);
+    host.saveMasterProfile(app, master, {
+      coach_name: mapped.coach_name || undefined,
+      coach_email: mapped.coach_email || undefined,
+      coach_phone: mapped.coach_phone || undefined,
+      gamechanger_url: mapped.gamechanger_url || undefined,
+      age_group: mapped.age_group || undefined,
+    });
+    team.set("gamechanger_url", "");
+    team.set("contact_email", "");
+    team.set("contact_name", "");
+  } else {
+    if (mapped.coach_name) team.set("contact_name", mapped.coach_name);
+    if (mapped.coach_email) team.set("contact_email", String(mapped.coach_email).trim().toLowerCase());
+    contacts.upsertForEventTeam(app, event, team, {
+      coach_email: mapped.coach_email || team.get("contact_email") || "",
+      coach_phone: mapped.coach_phone || "",
+      role: "head_coach",
+    });
+  }
   app.save(team);
-  contacts.upsertForEventTeam(app, event, team, {
-    coach_email: mapped.coach_email || team.get("contact_email") || "",
-    coach_phone: mapped.coach_phone || "",
-    role: "head_coach",
-  });
-  return host.teamJson(team);
+  return host.teamJson(team, app);
 }
 
 function commit(app, event, body, auth) {
@@ -318,19 +333,29 @@ function commit(app, event, body, auth) {
         problems.push(row);
         continue;
       }
-      if (mapped.gamechanger_url) team.set("gamechanger_url", mapped.gamechanger_url);
+      if (mapped.gamechanger_url && team.get("team")) {
+        const master = app.findRecordById("teams", team.get("team"));
+        host.saveMasterProfile(app, master, { gamechanger_url: mapped.gamechanger_url });
+      } else if (mapped.gamechanger_url) team.set("gamechanger_url", mapped.gamechanger_url);
       if (mapped.pool) team.set("pool", mapped.pool);
       updated.push(applyMapped(app, event, team, mapped, auth));
       continue;
     }
+    const master = host.findOrCreateMasterTeam(app, mapped.name, auth);
+    const profile = {};
+    if (mapped.coach_name) profile.coach_name = mapped.coach_name;
+    if (mapped.coach_email) profile.coach_email = mapped.coach_email;
+    if (mapped.coach_phone) profile.coach_phone = mapped.coach_phone;
+    if (mapped.gamechanger_url) profile.gamechanger_url = mapped.gamechanger_url;
+    if (mapped.age_group) profile.age_group = mapped.age_group;
+    host.saveMasterProfile(app, master, profile);
     const team = host.upsertEventTeam(app, event, {
-      name: mapped.name,
+      name: master.get("name") || mapped.name,
+      team: master.id,
       pool: mapped.pool || "",
       gamechanger_url: mapped.gamechanger_url || "",
-      contact_name: mapped.coach_name || "",
-      contact_email: mapped.coach_email || "",
       signed_up_by: "director",
-      account: auth ? auth.id : "",
+      account: "",
     });
     created.push(applyMapped(app, event, team, mapped, auth));
     const email = String(mapped.coach_email || "").trim().toLowerCase();

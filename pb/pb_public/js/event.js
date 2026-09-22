@@ -2814,6 +2814,18 @@ export async function eventSignup(slug) {
   const ev = roster.event;
   rememberEvent(ev);
   const director = isDirector(ev);
+  const me = eventPb.authStore.record;
+  let home = null;
+  if (me && eventPb.authStore.token) {
+    const res = await fetch("/api/account/home", { headers: authHeader() });
+    if (res.ok) home = await res.json();
+  }
+  let masterTeams = [];
+  if (director && eventPb.authStore.token) {
+    const res = await fetch("/api/teams", { headers: authHeader() });
+    if (res.ok) masterTeams = (await res.json()).teams || [];
+  }
+  const mine = home && home.user && home.user.team;
   const req = ev.required_docs || [];
   const labels = {
     insurance: "Certificate of insurance",
@@ -2822,54 +2834,147 @@ export async function eventSignup(slug) {
     waiver: "Waiver / medical release",
     coach_cert: "Coach certification / background",
   };
+  const masterAges = ["6U", "8U", "10U", "12U", "14U", "16U", "18U"];
+  const loginCard = `<section class="card">
+    <h2>Create the team first</h2>
+    <p>A team is one record. Create it on an account, then sign that same team up for a weekend. This form does not invent a second team.</p>
+    <p><a class="btn" data-link href="/login" id="signup-login">Log in</a></p>
+  </section>`;
+  const createOnAccount = `<section class="card">
+    <h2>Create your team first</h2>
+    <p>This login does not have a team yet. Create it on your account page, then come back and join with that team.</p>
+    <p><a class="btn" data-link href="/account">Create your team</a></p>
+  </section>`;
+  const confirmCard = `<section class="card">
+    <h2>Confirm your email first</h2>
+    <p>Team setup and event signup stay closed until this address is confirmed.</p>
+    <p><a class="btn" data-link href="/account">Open your account</a></p>
+  </section>`;
+  let gate = "";
+  if (ev.signup_open) {
+    if (!me) gate = loginCard;
+    else if (director) gate = "";
+    else if (home && home.user && home.user.verified === false) gate = confirmCard;
+    else if (!mine) gate = createOnAccount;
+  }
+  const already = !!(mine && (roster.teams || []).some((t) => t.team === mine.id));
+  const fileFields = req.length ? `<fieldset class="setup-block">
+          <legend>Required uploads</legend>
+          <p class="muted">${escapeHtml(ev.packet_notes || "PDF or photo. The director reviews these before first pitch.")}</p>
+          ${req.map((k) => `<label>${labels[k] || k} <input name="${k}" type="file" accept=".pdf,image/jpeg,image/png,image/webp" ${director ? "" : "required"}></label>`).join("")}
+        </fieldset>` : "";
+  const teamPicker = `<label>Team
+        <select name="team_id" required>
+          <option value="">Create the team first</option>
+          ${masterTeams.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}${t.age_group ? " · " + escapeHtml(t.age_group) : ""}${t.owner_state === "owner" ? "" : t.owner_state === "pending" ? " · waiting on an email" : " · no owner yet"}</option>`).join("")}
+        </select>
+      </label>`;
+  const directorCreate = director ? `<section class="card">
+    <h2>Create a team</h2>
+    <p class="muted">Name, contacts, co-owners, and the GameChanger link live on the team. This weekend only records that the team is in.</p>
+    <form class="form wide" id="create-master">
+      <label>Team name <input name="name" required placeholder="Hawks 10U"></label>
+      <label>Age group
+        <select name="age_group">
+          <option value="">—</option>
+          ${masterAges.map((a) => `<option value="${a}">${a}</option>`).join("")}
+        </select>
+      </label>
+      <label>Coach name <input name="coach_name" placeholder="Pat Coach"></label>
+      <label>GameChanger team URL <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…"></label>
+      <label>Coach email <input name="coach_email" type="email"></label>
+      <label>Coach phone <input name="coach_phone" type="text" inputmode="tel" placeholder="412-555-0100"></label>
+      <fieldset class="setup-block">
+        <legend>Second contact</legend>
+        <label>Name <input name="alt_name"></label>
+        <label>Email <input name="alt_email" type="email"></label>
+        <label>Phone <input name="alt_phone" type="text" inputmode="tel"></label>
+      </fieldset>
+      <label>Co-owner emails <textarea name="co_owners" rows="2" placeholder="one email per line"></textarea></label>
+      <label>Pass ownership to <input name="owner_email" type="email" placeholder="coach@example.com"></label>
+      <p class="muted">Leave the owner email blank to keep the team with you until you hand it off. If that address has no account yet, the team waits and attaches when they confirm.</p>
+      <button class="btn" type="submit">Save team</button>
+      <p class="error" id="create-master-err" hidden></p>
+    </form>
+  </section>` : "";
+  const signupForm = director
+    ? `<section class="card">
+      <h2>Add a team to this weekend</h2>
+      <form class="form wide" id="signup-form">
+        ${teamPicker}
+        <label>Pool (optional) <input name="pool" placeholder="A"></label>
+        <label>Pass ownership to <input name="owner_email" type="email" placeholder="coach@example.com"></label>
+        ${fileFields}
+        <input type="hidden" name="as_director" value="true">
+        <button class="btn" type="submit">Add this team</button>
+        <p class="error" id="signup-err" hidden></p>
+      </form>
+    </section>`
+    : (already
+      ? `<section class="card"><h2>${escapeHtml(mine.name)} is in this tournament</h2><p><a class="btn" data-link href="/t/${escapeHtml(ev.slug)}">Open the board</a></p></section>`
+      : `<section class="card">
+      <form class="form wide" id="signup-form">
+        <input type="hidden" name="team_id" value="${escapeHtml(mine.id)}">
+        <p><b>${escapeHtml(mine.name)}</b> ${mine.age_group ? `<span class="muted">${escapeHtml(mine.age_group)}</span>` : ""}</p>
+        <p class="muted">This account owns the team. Joining adds it to this weekend.</p>
+        ${fileFields}
+        <button class="btn" type="submit">Join this tournament</button>
+        <p class="error" id="signup-err" hidden></p>
+      </form>
+    </section>`);
   eventRoot().innerHTML = eventChrome(ev, "signup", `
     <section class="page-head">
       <h1>Sign a team up</h1>
       <p>${ev.signup_open
-        ? `GameChanger is optional. ${req.length ? "Upload the required packet below." : "The director did not require a team packet."}`
+        ? (director
+          ? "Create the team, then add it. Hand it to a coach email when you are ready."
+          : "Your account already owns the team. One click adds it to this weekend.")
         : "Signup is closed."}</p>
     </section>
     ${guidelinesBlock(ev)}
-    ${ev.signup_open ? `<section class="card">
-      <form class="form wide" id="signup-form">
-        <label>Team name <input name="team_name" required placeholder="Hawks 10U"></label>
-        <label>Pool (optional) <input name="pool" placeholder="A"></label>
-        <label>GameChanger team URL (optional)
-          <input name="gamechanger_url" type="url" placeholder="https://web.gc.com/team/…">
-        </label>
-        <label>Contact name <input name="contact_name" ${director ? "" : "required"}></label>
-        <label>Contact email <input name="contact_email" type="email"></label>
-        <label>Contact phone <input name="coach_phone" type="text" inputmode="tel" placeholder="412-555-0100"></label>
-        <label>Age group
-          <select name="age_group">
-            <option value="">—</option>
-            ${["6U", "8U", "10U", "11U", "12U", "14U", "16U", "18U"].map((a) => `<option value="${a}">${a}</option>`).join("")}
-          </select>
-        </label>
-        <fieldset class="setup-block">
-          <legend>Second contact (optional)</legend>
-          <p class="muted">Whoever registers is often not the person in the dugout Saturday.</p>
-          <label>Name <input name="alt_name"></label>
-          <label>Email <input name="alt_email" type="email"></label>
-          <label>Phone <input name="alt_phone" type="text" inputmode="tel"></label>
-        </fieldset>
-        ${req.length ? `<fieldset class="setup-block">
-          <legend>Required uploads</legend>
-          <p class="muted">${escapeHtml(ev.packet_notes || "PDF or photo. The director reviews these before first pitch.")}</p>
-          ${req.map((k) => `<label>${labels[k] || k} <input name="${k}" type="file" accept=".pdf,image/jpeg,image/png,image/webp" ${director ? "" : "required"}></label>`).join("")}
-        </fieldset>` : ""}
-        ${director ? `<label class="check"><input type="checkbox" name="as_director" checked> I am the director adding this team — collect the packet later</label>` : ""}
-        <button class="btn" type="submit">Join the tournament</button>
-        <p class="error" id="signup-err" hidden></p>
-      </form>
-    </section>` : `<section class="card empty">The director closed signup.</section>`}
+    ${ev.signup_open ? directorCreate : ""}
+    ${ev.signup_open && !gate ? signupForm : (ev.signup_open ? gate : `<section class="card empty">The director closed signup.</section>`)}
     ${rosterBlock(roster.teams, ev.slug)}
   `);
+  const login = document.getElementById("signup-login");
+  if (login) {
+    login.addEventListener("click", () => {
+      try { sessionStorage.setItem("dt-after-login", location.pathname); } catch (err) {}
+    });
+  }
+  const createForm = document.getElementById("create-master");
+  if (createForm) {
+    createForm.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      const err = document.getElementById("create-master-err");
+      const body = Object.fromEntries(new FormData(evnt.target));
+      const res = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        err.hidden = false;
+        err.textContent = await res.text();
+        return;
+      }
+      flashSaved("Team saved");
+      eventSignup(slug);
+    });
+  }
   const form = document.getElementById("signup-form");
   if (!form) return;
   form.addEventListener("submit", async (evnt) => {
     evnt.preventDefault();
     const fd = new FormData(evnt.target);
+    if (!fd.get("team_id")) {
+      const err = document.getElementById("signup-err");
+      err.hidden = false;
+      err.textContent = "Create the team before signing up for an event.";
+      return;
+    }
+    const ownerEmail = String(fd.get("owner_email") || "").trim();
+    fd.delete("owner_email");
     if (director && fd.get("as_director")) fd.set("as_director", "true");
     const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/signup", {
       method: "POST",
@@ -2882,6 +2987,18 @@ export async function eventSignup(slug) {
       return;
     }
     const saved = await res.json();
+    if (ownerEmail && saved.team && saved.team.team) {
+      const handed = await fetch("/api/teams/" + encodeURIComponent(saved.team.team) + "/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ email: ownerEmail }),
+      });
+      if (!handed.ok) {
+        document.getElementById("signup-err").hidden = false;
+        document.getElementById("signup-err").textContent = await handed.text();
+        return;
+      }
+    }
     const mail = saved.team && saved.team.mail;
     flashSaved(mail && !mail.sent
       ? "Team saved. Confirmation email was not sent (" + (mail.reason || "SMTP is not configured") + ")."
@@ -3793,6 +3910,7 @@ export async function eventAdmin(slug) {
                   <label>Second name <input name="alt_name" value="${escapeHtml(c.alt_name || "")}"></label>
                   <label>Second email <input name="alt_email" type="email" value="${escapeHtml(c.alt_email || "")}"></label>
                   <label>Second phone <input name="alt_phone" type="text" inputmode="tel" value="${escapeHtml(c.alt_phone || "")}"></label>
+                  ${t.team ? `<label>Pass ownership to <input name="owner_email" type="email" placeholder="coach@example.com"></label>` : ""}
                 </div>
                 <label class="check"><input type="checkbox" name="paid"${t.paid ? " checked" : ""}> Paid</label>
                 <div class="actions">

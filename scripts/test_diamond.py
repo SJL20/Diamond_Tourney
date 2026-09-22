@@ -638,20 +638,45 @@ class HostedSignupTests(unittest.TestCase):
         self.assertTrue(created["event"]["signup_open"])
         self.assertEqual(created["event"]["source"], "native")
 
-        paper = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-            "team_name": "Orphans",
-        })
-        self.assertFalse(paper["team"]["gc_linked"])
-
-        with self.assertRaises(RuntimeError) as bad:
+        with self.assertRaises(RuntimeError) as anon:
             request(BASE, "POST", f"/api/events/{slug}/signup", None, {
                 "team_name": "Orphans",
+            })
+        self.assertIn("create your team", str(anon.exception).lower())
+
+        with self.assertRaises(RuntimeError) as bare:
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {"as_director": True})
+        self.assertIn("create the team", str(bare.exception).lower())
+
+        paper_master = request(BASE, "POST", "/api/teams", td, {"name": "Orphans", "age_group": "10U"})
+        paper = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_id": paper_master["id"],
+            "as_director": True,
+        })
+        self.assertFalse(paper["team"]["gc_linked"])
+        self.assertEqual(paper["team"]["team"], paper_master["id"])
+
+        with self.assertRaises(RuntimeError) as bad:
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_id": paper_master["id"],
+                "as_director": True,
                 "gamechanger_url": "https://example.com/not-gc",
             })
         self.assertIn("GameChanger", str(bad.exception))
 
-        joined = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-            "team_name": "Northside 10U",
+        coach_email = f"kim.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": coach_email,
+            "password": "CoachKim123!",
+            "passwordConfirm": "CoachKim123!",
+            "display_name": "Coach Kim",
+            "intent": "team",
+        })
+        confirm_account(coach_email)
+        coach = auth(BASE, coach_email, "CoachKim123!")
+        north = request(BASE, "POST", "/api/teams", coach, {"name": "Northside 10U", "age_group": "10U"})
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", coach, {
+            "team_id": north["id"],
             "pool": "A",
             "gamechanger_url": "https://web.gc.com/team/northside-10u",
             "contact_name": "Coach Kim",
@@ -659,14 +684,21 @@ class HostedSignupTests(unittest.TestCase):
         })
         self.assertTrue(joined["team"]["gc_linked"])
         self.assertEqual(joined["team"]["signed_up_by"], "team")
+        self.assertEqual(joined["team"]["team"], north["id"])
 
+        west = request(BASE, "POST", "/api/teams", td, {"name": "West End 10U"})
         director_add = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
-            "team_name": "West End 10U",
+            "team_id": west["id"],
             "pool": "B",
             "gamechanger_url": "https://gc.com/team/west-end-10u",
             "as_director": True,
         })
         self.assertEqual(director_add["team"]["signed_up_by"], "director")
+        self.assertEqual(director_add["team"]["team"], west["id"])
+
+        with self.assertRaises(RuntimeError) as stolen:
+            request(BASE, "POST", f"/api/events/{slug}/signup", coach, {"team_id": west["id"]})
+        self.assertIn("this account", str(stolen.exception).lower())
 
         roster = request(BASE, "GET", f"/api/events/{slug}/roster")
         names = [t["name"] for t in roster["teams"]]
@@ -684,12 +716,115 @@ class HostedSignupTests(unittest.TestCase):
 
         closed = request(BASE, "POST", f"/api/events/{slug}/settings", td, {"signup_open": False})
         self.assertFalse(closed["event"]["signup_open"])
+        late = request(BASE, "POST", "/api/teams", td, {"name": "Late Team"})
         with self.assertRaises(RuntimeError) as shut:
-            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-                "team_name": "Late Team",
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_id": late["id"],
+                "as_director": True,
                 "gamechanger_url": "https://gc.com/team/late",
             })
         self.assertIn("closed", str(shut.exception).lower())
+
+    def test_master_profile_and_email_handoff(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "handoff-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Handoff Open",
+            "slug": slug,
+            "venue": "North Fields",
+            "ages": "10U",
+        })
+        owner_email = f"owner.{uuid.uuid4().hex[:8]}@local.test"
+        gc = "https://web.gc.com/team/handoff-hawks"
+        created = request(BASE, "POST", "/api/teams", td, {
+            "name": "Handoff Hawks",
+            "age_group": "10U",
+            "coach_name": "Pat Coach",
+            "gamechanger_url": gc,
+            "coach_email": f"dugout.{uuid.uuid4().hex[:6]}@local.test",
+            "coach_phone": "412-555-0199",
+            "co_owners": "assist@local.test",
+            "owner_email": owner_email,
+        })
+        self.assertEqual(created["handoff"]["state"], "pending")
+        self.assertEqual(created["gamechanger_url"], gc)
+        self.assertEqual(created["contact"]["coach_phone"], "412-555-0199")
+        self.assertIn("assist@local.test", created["co_owners"])
+        from urllib.parse import quote
+        public = request(BASE, "GET", "/api/collections/teams/records?filter=" + quote(f'id="{created["id"]}"'))
+        self.assertEqual(len(public["items"]), 1)
+        row = public["items"][0]
+        blob = json.dumps(row)
+        self.assertNotIn("412-555-0199", blob)
+        self.assertNotIn(owner_email, blob)
+        self.assertNotIn("assist@local.test", blob)
+        self.assertEqual(row.get("gamechanger_url"), gc)
+
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_id": created["id"],
+            "as_director": True,
+        })
+        self.assertTrue(joined["team"]["gc_linked"])
+        self.assertEqual(joined["team"]["gamechanger_url"], gc)
+        self.assertEqual(joined["team"]["contact"]["coach_phone"], "412-555-0199")
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        stored = request(
+            BASE, "GET",
+            "/api/collections/event_teams/records/" + joined["team"]["id"],
+            admin,
+        )
+        self.assertFalse(stored.get("contact_email"))
+        self.assertFalse(stored.get("gamechanger_url"))
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        board_blob = json.dumps(board)
+        self.assertNotIn("412-555-0199", board_blob)
+        self.assertNotIn(owner_email, board_blob)
+        self.assertIn(gc, board_blob)
+
+        stranger_email = f"stranger.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": stranger_email,
+            "password": "Stranger123!",
+            "passwordConfirm": "Stranger123!",
+            "display_name": "Stranger",
+            "intent": "team",
+        })
+        confirm_account(stranger_email)
+        stranger = auth(BASE, stranger_email, "Stranger123!")
+        hidden = request(BASE, "GET", f"/api/teams/{created['id']}", stranger)
+        self.assertNotIn("412-555-0199", json.dumps(hidden))
+        with self.assertRaises(RuntimeError) as stolen:
+            request(BASE, "POST", f"/api/teams/{created['id']}/transfer", stranger, {"email": stranger_email})
+        self.assertIn("owner", str(stolen.exception).lower())
+
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": owner_email,
+            "password": "OwnerPass123!",
+            "passwordConfirm": "OwnerPass123!",
+            "display_name": "Pat Coach",
+            "intent": "team",
+        })
+        confirm_account(owner_email)
+        owner = auth(BASE, owner_email, "OwnerPass123!")
+        home = request(BASE, "GET", "/api/account/home", owner)
+        self.assertEqual(home["user"]["team"]["id"], created["id"])
+        self.assertEqual(home["user"]["team"]["contact"]["coach_phone"], "412-555-0199")
+        slug2 = "handoff-two-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Handoff Second",
+            "slug": slug2,
+            "venue": "North Fields",
+            "ages": "10U",
+        })
+        again = request(BASE, "POST", f"/api/events/{slug2}/signup", owner, {"team_id": created["id"]})
+        self.assertEqual(again["team"]["team"], created["id"])
+        self.assertTrue(again["team"]["gc_linked"])
+        with self.assertRaises(RuntimeError) as blocked:
+            request(BASE, "POST", f"/api/teams/{created['id']}/transfer", td, {"email": stranger_email})
+        self.assertIn("owner", str(blocked.exception).lower())
 
     def test_tm_link_rejects_non_tm(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
@@ -731,9 +866,20 @@ class HostedSignupTests(unittest.TestCase):
         self.assertIn("roster", created["event"]["required_docs"])
         self.assertNotIn("birth_certs", created["event"]["required_docs"])
 
+        packet_email = f"packet.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": packet_email,
+            "password": "PacketCoach1!",
+            "passwordConfirm": "PacketCoach1!",
+            "display_name": "Coach Packet",
+            "intent": "team",
+        })
+        confirm_account(packet_email)
+        packet_coach = auth(BASE, packet_email, "PacketCoach1!")
+        no_packet = request(BASE, "POST", "/api/teams", packet_coach, {"name": "No Packet 10U", "age_group": "10U"})
         with self.assertRaises(RuntimeError) as missing:
-            request(BASE, "POST", f"/api/events/{slug}/signup", None, {
-                "team_name": "No Packet 10U",
+            request(BASE, "POST", f"/api/events/{slug}/signup", packet_coach, {
+                "team_id": no_packet["id"],
                 "contact_name": "Coach",
             })
         self.assertIn("insurance", str(missing.exception).lower())
@@ -745,9 +891,20 @@ class HostedSignupTests(unittest.TestCase):
         self.assertEqual(director_later["team"]["signed_up_by"], "director")
         self.assertFalse(director_later["team"]["packet"]["complete"])
 
+        file_email = f"files.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": file_email,
+            "password": "PacketFiles1!",
+            "passwordConfirm": "PacketFiles1!",
+            "display_name": "Coach Files",
+            "intent": "team",
+        })
+        confirm_account(file_email)
+        file_coach = auth(BASE, file_email, "PacketFiles1!")
+        hawks_packet = request(BASE, "POST", "/api/teams", file_coach, {"name": "Hawks Packet 10U", "age_group": "10U"})
         pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
-        joined = request_multipart(BASE, f"/api/events/{slug}/signup", None, {
-            "team_name": "Hawks Packet 10U",
+        joined = request_multipart(BASE, f"/api/events/{slug}/signup", file_coach, {
+            "team_id": hawks_packet["id"],
             "contact_name": "Coach Kim",
         }, {
             "insurance": ("insurance.pdf", pdf, "application/pdf"),
@@ -1299,9 +1456,10 @@ class AccountAndYearTests(unittest.TestCase):
             "slug": "paper-book-open",
         })
         slug = ev["event"]["slug"]
-        joined = request(BASE, "POST", f"/api/events/{slug}/signup", None, {
+        joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
             "team_name": "Clipboards 10U",
             "contact_name": "Coach Lee",
+            "as_director": True,
         })
         self.assertFalse(joined["team"]["gc_linked"])
         self.assertTrue(joined["team"]["club"])
@@ -1847,8 +2005,10 @@ class PacketPrivacyTests(unittest.TestCase):
             "require_birth_certs": True,
         })
         pdf = (ROOT / "testdata" / "packet" / "insurance.pdf").read_bytes()
-        request_multipart(BASE, f"/api/events/{cls.slug}/signup", None, {
-            "team_name": "Privacy 10U",
+        master = request(BASE, "POST", "/api/teams", cls.td, {"name": "Privacy 10U", "age_group": "10U"})
+        request_multipart(BASE, f"/api/events/{cls.slug}/signup", cls.td, {
+            "team_id": master["id"],
+            "as_director": "true",
             "contact_name": "Coach Parent",
             "contact_email": cls.family_email,
         }, {"birth_certs": ("birth_certs.pdf", pdf, "application/pdf")})

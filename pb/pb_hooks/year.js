@@ -52,6 +52,18 @@ function upsertClub(app, data) {
 }
 
 function clubKey(app, eventTeam) {
+  const masterId = eventTeam.get("team");
+  if (masterId) {
+    try {
+      const master = app.findRecordById("teams", masterId);
+      return {
+        id: "team:" + master.id,
+        name: master.get("name") || eventTeam.get("name"),
+        slug: master.get("slug") || eventTeam.get("slug"),
+        gc: !!(master.get("gamechanger_url") || eventTeam.get("gamechanger_url")),
+      };
+    } catch (err) {}
+  }
   const clubId = eventTeam.get("club");
   if (clubId) {
     try {
