@@ -3134,10 +3134,28 @@ class AdminTeamsBracketsTests(unittest.TestCase):
             admin,
         )
         self.assertFalse(still.get("team"))
+        fox_group = next(
+            g for g in preview["groups"]
+            if any(w.get("id") == foxes["id"] for w in g.get("weekends") or [])
+        )
+        self.assertEqual(fox_group["action"], "create")
+        self.assertTrue(fox_group.get("key"))
+        with self.assertRaises(RuntimeError) as missing:
+            request(BASE, "POST", "/api/admin/teams/attach", owner, {
+                "confirm": True,
+                "events": [slug_a, slug_b],
+                "choices": [{"key": fox_group["key"], "master_id": "missing-master"}],
+            })
+        self.assertIn("does not exist", str(missing.exception).lower())
+        chosen = request(BASE, "POST", "/api/teams", owner, {
+            "name": "Cleanup Chosen " + mark,
+            "age_group": "12U",
+        })
 
         applied = request(BASE, "POST", "/api/admin/teams/attach", owner, {
             "confirm": True,
             "events": [slug_a, slug_b],
+            "choices": [{"key": fox_group["key"], "master_id": chosen["id"]}],
         })
         self.assertGreaterEqual(applied["attached"], 4)
         linked_a = request(BASE, "GET", "/api/collections/event_teams/records/" + hawks["id"], admin)
@@ -3155,7 +3173,7 @@ class AdminTeamsBracketsTests(unittest.TestCase):
         self.assertEqual(private["contact"]["coach_email"], email)
         self.assertEqual(private["coach_name"], "Coach Cleanup")
         fox = request(BASE, "GET", "/api/collections/event_teams/records/" + foxes["id"], admin)
-        self.assertTrue(fox.get("team"))
+        self.assertEqual(fox.get("team"), chosen["id"])
         self.assertNotEqual(fox["team"], linked_a["team"])
         other_rows = request(
             BASE, "GET",

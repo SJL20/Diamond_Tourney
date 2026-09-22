@@ -24,7 +24,7 @@ A coach with no master team sees "Create your team" on the account page. The eve
 
 CSV import is the director bulk door. For each new name it writes the master `teams` row first, then the `event_teams` row that points at it. The same slug on a later import reuses the master row.
 
-Rows already on the board keep a blank `event_teams.team` until a site admin runs **Attach leftover teams** on `/admin/teams`. That button is the one-time pass. It does not run on deploy. Delete the weekends you do not want in the master list first (the test tournament, Keystone Clash). The pass groups a blank link by the public GameChanger URL, then by the exact team name. `Hawks` and `Hawks 10U` stay two teams. A name that already belongs to more than one master team is skipped. Scores and player lines are not written.
+Rows already on the board keep a blank `event_teams.team` until a site admin runs **Attach leftover teams** on `/admin/teams`. That button is the one-time pass. It does not run on deploy. Delete the weekends you do not want in the master list first (the test tournament, Keystone Clash). The pass groups a blank link by the public GameChanger URL, then by the exact team name. `Hawks` and `Hawks 10U` stay two teams. A name that already belongs to more than one master team is left unlinked. Each group starts on that suggestion. A site admin can switch a group to a different master team, to a new master team, or leave it unlinked. Scores and player lines are not written.
 
 Coach email, phone, the second contact, and a pending owner email stay on `team_contacts` keyed by the master team. Co-owner emails stay on `team_co_owners`. None of those are columns on `teams`. `teams` is publicly readable. The GameChanger link on `teams` is a public page URL.
 

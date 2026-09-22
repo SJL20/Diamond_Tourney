@@ -214,6 +214,12 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-22 — Attach leftovers can point at a chosen master
+
+Each leftover group on `/admin/teams` still starts on the suggestion: the same GameChanger link, the exact same name, a new master team, or left unlinked when that name already belongs to more than one master. A site admin can switch that row to a different master team, force a new master team, or leave it unlinked. The button still runs only when they confirm it.
+
+Proved by the choice override in `test_site_admin_attaches_leftovers_and_removes_duplicates`. A browser pass shows the suggestion selected and a typed pick of another master team.
+
 ### 2026-09-22 — Site admin can clean teams and attach leftovers
 
 `/admin/teams` is still the Teams screen. A site admin can rename a master team and a year-board profile, and can remove a duplicate. Removing a year-board profile leaves the weekend row and its scores. Removing a master team is refused when that team has a roster, a season book, a score sheet in review, or a final game. An empty duplicate is deleted. Its weekend rows stay, with the master link cleared.

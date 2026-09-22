@@ -2226,12 +2226,14 @@ function leftoverPreview(groups) {
       }
       events[slug].rows++;
     }
-    if (listed.length < 80) {
+    if (listed.length < 400) {
       listed.push({
+        key: group.key,
         match: group.match,
         action: group.action,
         reason: group.reason,
         name: group.name,
+        master_id: group.master_id || "",
         master_name: group.master_name,
         weekends: group.weekends,
       });
@@ -2425,10 +2427,87 @@ function groupsForEvents(groups, only) {
   return out;
 }
 
+function copyAttachGroup(group, patch) {
+  return {
+    key: group.key,
+    match: group.match,
+    action: patch.action != null ? patch.action : group.action,
+    reason: group.reason,
+    master_id: patch.master_id != null ? patch.master_id : group.master_id,
+    master_key: patch.master_key != null ? patch.master_key : group.master_key,
+    master_name: patch.master_name != null ? patch.master_name : group.master_name,
+    name: group.name,
+    gamechanger_url: group.gamechanger_url,
+    weekends: group.weekends,
+  };
+}
+
+function overlayChoices(app, groups, raw) {
+  if (raw == null) return groups;
+  const list = typeof raw.length === "number" ? raw : [];
+  const map = {};
+  for (let i = 0; i < list.length; i++) {
+    const choice = list[i];
+    if (!choice || !choice.key) continue;
+    map[String(choice.key)] = choice;
+  }
+  const out = [];
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    const choice = map[group.key];
+    if (!choice) {
+      out.push(group);
+      continue;
+    }
+    const action = String(choice.action || "").trim();
+    const masterId = String(choice.master_id || "").trim();
+    if (action === "skip") {
+      out.push(copyAttachGroup(group, { action: "skip", master_id: "", master_key: "" }));
+      continue;
+    }
+    if (action === "create") {
+      out.push(copyAttachGroup(group, { action: "create", master_id: "", master_key: "", master_name: group.name }));
+      continue;
+    }
+    if (action === "suggested" || (!action && !masterId)) {
+      out.push(group);
+      continue;
+    }
+    if (!masterId) throw new BadRequestError("Pick a master team, or leave the suggestion.");
+    let master = null;
+    try { master = app.findRecordById("teams", masterId); } catch (err) { master = null; }
+    if (!master) throw new BadRequestError("That master team does not exist.");
+    out.push(copyAttachGroup(group, {
+      action: "link",
+      master_id: master.id,
+      master_key: "",
+      master_name: master.get("name") || "",
+    }));
+  }
+  const byKey = {};
+  for (let i = 0; i < out.length; i++) byKey[out[i].key] = out[i];
+  for (let i = 0; i < out.length; i++) {
+    const group = out[i];
+    if (!group.master_key || !byKey[group.master_key]) continue;
+    const target = byKey[group.master_key];
+    if (target.action === "link" && target.master_id) {
+      group.action = "link";
+      group.master_id = target.master_id;
+      group.master_name = target.master_name;
+      group.master_key = "";
+    } else if (target.action === "skip") {
+      group.action = "skip";
+      group.master_id = "";
+      group.master_key = "";
+    }
+  }
+  return out;
+}
+
 function attachLeftovers(app, auth, body) {
   const groups = leftoverPlan(app);
   if (!confirmed(body)) return leftoverPreview(groups);
-  const chosen = groupsForEvents(groups, selectedEventSlugs(body));
+  const chosen = overlayChoices(app, groupsForEvents(groups, selectedEventSlugs(body)), body.choices);
   const applied = applyLeftoverPlan(app, auth, chosen);
   const after = leftoverPreview(leftoverPlan(app));
   return {

@@ -583,12 +583,32 @@ export async function adminTeams() {
   const masters = masterBody.teams || [];
   const preview = await attachRes.json();
   const eventLine = (preview.events || []).map((ev) => `${escapeHtml(ev.name || ev.slug)} (${ev.rows})`).join(", ");
-  const groupRows = (preview.groups || []).map((g) => `<tr>
-    <td>${escapeHtml(g.name)}</td>
-    <td>${g.action === "create" ? "New master team" : g.action === "link" ? "Join " + escapeHtml(g.master_name || "existing") : "Skipped"}</td>
-    <td>${g.weekends.length}</td>
-    <td>${escapeHtml(g.reason || (g.match === "gamechanger" ? "Same GameChanger link" : "Exact name"))}</td>
-  </tr>`).join("");
+  const suggestionLabel = (g) => {
+    if (g.action === "create") return "Suggested: new master team";
+    if (g.action === "link") return "Suggested: " + (g.master_name || "existing team");
+    return "Suggested: leave unlinked";
+  };
+  const groupRows = (preview.groups || []).map((g) => {
+    const why = g.reason || (g.match === "gamechanger" ? "Same GameChanger link" : g.match === "name" ? "Exact name" : "");
+    const places = (g.weekends || []).slice(0, 3).map((w) => w.event_name || w.name).filter(Boolean);
+    const extra = (g.weekends || []).length > places.length ? " +" + ((g.weekends || []).length - places.length) : "";
+    return `<tr data-attach-row="${escapeHtml(g.key)}">
+      <td><b>${escapeHtml(g.name)}</b><br><span class="muted">${escapeHtml(why)}${places.length ? " · " + escapeHtml(places.join(", ") + extra) : ""}</span></td>
+      <td>${(g.weekends || []).length}</td>
+      <td>
+        <select data-attach-mode="${escapeHtml(g.key)}">
+          <option value="suggested">${escapeHtml(suggestionLabel(g))}</option>
+          <option value="create">Create a new master team</option>
+          <option value="skip">Leave unlinked</option>
+          <option value="pick">Choose a different master team</option>
+        </select>
+        <div data-attach-pick="${escapeHtml(g.key)}" hidden>
+          <input data-attach-find="${escapeHtml(g.key)}" placeholder="Type a master team name" autocomplete="off">
+          <div class="attach-hits" data-attach-hits="${escapeHtml(g.key)}"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
   flowRoot().innerHTML = gateChrome("admin", `
     <section class="page-head">
       <h1>Team profiles</h1>
@@ -597,16 +617,17 @@ export async function adminTeams() {
     </section>
     <section class="card" id="attach-card">
       <h2>Attach leftover weekend teams</h2>
-      <p class="muted">One-time pass, and only when you click the button. Delete the test tournament and Keystone Clash first if those clubs should not become master teams. The same GameChanger link becomes one master team. The exact same name becomes one master team. Hawks and Hawks 10U stay separate. Scores and player lines are not changed.</p>
+      <p class="muted">Each row starts on the suggestion. Switch a row to another master team, a new master team, or leave it unlinked. Delete the test tournament and Keystone Clash first if those clubs should stay off the master list. Scores and player lines stay as they are.</p>
       <p>${preview.unlinked
-        ? `${preview.unlinked} weekend teams are not on a master team yet. ${preview.will_link} join one that already exists. ${preview.will_create} new master teams cover ${preview.create_rows} weekend rows. ${preview.skipped} skipped.`
+        ? `${preview.unlinked} weekend teams are not on a master team yet. Suggestions: ${preview.will_link} join one that already exists. ${preview.will_create} new master teams cover ${preview.create_rows} weekend rows. ${preview.skipped} left unlinked.`
         : "Every weekend team already points at a master team."}</p>
       ${eventLine ? `<p class="muted">Tournaments in this pass: ${eventLine}</p>` : ""}
-      ${groupRows ? `<div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Action</th><th>Weekends</th><th>Why</th></tr></thead>
+      ${groupRows ? `<label>Find a leftover <input id="attach-find" placeholder="Type a name"></label>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Weekend team</th><th>Weekends</th><th>Master team</th></tr></thead>
         <tbody>${groupRows}</tbody>
       </table></div>` : ""}
-      ${preview.groups_truncated ? `<p class="muted">Showing the first 80 groups. Attach still covers every leftover row.</p>` : ""}
+      ${preview.groups_truncated ? `<p class="muted">Showing the first 400 groups. The rest use the suggestion.</p>` : ""}
       <button class="btn" type="button" id="attach-go" ${preview.unlinked ? "" : "disabled"}>Attach leftover teams</button>
     </section>
     <section class="card">
@@ -748,15 +769,71 @@ export async function adminTeams() {
     flashSaved("Club saved");
     adminTeams();
   });
+  const attachFind = document.getElementById("attach-find");
+  if (attachFind) {
+    attachFind.addEventListener("input", () => {
+      const q = attachFind.value.trim().toLowerCase();
+      flowRoot().querySelectorAll("[data-attach-row]").forEach((row) => {
+        row.hidden = !!(q && row.textContent.toLowerCase().indexOf(q) < 0);
+      });
+    });
+  }
+  const pickBoxes = {};
+  const findBoxes = {};
+  const hitBoxes = {};
+  flowRoot().querySelectorAll("[data-attach-pick]").forEach((el) => { pickBoxes[el.dataset.attachPick] = el; });
+  flowRoot().querySelectorAll("[data-attach-find]").forEach((el) => { findBoxes[el.dataset.attachFind] = el; });
+  flowRoot().querySelectorAll("[data-attach-hits]").forEach((el) => { hitBoxes[el.dataset.attachHits] = el; });
+  flowRoot().querySelectorAll("[data-attach-mode]").forEach((sel) => {
+    const key = sel.dataset.attachMode;
+    const pick = pickBoxes[key];
+    const find = findBoxes[key];
+    const hitBox = hitBoxes[key];
+    sel.addEventListener("change", () => {
+      const choosing = sel.value === "pick";
+      if (pick) pick.hidden = !choosing;
+      if (!choosing) delete sel.dataset.masterId;
+    });
+    if (!find || !hitBox) return;
+    find.addEventListener("input", () => {
+      const q = find.value.trim().toLowerCase();
+      const matched = q ? masters.filter((t) => String(t.name || "").toLowerCase().includes(q)).slice(0, 8) : [];
+      hitBox.innerHTML = matched.map((t) => `<button type="button" class="btn ghost" data-pick-id="${t.id}">${escapeHtml(t.name)}${t.age_group ? " · " + escapeHtml(t.age_group) : ""}</button>`).join("")
+        || (q ? `<p class="muted">No master team matches.</p>` : "");
+      hitBox.querySelectorAll("[data-pick-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          sel.dataset.masterId = btn.dataset.pickId;
+          find.value = btn.textContent;
+          hitBox.innerHTML = "";
+        });
+      });
+    });
+  });
   document.getElementById("attach-go").addEventListener("click", async () => {
+    const choices = [];
+    const missing = [];
+    flowRoot().querySelectorAll("[data-attach-mode]").forEach((sel) => {
+      const key = sel.dataset.attachMode;
+      if (sel.value === "suggested") return;
+      if (sel.value === "create") choices.push({ key, action: "create" });
+      else if (sel.value === "skip") choices.push({ key, action: "skip" });
+      else if (sel.value === "pick") {
+        if (!sel.dataset.masterId) missing.push(key);
+        else choices.push({ key, master_id: sel.dataset.masterId });
+      }
+    });
+    if (missing.length) {
+      teamAdminError("Choose a master team for each row set to a different team, or switch that row back to the suggestion.");
+      return;
+    }
     const names = (preview.events || []).map((ev) => ev.name || ev.slug).filter(Boolean);
     const listed = names.slice(0, 8).join(", ");
     const more = names.length > 8 ? " and " + (names.length - 8) + " more" : "";
-    if (!confirm("Attach leftover weekend teams" + (listed ? " from " + listed + more : "") + "? Scores and player lines stay. Hawks and Hawks 10U stay separate.")) return;
+    if (!confirm("Attach leftover weekend teams" + (listed ? " from " + listed + more : "") + "? Rows you changed use your choice. The others use the suggestion. Scores and player lines stay.")) return;
     const res2 = await fetch("/api/admin/teams/attach", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeader() },
-      body: JSON.stringify({ confirm: true }),
+      body: JSON.stringify({ confirm: true, choices }),
     });
     if (!res2.ok) return teamAdminFail(res2);
     flashSaved("Weekend teams attached");
