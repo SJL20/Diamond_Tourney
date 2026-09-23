@@ -4977,6 +4977,34 @@ class FollowAndStatsTests(unittest.TestCase):
             self.assertFalse(row.get("w"))
             self.assertFalse(row.get("wins"))
 
+    def test_team_page_player_stats_use_the_stats_board(self):
+        event = (ROOT / "pb/pb_public/js/event.js").read_text()
+        team = event.split("export async function eventTeamPage", 1)[1].split("export async function boxUploadPage", 1)[0]
+        stats = event.split("export async function eventStats", 1)[1].split("function isKeystoneParkingAsset", 1)[0]
+        self.assertIn("function mountStatBoard", event)
+        self.assertIn("function statBoardShell", event)
+        self.assertIn("showTeam: true", stats)
+        self.assertIn("mountStatBoard", stats)
+        self.assertIn("showTeam: false", team)
+        self.assertIn('title: "Player stats"', team)
+        self.assertIn("mountStatBoard", team)
+        self.assertIn('data-stats-tab="hit">Hitting', event)
+        self.assertIn('data-stats-tab="pit">Pitching', event)
+        self.assertNotIn("<h2>Team stats</h2>", team)
+        self.assertNotIn('deskTable(["Player", "AB", "H", "RBI", "AVG"]', team)
+        self.assertIn("stats_note", (ROOT / "pb/pb_hooks/teampage.js").read_text())
+
+        board = request(BASE, "GET", "/api/event/keystone-clash-2026/board")
+        passion = next(t for t in board["roster"] if t["name"] == "Pittsburgh Passion")
+        page = request(BASE, "GET", f"/api/event/keystone-clash-2026/team/{passion['slug']}")
+        hit = [r for r in board["leaders"]["full_hitting"] if r.get("team") == "Pittsburgh Passion"]
+        pit = [r for r in board["leaders"]["full_pitching"] if r.get("team") == "Pittsburgh Passion"]
+        self.assertEqual(page["hitting"], hit)
+        self.assertEqual(page["pitching"], pit)
+        self.assertGreater(len(page["hitting"]) + len(page["pitching"]), 0)
+        self.assertEqual(page.get("stats_note") or "", board["leaders"].get("stats_note") or "")
+        self._assert_private_hidden(page, "fan@local.test")
+
     def test_follow_lists_tournaments_without_fan_emails(self):
         with self.assertRaises(RuntimeError) as anon:
             request(BASE, "POST", "/api/account/follow", None, {

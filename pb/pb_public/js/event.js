@@ -2270,6 +2270,130 @@ function sortHead(label, key, active, dir) {
   return `<th><button class="stat-col${on ? " on" : ""}" type="button" data-stat-sort="${key}" aria-pressed="${on ? "true" : "false"}">${label}${arrow}</button></th>`;
 }
 
+function statBoardShell({ showTeam, teams, title, note }) {
+  const chips = showTeam ? `<div class="chips scroll-chips" id="stats-chips">
+        <button class="chip on" type="button" data-team="">All teams</button>
+        ${(teams || []).map((t) => `<button class="chip" type="button" data-team="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("")}
+      </div>` : "";
+  return `<section class="card" id="stats-board">
+      ${title ? `<h2>${escapeHtml(title)}</h2>` : ""}
+      ${note ? `<p class="muted">${escapeHtml(note)}</p>` : ""}
+      <div class="tabs" role="tablist">
+        <button class="tab active" type="button" data-stats-tab="hit">Hitting</button>
+        <button class="tab" type="button" data-stats-tab="pit">Pitching</button>
+      </div>
+      ${chips}
+      <label class="check stats-opt"><input type="checkbox" id="stats-qual" checked> Qualifiers only</label>
+      <p class="muted" id="stats-sort-note"></p>
+      <div id="stats-table"></div>
+    </section>`;
+}
+
+function mountStatBoard({ hitting, pitching, slug, roster, showTeam, emptyHtml }) {
+  const boardEl = document.getElementById("stats-board");
+  if (!boardEl) return;
+  const rowsIn = hitting || [];
+  const pitsIn = pitching || [];
+  const state = { tab: "hit", team: "", qual: true, hitKey: "avg", hitDir: "desc", pitKey: "era", pitDir: "asc" };
+  const paint = () => {
+    const source = state.tab === "hit" ? rowsIn : pitsIn;
+    const sorts = state.tab === "hit" ? HIT_SORTS : PIT_SORTS;
+    const key = state.tab === "hit" ? state.hitKey : state.pitKey;
+    const dir = state.tab === "hit" ? state.hitDir : state.pitDir;
+    const rows = sortStatRows(source.filter((r) => {
+      if (showTeam && state.team && r.team !== state.team) return false;
+      if (state.qual && r.q === false) return false;
+      return true;
+    }), key, dir);
+    const note = document.getElementById("stats-sort-note");
+    if (note) {
+      note.textContent = state.tab === "hit"
+        ? "Sort hitting by hits, average, OPS, or RBIs. Average is the default. A blank OPS was not on the scorebook."
+        : "Sort pitching by innings, ERA, strikeouts, or wins. ERA is the default. A blank win total was not on the scorebook.";
+    }
+    const box = document.getElementById("stats-table");
+    if (!box) return;
+    if (!rowsIn.length && !pitsIn.length) {
+      box.innerHTML = typeof emptyHtml === "function" ? emptyHtml() : (emptyHtml || "");
+      return;
+    }
+    const qualCell = (r) => (r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`);
+    const teamHead = showTeam ? "<th>Team</th>" : "";
+    const teamCell = (r) => (showTeam ? `<td>${teamNameLink(slug, roster, r.team)}</td>` : "");
+    if (state.tab === "hit") {
+      box.innerHTML = sortChips(sorts, key, dir) + `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>
+        <th>#</th><th>Player</th>${teamHead}<th>AB</th>
+        ${sortHead("H", "h", key, dir)}${sortHead("RBI", "rbi", key, dir)}${sortHead("AVG", "avg", key, dir)}${sortHead("OPS", "ops", key, dir)}
+        <th></th>
+      </tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+        <td>${i + 1}</td><td>${escapeHtml(r.player)}</td>${teamCell(r)}
+        <td>${statBlank(r.ab) ? "—" : r.ab}</td><td>${statShown(r, "h")}</td><td>${statShown(r, "rbi")}</td><td>${statShown(r, "avg")}</td><td>${statShown(r, "ops")}</td>
+        <td>${qualCell(r)}</td>
+      </tr>`).join("")}</tbody></table></div>` + statList(rows.map((r, i) => statRow({
+        seed: i + 1,
+        name: escapeHtml(r.player || ""),
+        meta: [showTeam ? teamNameLink(slug, roster, r.team) : "", statBlank(r.ab) ? "" : `${r.ab} AB`].filter(Boolean).join(" · "),
+        value: escapeHtml(statShown(r, key)),
+        muted: r.q === false,
+      })));
+    } else {
+      box.innerHTML = sortChips(sorts, key, dir) + `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>
+        <th>#</th><th>Player</th>${teamHead}
+        ${sortHead("IP", "ip", key, dir)}${sortHead("K", "k", key, dir)}${sortHead("ERA", "era", key, dir)}${sortHead("W", "w", key, dir)}
+        <th></th>
+      </tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
+        <td>${i + 1}</td><td>${escapeHtml(r.player)}</td>${teamCell(r)}
+        <td>${statShown(r, "ip")}</td><td>${statShown(r, "k")}</td><td>${statShown(r, "era")}</td><td>${statShown(r, "w")}</td>
+        <td>${qualCell(r)}</td>
+      </tr>`).join("")}</tbody></table></div>` + statList(rows.map((r, i) => statRow({
+        seed: i + 1,
+        name: escapeHtml(r.player || ""),
+        meta: showTeam ? teamNameLink(slug, roster, r.team) : "",
+        value: escapeHtml(statShown(r, key)),
+        muted: r.q === false,
+      })));
+    }
+  };
+  boardEl.querySelectorAll("[data-stats-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.tab = btn.dataset.statsTab;
+      boardEl.querySelectorAll("[data-stats-tab]").forEach((b) => b.classList.toggle("active", b === btn));
+      paint();
+    });
+  });
+  boardEl.querySelectorAll("#stats-chips [data-team]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.team = btn.dataset.team;
+      boardEl.querySelectorAll("#stats-chips [data-team]").forEach((b) => b.classList.toggle("on", b === btn));
+      paint();
+    });
+  });
+  const qual = document.getElementById("stats-qual");
+  if (qual) {
+    qual.addEventListener("change", (ev) => {
+      state.qual = ev.target.checked;
+      paint();
+    });
+  }
+  boardEl.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-stat-sort]");
+    if (!btn) return;
+    const key = btn.dataset.statSort;
+    const sorts = state.tab === "hit" ? HIT_SORTS : PIT_SORTS;
+    const spec = sorts.find((s) => s.key === key);
+    if (!spec) return;
+    if (state.tab === "hit") {
+      state.hitDir = state.hitKey === key ? (state.hitDir === "asc" ? "desc" : "asc") : spec.dir;
+      state.hitKey = key;
+    } else {
+      state.pitDir = state.pitKey === key ? (state.pitDir === "asc" ? "desc" : "asc") : spec.dir;
+      state.pitKey = key;
+    }
+    paint();
+  });
+  paint();
+}
+
 export async function eventStats(slug) {
   const board = await fetchBoard(slug);
   const hitting = board.leaders.full_hitting || [];
@@ -2287,112 +2411,16 @@ export async function eventStats(slug) {
       </div>
     </section>
     ${approveBanner}
-    <section class="card" id="stats-board">
-      <div class="tabs" role="tablist">
-        <button class="tab active" type="button" data-stats-tab="hit">Hitting</button>
-        <button class="tab" type="button" data-stats-tab="pit">Pitching</button>
-      </div>
-      <div class="chips scroll-chips" id="stats-chips">
-        <button class="chip on" type="button" data-team="">All teams</button>
-        ${teams.map((t) => `<button class="chip" type="button" data-team="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("")}
-      </div>
-      <label class="check stats-opt"><input type="checkbox" id="stats-qual" checked> Qualifiers only</label>
-      <p class="muted" id="stats-sort-note"></p>
-      <div id="stats-table"></div>
-    </section>
+    ${statBoardShell({ showTeam: true, teams })}
   `);
-  const state = { tab: "hit", team: "", qual: true, hitKey: "avg", hitDir: "desc", pitKey: "era", pitDir: "asc" };
-  const paint = () => {
-    const source = state.tab === "hit" ? hitting : pitching;
-    const sorts = state.tab === "hit" ? HIT_SORTS : PIT_SORTS;
-    const key = state.tab === "hit" ? state.hitKey : state.pitKey;
-    const dir = state.tab === "hit" ? state.hitDir : state.pitDir;
-    const rows = sortStatRows(source.filter((r) => {
-      if (state.team && r.team !== state.team) return false;
-      if (state.qual && r.q === false) return false;
-      return true;
-    }), key, dir);
-    const note = document.getElementById("stats-sort-note");
-    if (note) {
-      note.textContent = state.tab === "hit"
-        ? "Sort hitting by hits, average, OPS, or RBIs. Average is the default. A blank OPS was not on the scorebook."
-        : "Sort pitching by innings, ERA, strikeouts, or wins. ERA is the default. A blank win total was not on the scorebook.";
-    }
-    const box = document.getElementById("stats-table");
-    if (!hitting.length && !pitching.length) {
-      box.innerHTML = tabEmpty(board.event, slug, "stats");
-      return;
-    }
-    const qualCell = (r) => (r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`);
-    if (state.tab === "hit") {
-      box.innerHTML = sortChips(sorts, key, dir) + `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>
-        <th>#</th><th>Player</th><th>Team</th><th>AB</th>
-        ${sortHead("H", "h", key, dir)}${sortHead("RBI", "rbi", key, dir)}${sortHead("AVG", "avg", key, dir)}${sortHead("OPS", "ops", key, dir)}
-        <th></th>
-      </tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
-        <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-        <td>${statBlank(r.ab) ? "—" : r.ab}</td><td>${statShown(r, "h")}</td><td>${statShown(r, "rbi")}</td><td>${statShown(r, "avg")}</td><td>${statShown(r, "ops")}</td>
-        <td>${qualCell(r)}</td>
-      </tr>`).join("")}</tbody></table></div>` + statList(rows.map((r, i) => statRow({
-        seed: i + 1,
-        name: escapeHtml(r.player || ""),
-        meta: [teamNameLink(slug, board.roster, r.team), statBlank(r.ab) ? "" : `${r.ab} AB`].filter(Boolean).join(" · "),
-        value: escapeHtml(statShown(r, key)),
-        muted: r.q === false,
-      })));
-    } else {
-      box.innerHTML = sortChips(sorts, key, dir) + `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>
-        <th>#</th><th>Player</th><th>Team</th>
-        ${sortHead("IP", "ip", key, dir)}${sortHead("K", "k", key, dir)}${sortHead("ERA", "era", key, dir)}${sortHead("W", "w", key, dir)}
-        <th></th>
-      </tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.q === false ? "muted-row" : ""}">
-        <td>${i + 1}</td><td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-        <td>${statShown(r, "ip")}</td><td>${statShown(r, "k")}</td><td>${statShown(r, "era")}</td><td>${statShown(r, "w")}</td>
-        <td>${qualCell(r)}</td>
-      </tr>`).join("")}</tbody></table></div>` + statList(rows.map((r, i) => statRow({
-        seed: i + 1,
-        name: escapeHtml(r.player || ""),
-        meta: teamNameLink(slug, board.roster, r.team),
-        value: escapeHtml(statShown(r, key)),
-        muted: r.q === false,
-      })));
-    }
-  };
-  eventRoot().querySelectorAll("[data-stats-tab]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.tab = btn.dataset.statsTab;
-      eventRoot().querySelectorAll("[data-stats-tab]").forEach((b) => b.classList.toggle("active", b === btn));
-      paint();
-    });
+  mountStatBoard({
+    hitting,
+    pitching,
+    slug,
+    roster: board.roster,
+    showTeam: true,
+    emptyHtml: () => tabEmpty(board.event, slug, "stats"),
   });
-  eventRoot().querySelectorAll("#stats-chips [data-team]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.team = btn.dataset.team;
-      eventRoot().querySelectorAll("#stats-chips [data-team]").forEach((b) => b.classList.toggle("on", b === btn));
-      paint();
-    });
-  });
-  document.getElementById("stats-qual").addEventListener("change", (ev) => {
-    state.qual = ev.target.checked;
-    paint();
-  });
-  document.getElementById("stats-board").addEventListener("click", (ev) => {
-    const btn = ev.target.closest("[data-stat-sort]");
-    if (!btn) return;
-    const key = btn.dataset.statSort;
-    const sorts = state.tab === "hit" ? HIT_SORTS : PIT_SORTS;
-    const spec = sorts.find((s) => s.key === key);
-    if (!spec) return;
-    if (state.tab === "hit") {
-      state.hitDir = state.hitKey === key ? (state.hitDir === "asc" ? "desc" : "asc") : spec.dir;
-      state.hitKey = key;
-    } else {
-      state.pitDir = state.pitKey === key ? (state.pitDir === "asc" ? "desc" : "asc") : spec.dir;
-      state.pitKey = key;
-    }
-    paint();
-  });
-  paint();
 }
 
 function isKeystoneParkingAsset(url) {
@@ -4584,15 +4612,12 @@ export async function eventTeamPage(eventSlug, teamSlug) {
         ${page.box_scores ? `<p class="muted">Box scores: ${page.box_scores.filter((b) => b.submitted).length} submitted</p>` : ""}
         <p class="muted">Follow this team to add yourself to its fan list. Your email stays off the public page.</p>
       </section>
-      ${(page.hitting || []).length || (page.pitching || []).length ? `<section class="card">
-        <h2>Team stats</h2>
-        ${(page.hitting || []).length ? deskTable(["Player", "AB", "H", "RBI", "AVG"], page.hitting.map((r) => `<tr>
-          <td>${escapeHtml(r.player || r.name_key)}</td><td>${r.ab ?? ""}</td><td>${r.h ?? ""}</td>
-          <td>${r.rbi ?? ""}</td><td>${r.avg || r.avg_display || ""}</td></tr>`)) + statList(page.hitting.map((r) => hitStatRow(r))) : ""}
-        ${(page.pitching || []).length ? deskTable(["Player", "IP", "K", "ERA"], page.pitching.map((r) => `<tr>
-          <td>${escapeHtml(r.player || r.name_key)}</td><td>${r.ip ?? ""}</td>
-          <td>${r.k ?? r.so ?? ""}</td><td>${r.era || r.era_display || ""}</td></tr>`)) + statList(page.pitching.map((r) => pitStatRow(r))) : ""}
-      </section>` : ""}
+      ${(page.hitting || []).length || (page.pitching || []).length ? statBoardShell({
+        showTeam: false,
+        teams: [],
+        title: "Player stats",
+        note: page.stats_note || qualifyNote(null),
+      }) : ""}
       ${(page.bracket_path || []).length ? `<section class="card">
         <h2>Bracket path</h2>
         ${table(["Game", "Round", "Opponent", "When"], page.bracket_path.map((g) => {
@@ -4608,6 +4633,16 @@ export async function eventTeamPage(eventSlug, teamSlug) {
       </section>` : ""}
     </article>
   `);
+  if ((page.hitting || []).length || (page.pitching || []).length) {
+    mountStatBoard({
+      hitting: page.hitting || [],
+      pitching: page.pitching || [],
+      slug: ev.slug,
+      roster: [],
+      showTeam: false,
+      emptyHtml: () => `<p class="empty">No player lines in this view.</p>`,
+    });
+  }
   await bindFollowToggle();
 }
 

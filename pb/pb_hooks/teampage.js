@@ -92,6 +92,7 @@ function publicTeam(app, event, teamSlug, auth) {
     standing: standing,
     hitting: hitting,
     pitching: pitching,
+    stats_note: (board.leaders && board.leaders.stats_note) || "",
     bracket_path: path,
   };
   if (admin || manager) {
