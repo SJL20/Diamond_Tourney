@@ -513,6 +513,7 @@ tr.total { font-weight: 700; background: #f3eee4; }
   color: var(--muted);
   font-size: 0.85rem;
 }
+#google-error { margin: 0; }
 
 .form { display: grid; gap: 12px; max-width: 520px; }
 .form.wide { max-width: 640px; }

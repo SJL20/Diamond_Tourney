@@ -215,6 +215,10 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-23 — Google button no longer opens a blank window
+
+Continue with Google was calling PocketBase `authWithOAuth2` immediately. That opens an empty browser window before it checks whether Google is enabled, then closes the window. On a phone that looks like a blank screen that returns to the page. The live site still has Google turned off: `GET /api/collections/users/auth-methods` returns `oauth2.enabled` false and no providers. The button now checks that list first. When Google is absent it writes the message under the button and does not open a window. When Google is present, the same tab goes to Google and comes back to `/login` to finish, which is the path a phone can keep open. Register these return addresses on the Google client: `https://www.diamondtourney.com/login`, `https://diamondtourney.com/login`, and `http://127.0.0.1:8097/login`. Boot still turns the provider on only when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set.
+
 ### 2026-09-23 — Google sign-in and account type
 
 Login and create-account offer Continue with Google next to email and password. A new account is Player/Fan unless the person picks Team Manager or Tournament Director. That same choice is on the profile and can be changed later. Site admin and bot accounts cannot change their own type. A Team Manager who switches to Player/Fan keeps the club already on the account. Opening a weekend requires Tournament Director (or site admin). Google client id and secret are not in git. Boot turns the provider on when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set. The redirect to register in Google Cloud is `https://www.diamondtourney.com/api/oauth2-redirect` (and `http://127.0.0.1:8097/api/oauth2-redirect` for local). Until those secrets are set, the button says Google sign-in is not turned on.
