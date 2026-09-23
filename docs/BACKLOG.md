@@ -1193,8 +1193,7 @@ guess at them.
 
 ### Follow-up and restraint
 
-- One reminder if nothing arrives by the next morning. Then stop.
-- Never more than one email per game per team.
+- At most three emails per game per team if the book is still missing: immediately after the scheduled end (game length plus the 15-minute buffer), then one hour later, then two hours later. Then stop. A game already outside that window is not mailed again.
 - An unsubscribe or "stop asking about this tournament" link.
 - Director can see which games are outstanding and resend individually.
 - Suppress entirely for forfeits and cancelled games.
@@ -1223,12 +1222,12 @@ stats.
 ### Acceptance criteria
 
 - [x] Cron fires within 15 minutes of a game's expected end
-- [x] Both coaches emailed, once each
+- [x] Both coaches emailed, at most three times, then silence
 - [x] Token link works with no login, scoped to that game and team, and expires
 - [x] A coach cannot reach any other game or team through it
 - [ ] Email includes verified GameChanger export steps
 - [x] PDF, GC link, and photo upload all work from the link
-- [x] One reminder maximum, then silence
+- [x] At most three asks (right after the game, +1 hour, +2 hours), then silence
 - [x] Unsubscribe honored
 - [x] No email for forfeits or cancelled games
 - [x] Director sees outstanding box scores and can resend

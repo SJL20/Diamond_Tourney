@@ -215,6 +215,14 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-23 — Box-score mail stops after three asks
+
+Keystone Clash kept emailing coaches who had not uploaded a book. The cron sent the first note after the game, then another the next morning, and a row whose reminder time did not stick could go out again the day after that.
+
+Each team now gets at most three notes for a game with no book: when the scheduled end plus the 15-minute buffer has passed, one hour after that, and two hours after that. The cron runs every 15 minutes, so the third note can still go out for 45 minutes after the two-hour mark. After that the window is closed. A weekend that already ended, including Keystone, does not get another note. Uploading the book, or Stop asking, still ends it. A director resend is one extra note and does not restart the three.
+
+Covered by the timing checks in `test_box_mail_tokens_reconcile_and_privacy`.
+
 ### 2026-09-23 — Google sign-in and account type
 
 Login and create-account offer Continue with Google next to email and password. A new account is Player/Fan unless the person picks Team Manager or Tournament Director. That same choice is on the profile and can be changed later. Site admin and bot accounts cannot change their own type. A Team Manager who switches to Player/Fan keeps the club already on the account. Opening a weekend requires Tournament Director (or site admin). Google client id and secret are not in git. Boot turns the provider on when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set. The redirect to register in Google Cloud is `https://www.diamondtourney.com/api/oauth2-redirect` (and `http://127.0.0.1:8097/api/oauth2-redirect` for local). Until those secrets are set, the button says Google sign-in is not turned on.

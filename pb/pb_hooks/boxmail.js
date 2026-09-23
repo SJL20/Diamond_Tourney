@@ -3,6 +3,9 @@
 const BUFFER_MINUTES = 15;
 const DEFAULT_GAME_MINUTES = 90;
 const TOKEN_DAYS = 7;
+const HOUR_MS = 60 * 60 * 1000;
+const SLOT_GRACE_MS = 45 * 60 * 1000;
+const MAX_MAILS = 3;
 
 function teamSlug(app, id) {
   if (!id) return "";
@@ -63,12 +66,31 @@ function hasDate(rec, field) {
   return dateMs(rec.get(field)) > 0;
 }
 
-function reminderDue(emailedAt, nowMs) {
-  const sent = dateMs(emailedAt);
-  if (!sent) return false;
-  const sentDay = new Date(sent).toISOString().slice(0, 10);
-  const nowDay = new Date(nowMs).toISOString().slice(0, 10);
-  return nowDay > sentDay;
+// 1 = just after the scheduled end, 2 = +1 hour, 3 = +2 hours, 4 = window closed.
+function mailSlot(overMs, nowMs) {
+  if (!overMs || nowMs < overMs) return 0;
+  const late = nowMs - overMs;
+  if (late < HOUR_MS) return 1;
+  if (late < 2 * HOUR_MS) return 2;
+  if (late < 2 * HOUR_MS + SLOT_GRACE_MS) return 3;
+  return 4;
+}
+
+function setMailCount(rec, n) {
+  try {
+    const fields = rec.collection().fields;
+    if (fields && fields.getByName && fields.getByName("mail_count")) rec.set("mail_count", n);
+  } catch (err) {}
+}
+
+function sentCount(rec) {
+  if (!rec) return 0;
+  let n = 0;
+  try { n = Number(rec.get("mail_count") || 0); } catch (err) { n = 0; }
+  if (n >= 1) return n;
+  if (hasDate(rec, "reminder_at")) return MAX_MAILS;
+  if (hasDate(rec, "emailed_at")) return 1;
+  return 0;
 }
 
 function optedOut(app, team) {
@@ -148,13 +170,22 @@ function boxHelpHtml() {
     + "Use the export your director already showed you, or open the help page from the link.</p>";
 }
 
-function sendInvite(app, event, game, team, rec, reminder, nowMs) {
+function sendInvite(app, event, game, team, rec, slot, nowMs, manual) {
   const mail = require(__hooks + "/mail.js");
   const contacts = require(__hooks + "/contacts.js");
   const emails = contacts.contactEmails(app, team);
   if (!emails.length) {
     mail.logMail(app, event.id, "box_mail", false, "no_recipient");
     return { sent: 0, reason: "no_recipient" };
+  }
+  const now = new Date(nowMs || Date.now()).toISOString();
+  const reminder = !manual && slot > 1;
+  if (!manual) {
+    if (!hasDate(rec, "emailed_at")) rec.set("emailed_at", now);
+    if (reminder) rec.set("reminder_at", now);
+    const next = Math.max(sentCount(rec), slot || 1);
+    setMailCount(rec, next > MAX_MAILS ? MAX_MAILS : next);
+    app.save(rec);
   }
   const meta = gameLabel(app, event, game);
   const us = team.get("name");
@@ -177,10 +208,6 @@ function sendInvite(app, event, game, team, rec, reminder, nowMs) {
     if (out.sent) sent++;
     else reason = out.reason || reason;
   }
-  const now = new Date(nowMs || Date.now()).toISOString();
-  if (!hasDate(rec, "emailed_at")) rec.set("emailed_at", now);
-  if (reminder) rec.set("reminder_at", now);
-  app.save(rec);
   return { sent: sent, reason: reason, token: rec.get("token") };
 }
 
@@ -226,16 +253,16 @@ function runBoxMail(app, opts) {
         let team;
         try { team = app.findRecordById("event_teams", ids[t]); } catch (err) { continue; }
         if (optedOut(app, team)) { summary.skipped++; continue; }
+        const slot = mailSlot(expectedEndMs(event, game), nowMs);
         let rec = findInvite(app, event.id, game.id, team.id, kind);
         if (rec && hasDate(rec, "submitted_at")) { summary.skipped++; continue; }
         if (rec && rec.get("unsubscribed")) { summary.skipped++; continue; }
-        if (rec && hasDate(rec, "emailed_at") && hasDate(rec, "reminder_at")) { summary.skipped++; continue; }
-        if (rec && hasDate(rec, "emailed_at") && !reminderDue(rec.get("emailed_at"), nowMs)) { summary.skipped++; continue; }
+        if (slot < 1 || slot > MAX_MAILS) { summary.skipped++; continue; }
+        if (sentCount(rec) >= MAX_MAILS || sentCount(rec) >= slot) { summary.skipped++; continue; }
         if (!rec) rec = inviteRow(app, event, game, team, kind);
-        const reminder = !!(hasDate(rec, "emailed_at") && !hasDate(rec, "reminder_at"));
-        const out = sendInvite(app, event, game, team, rec, reminder, nowMs);
-        if (reminder) summary.reminded++;
-        else summary.invited++;
+        const out = sendInvite(app, event, game, team, rec, slot, nowMs, false);
+        if (slot === 1) summary.invited++;
+        else summary.reminded++;
         summary.mailed += out.sent;
         if (out.reason) summary.reason = out.reason;
         summary.invites.push({
@@ -245,7 +272,7 @@ function runBoxMail(app, opts) {
           game_id: game.id,
           kind: kind,
           token: rec.get("token"),
-          reminder: reminder,
+          reminder: slot > 1,
         });
       }
     }
@@ -596,9 +623,7 @@ function resendOne(app, event, body) {
     throw new BadRequestError("Game and team must belong to this tournament.");
   }
   const rec = inviteRow(app, event, game, team, kind);
-  rec.set("reminder_at", "");
-  app.save(rec);
-  return sendInvite(app, event, game, team, rec, false, Date.now());
+  return sendInvite(app, event, game, team, rec, 1, Date.now(), true);
 }
 
 function resolveConflict(app, event, body) {
