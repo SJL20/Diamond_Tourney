@@ -164,9 +164,9 @@ function teamDocs(app, teamId, withFiles) {
 }
 
 // True only for a region admin, the director who owns this event, a listed
-// co-owner, or the account that signed this team up. `event_td` alone is not
-// enough: account registration hands out that role, so it is not a trust
-// boundary.
+// co-owner, or the account that signed this team up. Choosing Tournament
+// Director stores `event_td`. That role can open a weekend. It is not a
+// trust boundary for someone else's event.
 function canSeeTeamPacket(event, team, auth, app) {
   if (!auth) return false;
   const sb = require(__hooks + "/softball.js");
@@ -1412,6 +1412,128 @@ function freshStamp(raw) {
   return !!ms && ms > Date.now();
 }
 
+const ACCOUNT_KINDS = {
+  fan: "public",
+  player: "public",
+  public: "public",
+  player_fan: "public",
+  team: "team_coach",
+  manager: "team_coach",
+  team_manager: "team_coach",
+  team_coach: "team_coach",
+  director: "event_td",
+  td: "event_td",
+  event_td: "event_td",
+  tournament_director: "event_td",
+};
+
+function accountKindKey(raw) {
+  return String(raw || "").trim().toLowerCase().replace(/[\s/-]+/g, "_");
+}
+
+function accountKindRole(raw) {
+  const key = accountKindKey(raw);
+  return ACCOUNT_KINDS[key] || "";
+}
+
+function accountKindFromIntent(raw) {
+  if (!accountKindKey(raw)) return "public";
+  return accountKindRole(raw) || "public";
+}
+
+function accountKindLabel(role) {
+  if (role === "team_coach") return "Team Manager";
+  if (role === "event_td") return "Tournament Director";
+  if (role === "region_admin") return "Site admin";
+  if (role === "bot") return "Bot";
+  return "Player/Fan";
+}
+
+function attachAccountLinks(app, user) {
+  try { claimPendingTeam(app, user); } catch (err) {}
+  try { linkCoOwnerUsers(app, user); } catch (err) {}
+}
+
+function googleLinked(app, user) {
+  if (!app || !user || !user.id) return false;
+  try {
+    const rows = app.findRecordsByFilter(
+      "_externalAuths",
+      "recordRef = {:id} && provider = 'google'",
+      "",
+      1,
+      0,
+      { id: user.id },
+    );
+    return !!(rows && rows.length);
+  } catch (err) {
+    return false;
+  }
+}
+
+function ensureGoogleOAuth(app) {
+  let id = "";
+  let secret = "";
+  try { id = String($os.getenv("GOOGLE_OAUTH_CLIENT_ID") || "").trim(); } catch (err) { id = ""; }
+  try { secret = String($os.getenv("GOOGLE_OAUTH_CLIENT_SECRET") || "").trim(); } catch (err) { secret = ""; }
+  if (!id || !secret) return;
+  const users = app.findCollectionByNameOrId("users");
+  const oauth = users.oauth2;
+  if (!oauth) return;
+  const current = oauth.providers || [];
+  let existingId = "";
+  let existingSecret = "";
+  const providers = [];
+  for (let i = 0; i < current.length; i++) {
+    const row = current[i];
+    if (!row) continue;
+    if (row.name === "google") {
+      existingId = String(row.clientId || "");
+      existingSecret = String(row.clientSecret || "");
+      continue;
+    }
+    providers.push(row);
+  }
+  const mapped = oauth.mappedFields && oauth.mappedFields.name === "display_name";
+  if (oauth.enabled && existingId === id && existingSecret === secret && mapped) return;
+  providers.push({
+    name: "google",
+    clientId: id,
+    clientSecret: secret,
+    displayName: "Google",
+  });
+  oauth.enabled = true;
+  oauth.providers = providers;
+  if (!oauth.mappedFields) oauth.mappedFields = {};
+  oauth.mappedFields.name = "display_name";
+  app.save(users);
+}
+
+function updateAccountKind(app, auth, body) {
+  if (!auth) throw new UnauthorizedError("login required");
+  const sb = require(__hooks + "/softball.js");
+  let superuser = false;
+  try { superuser = !!(auth.isSuperuser && auth.isSuperuser()); } catch (err) { superuser = false; }
+  if (superuser || sb.isSiteAdmin(auth)) {
+    throw new ForbiddenError("Site admin accounts keep their role.");
+  }
+  const raw = (body && (body.intent || body.kind || body.role)) || "";
+  const next = accountKindRole(raw);
+  if (!next) {
+    throw new BadRequestError("Choose Player/Fan, Team Manager, or Tournament Director.");
+  }
+  const fresh = app.findRecordById("users", auth.id);
+  const prev = String(fresh.get("role") || "");
+  if (prev === "bot" || prev === "region_admin") {
+    throw new ForbiddenError("This account type cannot be changed here.");
+  }
+  fresh.set("role", next);
+  app.save(fresh);
+  attachAccountLinks(app, fresh);
+  const saved = app.findRecordById("users", auth.id);
+  return { role: saved.get("role") || "", label: accountKindLabel(saved.get("role")) };
+}
+
 function registerAccount(app, body) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
@@ -1423,10 +1545,7 @@ function registerAccount(app, body) {
   if (!passwordConfirm || passwordConfirm !== password) {
     throw new BadRequestError("Type the same password in both password fields.");
   }
-  const intent = body.intent === "team" ? "team_coach" : "event_td";
-  if (intent !== "team_coach" && intent !== "event_td") {
-    throw new BadRequestError("Choose a director or team account.");
-  }
+  const intent = accountKindFromIntent(body.intent);
   const rec = new Record(app.findCollectionByNameOrId("users"));
   rec.set("email", email);
   rec.set("password", password);
@@ -1555,6 +1674,7 @@ function accountUserJson(auth, siteAdmin) {
     id: auth.id,
     email: email,
     role: siteAdmin ? "region_admin" : role,
+    kind_label: siteAdmin ? "Site admin" : accountKindLabel(role),
     display_name: display || (siteAdmin ? "Site admin" : ""),
     site_admin: !!siteAdmin,
     verified: verified,
@@ -1632,6 +1752,7 @@ function accountHome(app, auth) {
     following = { teams: [], tournaments: [] };
   }
   const user = accountUserJson(auth, siteAdmin);
+  user.google = googleLinked(app, auth);
   user.team = (function () {
     let teamId = "";
     try { teamId = auth.get("team") || ""; } catch (err) { teamId = ""; }
@@ -2797,6 +2918,11 @@ module.exports = {
   publicRoster: publicRoster,
   applySettings: applySettings,
   registerAccount: registerAccount,
+  updateAccountKind: updateAccountKind,
+  accountKindFromIntent: accountKindFromIntent,
+  accountKindLabel: accountKindLabel,
+  attachAccountLinks: attachAccountLinks,
+  ensureGoogleOAuth: ensureGoogleOAuth,
   createMasterTeam: createMasterTeam,
   updateMasterTeam: updateMasterTeam,
   transferTeam: transferTeam,

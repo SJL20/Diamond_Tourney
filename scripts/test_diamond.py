@@ -2454,6 +2454,123 @@ class AccountHardeningTests(unittest.TestCase):
                     request(BASE, "DELETE", f"/api/collections/users/records/{row['id']}", admin)
 
 
+class AccountKindTests(unittest.TestCase):
+    def test_register_defaults_to_player_fan(self):
+        email = f"fan.{uuid.uuid4().hex[:8]}@local.test"
+        out = request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "FanPass12!",
+            "passwordConfirm": "FanPass12!",
+            "display_name": "Fan Default",
+            "role": "region_admin",
+        })
+        self.assertEqual(out["role"], "public")
+        confirm_account(email)
+        token = auth(BASE, email, "FanPass12!")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "public")
+        self.assertEqual(home["user"]["kind_label"], "Player/Fan")
+        self.assertFalse(home["user"]["google"])
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", "/api/events/create", token, {
+                "source": "native",
+                "name": "Fan Open",
+                "slug": "fan-open-" + uuid.uuid4().hex[:8],
+                "ages": "10U",
+            })
+        self.assertIn("403", str(denied.exception))
+
+    def test_profile_switches_manager_and_director_and_keeps_the_team(self):
+        email = f"kind.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "KindPass12!",
+            "passwordConfirm": "KindPass12!",
+            "display_name": "Kind Switch",
+            "intent": "fan",
+        })
+        confirm_account(email)
+        token = auth(BASE, email, "KindPass12!")
+        manager = request(BASE, "POST", "/api/account/kind", token, {"intent": "team"})
+        self.assertEqual(manager["role"], "team_coach")
+        self.assertEqual(manager["label"], "Team Manager")
+        team = request(BASE, "POST", "/api/teams", token, {"name": "Kind Switch 10U", "age_group": "10U"})
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "team_coach")
+        self.assertEqual(home["user"]["team"]["id"], team["id"])
+        with self.assertRaises(RuntimeError) as manager_open:
+            request(BASE, "POST", "/api/events/create", token, {
+                "source": "native",
+                "name": "Manager Open",
+                "slug": "mgr-open-" + uuid.uuid4().hex[:8],
+                "ages": "10U",
+            })
+        self.assertIn("403", str(manager_open.exception))
+        fan = request(BASE, "POST", "/api/account/kind", token, {"intent": "fan"})
+        self.assertEqual(fan["role"], "public")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "public")
+        self.assertEqual(home["user"]["kind_label"], "Player/Fan")
+        self.assertEqual(home["user"]["team"]["id"], team["id"])
+        director = request(BASE, "POST", "/api/account/kind", token, {"intent": "director"})
+        self.assertEqual(director["role"], "event_td")
+        self.assertEqual(director["label"], "Tournament Director")
+        created = request(BASE, "POST", "/api/events/create", token, {
+            "source": "native",
+            "name": "Kind Director Open",
+            "slug": "kind-open-" + uuid.uuid4().hex[:8],
+            "ages": "10U",
+        })
+        self.assertTrue(created["event"]["slug"].startswith("kind-open-"))
+        for bad in ("region_admin", "bot", "superuser"):
+            with self.assertRaises(RuntimeError) as refused:
+                request(BASE, "POST", "/api/account/kind", token, {"intent": bad})
+            self.assertTrue(any(code in str(refused.exception) for code in ("400", "403")))
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "event_td")
+        self.assertEqual(home["user"]["team"]["id"], team["id"])
+
+    def test_site_admin_cannot_change_account_type(self):
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", "/api/account/kind", owner, {"intent": "fan"})
+        self.assertIn("403", str(denied.exception))
+        home = request(BASE, "GET", "/api/account/home", owner)
+        self.assertEqual(home["user"]["role"], "region_admin")
+        self.assertTrue(home["user"]["site_admin"])
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        with self.assertRaises(RuntimeError) as admin_denied:
+            request(BASE, "POST", "/api/account/kind", admin, {"intent": "director"})
+        self.assertIn("403", str(admin_denied.exception))
+
+    def test_google_signup_cannot_bypass_the_create_rule(self):
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        col = request(BASE, "GET", "/api/collections/users", admin)
+        self.assertEqual(col["createRule"], "@request.context = 'oauth2'")
+        mapped = (col.get("oauth2") or {}).get("mappedFields") or {}
+        self.assertEqual(mapped.get("name"), "display_name")
+        methods = request(BASE, "GET", "/api/collections/users/auth-methods")
+        self.assertTrue(methods["password"]["enabled"])
+        self.assertNotIn("clientSecret", json.dumps(methods))
+        hijack = f"hijack.{uuid.uuid4().hex[:8]}@local.test"
+        with self.assertRaises(RuntimeError) as oauth:
+            request(BASE, "POST", "/api/collections/users/auth-with-oauth2", None, {
+                "provider": "google",
+                "code": "not-a-real-code",
+                "codeVerifier": "not-a-real-verifier",
+                "redirectURL": "http://127.0.0.1:8097/api/oauth2-redirect",
+                "createData": {"role": "region_admin", "email": hijack},
+            })
+        self.assertTrue(any(code in str(oauth.exception) for code in ("400", "403")))
+        from urllib.parse import quote
+        rows = request(
+            BASE, "GET",
+            "/api/collections/users/records?filter=" + quote(f'email="{hijack}"'),
+            admin,
+        )
+        self.assertEqual(rows.get("items") or [], [])
+
+
 class GcMonitorTests(unittest.TestCase):
     def test_public_gc_url_hosts_only(self):
         self.assertTrue(is_public_gc_url("https://web.gc.com/teams/abc/schedule/xyz/box-score"))

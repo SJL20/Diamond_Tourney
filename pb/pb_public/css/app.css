@@ -498,6 +498,21 @@ tr.total { font-weight: 700; background: #f3eee4; }
   border: 1px solid var(--line);
 }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn.google {
+  width: 100%;
+  justify-content: center;
+  gap: 10px;
+  background: #fff;
+  color: var(--navy);
+  border: 1px solid var(--line);
+}
+.btn.google svg { flex: 0 0 auto; }
+.auth-or {
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 
 .form { display: grid; gap: 12px; max-width: 520px; }
 .form.wide { max-width: 640px; }
