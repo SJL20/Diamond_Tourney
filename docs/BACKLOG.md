@@ -2356,3 +2356,58 @@ public listing of tournaments is separate from that and can ship first.
 - [ ] Grid degrades to a readable list with images off
 
 
+## [ ] 33. Team signup age dropdown ignores the tournament and is missing 11U
+
+**High. Blocks correct signup on Country Roads Clash. Owner-reproduced.**
+
+`pb/pb_public/js/event.js` line 2875:
+
+    const masterAges = ["6U", "8U", "10U", "12U", "14U", "16U", "18U"];
+
+Rendered into the Create a team form at line 2915. Two problems.
+
+### 33a. 11U is missing
+
+The event-level age group list at line 2555 is
+`["6U","8U","10U","11U","12U","14U","16U","18U"]` — with 11U. This one drops it.
+
+Country Roads Clash is 11U/12U. An 11U coach signing up cannot select their own
+age group. Two hardcoded lists that disagree is the root problem; there should be
+one shared constant.
+
+### 33b. The dropdown ignores the event
+
+The list is fixed regardless of which tournament the coach is registering for. A
+coach signing up for an 11U/12U event sees eight options, six of which will be
+rejected or will create a team in a division that does not exist.
+
+**Fix:** filter to the age groups the event actually hosts, from the event's
+configured age groups (item 3). Country Roads Clash should offer 11U and 12U and
+nothing else.
+
+Where an event has exactly one age group, preselect it rather than making the
+coach choose from a list of one.
+
+Where a division spans age groups — Keystone Clash was 11U/12U-C combined — offer
+both constituent ages, since a team is one age even when the division is not.
+
+### 33c. Same audit elsewhere
+
+Line 3943 has a free-text `age_group` input with a "10U" placeholder on the
+director's team edit form — no validation at all, so a typo creates an age group
+that matches nothing. Should be the same constrained list.
+
+Sweep for other hardcoded option lists that should derive from the event:
+classes, formats, field counts, bracket levels.
+
+### Acceptance criteria
+
+- [ ] One shared age group constant, including 11U, used everywhere
+- [ ] Signup dropdown shows only the age groups the event hosts
+- [ ] Country Roads Clash offers 11U and 12U only
+- [ ] Single-age events preselect rather than presenting a one-item list
+- [ ] Combined divisions offer each constituent age
+- [ ] Director team edit uses the same constrained list, not free text
+- [ ] Other hardcoded option lists audited and listed
+
+
