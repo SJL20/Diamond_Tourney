@@ -36,7 +36,7 @@ export function siteBar(pb, active = "") {
       ? `${item("/account", "account", "Account")}
          ${isSiteAdmin(u) ? item("/admin/events", "adminEvents", "Tournaments") : ""}
          ${isSiteAdmin(u) ? item("/admin/teams", "admin", "Teams") : ""}
-         ${item("/start", "create", "Create")}
+         ${isDirector(u) ? item("/start", "create", "Create") : ""}
          <button class="link" id="logout" type="button">Sign out</button>`
       : `${item("/login", "login", "Log in")}
          ${item("/register", "register", "Create account")}`}`;

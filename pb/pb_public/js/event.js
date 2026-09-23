@@ -2115,6 +2115,16 @@ function directorGate() {
 }
 
 export async function startTournament() {
+  const u = eventPb.authStore.record;
+  if (u && !recordIsDirector(u)) {
+    eventRoot().innerHTML = eventChrome(null, "create", `
+      <section class="card">
+        <h2>Tournament Director tools</h2>
+        <p>Opening a weekend uses a Tournament Director account. Change the account type on your profile, then come back. A Team Manager creates the club on the account page and joins a weekend that is already open. A Player/Fan follows from the public board.</p>
+        <p><a class="btn" data-link href="/account">Open profile</a> <a class="btn ghost" data-link href="/find">Find a tournament</a></p>
+      </section>`);
+    return;
+  }
   eventRoot().innerHTML = eventChrome(null, "create", `
     <section class="page-head">
       <h1>Start a tournament</h1>
