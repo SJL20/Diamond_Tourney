@@ -2411,3 +2411,60 @@ classes, formats, field counts, bracket levels.
 - [ ] Other hardcoded option lists audited and listed
 
 
+## [ ] 34. Signup shows "Create a team" when the coach already has teams to reuse
+
+**Medium. Owner-reproduced on Country Roads Clash.**
+
+The reuse capability exists. `teamPicker` in `pb/pb_public/js/event.js` (~line
+2903) renders a dropdown of the account's existing teams with age group and
+ownership state. The problem is which card a user lands on.
+
+A director opening signup gets `directorCreate` — the blank Create a team form —
+even when they already own teams that could be entered. Reuse is the common case
+after the first tournament, and it is not the default path.
+
+### Expected
+
+Anyone logged in with at least one team sees, in this order:
+
+1. **Your teams** — the picker, with a clear "Enter this team" action per team
+2. **Create a new team** — available, but secondary
+
+Anyone with no teams sees the create form directly. No empty picker.
+
+### Why reuse has to be the default
+
+Beyond saving typing, a team must be **one record across tournaments** or the
+product breaks in ways that are hard to undo:
+
+- The year leaderboard and series standings already exist. If a club becomes a
+  new team record at every event, cross-tournament stats never accumulate — which
+  is the whole reason to keep coming back.
+- The GameChanger link, coach contacts and logo are re-entered every time, and
+  drift out of sync between duplicates.
+- A director looking at a returning club sees an unfamiliar new team rather than
+  their history.
+
+The form's own copy already states the intent — "A team is one record... This
+form does not invent a second team." The UI should lead with it.
+
+### Duplicate handling
+
+When someone starts creating a team whose name closely matches one they already
+own, ask before creating: "You already have Dukes 11U. Enter that team instead?"
+
+For directors adding teams on behalf of clubs, match against teams already in the
+system and offer to link rather than duplicate — with the club's confirmation,
+since a director should not silently claim another org's team record.
+
+### Acceptance criteria
+
+- [ ] A logged-in user with existing teams sees the picker first, create second
+- [ ] A user with no teams sees the create form with no empty picker
+- [ ] Directors get the same ordering
+- [ ] Entering an existing team carries GameChanger link, contacts and logo
+- [ ] Near-duplicate names prompt before creating a second record
+- [ ] A team entered in two tournaments is one record, and year stats accumulate
+      across both
+
+
