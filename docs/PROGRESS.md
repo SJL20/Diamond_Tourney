@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 141 unit/integration cases + 13 acceptance checks |
+| Tests | 142 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -214,6 +214,12 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-23 — Team page player stats sort like the stats board
+
+A team page listed hitting and pitching as two fixed tables. Player stats on that page now use the same board as `/t/{slug}/stats`: a Hitting tab and a Pitching tab, the same sort buttons (hits, average, OPS, RBIs; innings, ERA, strikeouts, wins), and Qualifiers only checked by default. Average still sorts high to low. ERA still sorts low to high. A blank cell stays an em dash and sorts last. The team filter stays on the full stats board only. There is no catcher table, and no new numbers are calculated.
+
+Proved by `test_team_page_player_stats_use_the_stats_board`. A browser pass switches Hitting and Pitching and sorts a column on a team page.
 
 ### 2026-09-23 — Box-score mail stops after three asks
 
