@@ -2280,3 +2280,79 @@ not scroll sideways. Stats boards use compact rows on a phone instead of one
 card per table cell. Directors review converted hitting and pitching on
 Approve stats — not only the uploaded file. 28b live scores stay open and
 wait on Steve.
+
+## [ ] 32. Tournament flyer as hero image — on the event page and the site landing page
+
+**High. Owner request. Solves item 28 better than a layout redesign does.**
+
+### 32a. Flyer as the event page hero
+
+Directors already make a graphic for every tournament — it goes out in group
+texts, on Facebook, in coach emails. It carries the name, dates, venue, format,
+fee, division count, and often a QR code. It is the most information-dense and
+most attractive asset the event has, and today the platform has nowhere to put it.
+
+Let a director upload it, and render it full-width at the top of the tournament
+page above everything else.
+
+Requirements:
+
+- One flyer per event, replaceable
+- Accept jpg, png, webp, pdf (some directors only have the print file)
+- Displayed full-width, not cropped into a banner strip — the composition is
+  deliberate and cropping ruins it
+- Tappable to open full size, since flyers carry fine print
+- **Alt text required on upload**, and the key facts must still appear as real
+  text beneath: dates, venue, format, fee. A parent on a screen reader or a slow
+  connection cannot read an image, and search engines cannot either.
+- Server-side resize; these come off Canva at print resolution and will be huge
+- Same EXIF stripping and no-players rules as item 10
+
+The flyer supplements the page, never replaces it. Schedule, standings and
+bracket stay exactly where they are.
+
+### 32b. Flyer wall as the Diamond Tourney landing page
+
+Bigger idea, and the better one.
+
+Make diamondtourney.com a grid of upcoming tournament flyers — each one linking
+to its event page and signup. Filterable by age group, date range, and distance.
+
+Why this works:
+
+- **Nobody browses a tournament directory. People browse flyers.** These graphics
+  are how travel softball already communicates.
+- It turns every director's own marketing into acquisition for the platform.
+  They share their flyer; the flyer lives on Diamond Tourney; other directors see
+  where it is hosted.
+- It is a reason for a coach looking for a June tournament to visit the site at
+  all, which no other page currently gives them.
+- TourneyBoard.com is a listing site with no visual identity. This is the same
+  category done in the medium the sport actually uses.
+
+Requirements:
+
+- Only events the director has marked public and open for signup
+- Sorted by date, soonest first; past events drop off
+- Each tile shows the flyer plus text fallback: name, dates, location, age groups,
+  spots remaining
+- Directors opt in per event — some run invite-only and should not be listed
+- Works without images loading; the grid degrades to a readable list
+
+Note this depends on item 31: signup for directors stays invite-only, but the
+public listing of tournaments is separate from that and can ship first.
+
+### Acceptance criteria
+
+- [ ] Director can upload a flyer on the event form; it renders full-width at the
+      top of the tournament page
+- [ ] PDF accepted and rendered
+- [ ] Alt text required; key facts present as text beneath the image
+- [ ] Images resized server-side; page stays fast on park wifi
+- [ ] Landing page shows a grid of upcoming public tournaments by flyer
+- [ ] Each tile links to the event page
+- [ ] Filter by age group and date
+- [ ] Directors can opt out of the public listing per event
+- [ ] Grid degrades to a readable list with images off
+
+
