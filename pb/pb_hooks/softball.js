@@ -390,7 +390,7 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// Registration hands out event_td. That role lets someone create a weekend.
+// A Tournament Director account (`event_td`) can open a weekend.
 // It is not permission to run someone else's.
 function isEventOwner(event, auth) {
   if (!auth || !event) return false;

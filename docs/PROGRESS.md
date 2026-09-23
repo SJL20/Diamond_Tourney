@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 137 unit/integration cases + 13 acceptance checks |
+| Tests | 141 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -59,7 +59,7 @@ Ranked by what would hurt most on a live weekend.
 ### 1. Any account can administer any tournament — **closed**
 
 See *Closed*. Director writes require `events.created_by`, a listed co-owner, or site admin.
-`event_td` still lets a new account create a weekend of their own.
+Choosing Tournament Director stores `event_td`, and that role can still open a weekend of its own. Player/Fan is the default. Team Manager runs one club.
 The owner (or site admin) adds co-owners by email on tournament setup.
 Those addresses stay off public pages.
 
@@ -159,8 +159,9 @@ direct unit tests for the hook modules.
   lines named on that box. Season-team staging Approve is unchanged. Covered
   by `EventBoxReviewTests`.
 
-- ~~**Anyone with `event_td` could administer any tournament.**~~ Registration
-  still assigns that role so a new account can create a weekend. Director
+- ~~**Anyone with `event_td` could administer any tournament.**~~ A new
+  account can still choose Tournament Director, which stores `event_td` and
+  can create a weekend. Player/Fan is the default. Director
   writes now require `events.created_by`, a listed co-owner, or site admin.
   REST collection writes were locked the same way. The owner adds extra
   directors by email on tournament setup; public board / Find never include
@@ -213,6 +214,12 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-23 — Google sign-in and account type
+
+Login and create-account offer Continue with Google next to email and password. A new account is Player/Fan unless the person picks Team Manager or Tournament Director. That same choice is on the profile and can be changed later. Site admin and bot accounts cannot change their own type. A Team Manager who switches to Player/Fan keeps the club already on the account. Opening a weekend requires Tournament Director (or site admin). Google client id and secret are not in git. Boot turns the provider on when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set. The redirect to register in Google Cloud is `https://www.diamondtourney.com/api/oauth2-redirect` (and `http://127.0.0.1:8097/api/oauth2-redirect` for local). Until those secrets are set, the button says Google sign-in is not turned on.
+
+Proved by `AccountKindTests` in the diamond suite. A browser pass covers the register choice, the Google button, and saving a new account type on the profile.
 
 ### 2026-09-22 — Site admin can edit and delete any master team
 

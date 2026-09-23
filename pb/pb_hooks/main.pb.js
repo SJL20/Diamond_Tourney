@@ -140,6 +140,13 @@ routerAdd("POST", "/api/account/register", (e) => {
   return e.json(200, host.registerAccount(e.app, body));
 });
 
+routerAdd("POST", "/api/account/kind", (e) => {
+  const host = require(__hooks + "/host.js");
+  if (!e.auth) throw new UnauthorizedError("login required");
+  const body = e.requestInfo().body || {};
+  return e.json(200, host.updateAccountKind(e.app, e.auth, body));
+}, $apis.requireAuth());
+
 routerAdd("GET", "/api/account/verify", (e) => {
   const host = require(__hooks + "/host.js");
   const q = e.requestInfo().query || {};
@@ -175,6 +182,7 @@ routerAdd("GET", "/api/account/home", (e) => {
         id: e.auth.id,
         email: (function () { try { return sb.normalizeEmail(e.auth.email()); } catch (e3) { return ""; } })(),
         role: siteAdmin ? "region_admin" : "",
+        kind_label: siteAdmin ? "Site admin" : "Player/Fan",
         display_name: siteAdmin ? "Site admin" : "",
         site_admin: siteAdmin,
         verified: (function () { try { return sb.isVerifiedAccount(e.auth); } catch (e4) { return siteAdmin; } })(),
@@ -378,7 +386,7 @@ routerAdd("GET", "/api/events/search", (e) => {
 routerAdd("POST", "/api/events/create", (e) => {
   const sb = require(__hooks + "/softball.js");
   const host = require(__hooks + "/host.js");
-  const auth = sb.requireRole(e, ["region_admin", "event_td", "team_coach", "public"]);
+  const auth = sb.requireRole(e, ["region_admin", "event_td"]);
   sb.requireVerified(auth);
   const body = e.requestInfo().body || {};
   const result = host.createEvent(e.app, body, auth);
@@ -1084,13 +1092,45 @@ cronAdd("hosted-gc-tm-sync", "15 */2 * * *", () => {
 
 onRecordCreateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();
-  e.record.set("role", "event_td");
-  e.record.set("verified", false);
+  const host = require(__hooks + "/host.js");
+  let ctx = "";
+  try {
+    const info = e.requestInfo();
+    ctx = (info && info.context) || "";
+  } catch (err) { ctx = ""; }
   e.record.set("reset_token", "");
   e.record.set("verify_token", "");
   e.record.set("reset_expires", "");
   e.record.set("verify_expires", "");
+  e.record.set("team", "");
+  e.record.set("verified", false);
+  if (ctx === "oauth2") {
+    try { e.record.setRandomPassword(); } catch (err) {}
+    e.record.set("role", host.accountKindFromIntent(e.record.get("role")));
+    return e.next();
+  }
+  e.record.set("role", "public");
   e.next();
+}, "users");
+
+onRecordAuthWithOAuth2Request((e) => {
+  require(__hooks + "/ratelimit.js").limitAuth(e, "login");
+  if (String(e.providerName || "") !== "google") {
+    throw new BadRequestError("Sign in with Google is the only connected account.");
+  }
+  if (!e.isNewRecord) return e.next();
+  const host = require(__hooks + "/host.js");
+  const incoming = e.createData || {};
+  const clean = { role: host.accountKindFromIntent(incoming.role || incoming.intent) };
+  const typed = String(incoming.display_name || "").trim();
+  if (typed) clean.display_name = typed.slice(0, 120);
+  e.createData = clean;
+  e.next();
+}, "users");
+
+onRecordAfterCreateSuccess((e) => {
+  try { require(__hooks + "/host.js").attachAccountLinks(e.app, e.record); } catch (err) {}
+  if (e.next) e.next();
 }, "users");
 
 onRecordUpdateRequest((e) => {
@@ -1201,4 +1241,5 @@ onRecordUpdateRequest((e) => {
 onBootstrap((e) => {
   e.next();
   try { require(__hooks + "/softball.js").promotePrimarySiteAdmin($app); } catch (err) {}
+  try { require(__hooks + "/host.js").ensureGoogleOAuth($app); } catch (err) {}
 });

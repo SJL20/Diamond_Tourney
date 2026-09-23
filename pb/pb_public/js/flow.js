@@ -39,6 +39,64 @@ function localHints() {
   </div>`;
 }
 
+function googleMark() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.3 35.1 26.8 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1 2.9-3.1 5.2-5.9 6.5l6.3 5.3C38.2 37.3 44 32 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>`;
+}
+
+function intentSelect(selected) {
+  const current = selected || "fan";
+  const options = [
+    ["fan", "Player/Fan"],
+    ["team", "Team Manager"],
+    ["director", "Tournament Director"],
+  ];
+  return options.map(([value, label]) => `<option value="${value}" ${current === value ? "selected" : ""}>${label}</option>`).join("");
+}
+
+function kindValue(role) {
+  if (role === "team_coach") return "team";
+  if (role === "event_td") return "director";
+  return "fan";
+}
+
+function bindGoogle(button, intentReader) {
+  if (!button) return;
+  button.addEventListener("click", async () => {
+    const err = document.getElementById("gate-error");
+    if (err) {
+      err.hidden = true;
+      err.className = "error";
+    }
+    const intent = intentReader ? intentReader() : "fan";
+    const role = intent === "team" ? "team_coach" : intent === "director" ? "event_td" : "public";
+    const createData = { role };
+    const nameInput = document.querySelector("#register-form input[name=display_name]");
+    if (nameInput && String(nameInput.value || "").trim()) createData.display_name = String(nameInput.value).trim();
+    try {
+      await flowPb.collection("users").authWithOAuth2({ provider: "google", createData });
+      const next = takeAfterLogin();
+      if (next) location.assign(next);
+      else goFlow("/account");
+    } catch (e) {
+      if (!err) return;
+      err.hidden = false;
+      const msg = [
+        e && e.message,
+        e && e.originalError && e.originalError.message,
+        e && e.response && e.response.message,
+        e && e.data && e.data.message,
+      ].filter(Boolean).join(" ");
+      if (/provider|not enabled|not configured|disabled|missing|oauth2/i.test(msg)) {
+        err.textContent = "Google sign-in is not turned on for this server yet. Use email and password.";
+      } else if (/popup|blocked|closed/i.test(msg)) {
+        err.textContent = "The Google window did not open. Allow popups for this site and try again.";
+      } else {
+        err.textContent = "Google sign-in did not finish. Try again, or use email and password.";
+      }
+    }
+  });
+}
+
 function takeAfterLogin() {
   let next = "";
   try {
@@ -188,7 +246,11 @@ export async function startGate(forcedTab) {
     ${tab === "login" ? `
       <section class="card">
         <h2>Log in</h2>
-        <p class="muted">Opens your tournaments and any season book on this account.</p>
+        <p class="muted">Opens your tournaments and any season book on this account. A new Google sign-in starts as Player/Fan. Change that on your profile.</p>
+        <div class="form wide">
+          <button class="btn google" type="button" id="google-sign-in">${googleMark()} Continue with Google</button>
+          <p class="auth-or">or</p>
+        </div>
         <form class="form wide" id="login-form">
           <label>Email <input name="email" type="email" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
@@ -200,18 +262,17 @@ export async function startGate(forcedTab) {
     ${tab === "register" ? `
       <section class="card">
         <h2>Create an account</h2>
-        <p class="muted">Directors create weekends. A team account creates its team on the account page before it can join a weekend with one click. Creating the account emails a confirmation link and opens your account page, where you can update your password.</p>
+        <p class="muted">Player/Fan is the usual choice. A Team Manager creates the club on the account page. A Tournament Director opens a weekend. You can change this on your profile. Email signup sends a confirmation link.</p>
         <form class="form wide" id="register-form">
+          <label>I am a
+            <select name="intent" id="account-intent">${intentSelect("fan")}</select>
+          </label>
+          <button class="btn google" type="button" id="google-sign-in">${googleMark()} Continue with Google</button>
+          <p class="auth-or">or use email</p>
           <label>Your name <input name="display_name" required placeholder="Pat Rivera"></label>
           <label>Email <input name="email" type="email" autocomplete="email" required></label>
           <label>Password (8+ characters) <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
           <label>Confirm password <input name="passwordConfirm" type="password" autocomplete="new-password" required minlength="8"></label>
-          <label>I am here to
-            <select name="intent">
-              <option value="director">Run tournaments</option>
-              <option value="team">Sign a team up</option>
-            </select>
-          </label>
           <button class="btn" type="submit">Create account</button>
         </form>
       </section>` : ""}
@@ -230,6 +291,13 @@ export async function startGate(forcedTab) {
   if (document.getElementById("login-form")) bindLogin(document.getElementById("login-form"));
   if (document.getElementById("register-form")) bindRegister(document.getElementById("register-form"));
   if (document.getElementById("find-form")) bindFind(document.getElementById("find-form"));
+  const google = document.getElementById("google-sign-in");
+  if (google) {
+    bindGoogle(google, () => {
+      const pick = document.getElementById("account-intent");
+      return pick ? pick.value : "fan";
+    });
+  }
 }
 
 function viaLine(row) {
@@ -317,6 +385,8 @@ export async function accountHome() {
   const home = res.data;
   const name = home.user.display_name || home.user.email;
   const admin = !!home.user.site_admin;
+  const kindLabel = admin ? "Site admin" : (home.user.kind_label || "Player/Fan");
+  const director = admin || home.user.role === "event_td";
   if (admin) markSiteAdminRecord();
   const verified = home.user.verified !== false;
   let just = null;
@@ -365,7 +435,7 @@ export async function accountHome() {
         <label>Co-owner emails <textarea name="co_owners" rows="2" placeholder="one email per line">${escapeHtml((mine.co_owners || []).join("\n"))}</textarea></label>
         <div class="actions">
           <button class="btn" type="submit">Save team</button>
-          <a class="btn ghost" data-link href="/teams/${escapeHtml(mine.slug)}/home">Open team book</a>
+          ${(home.user.role === "team_coach" || admin) ? `<a class="btn ghost" data-link href="/teams/${escapeHtml(mine.slug)}/home">Open team book</a>` : ""}
         </div>
         <p class="error" id="edit-team-err" hidden></p>
       </form>
@@ -402,22 +472,39 @@ export async function accountHome() {
       <h2>Create your team</h2>
       <p>After this email is confirmed, create the team on this page. Tournaments sign up that team.</p>
     </section>`;
-  } else if (!mine) {
+  } else if (home.user.role === "event_td" && !mine) {
     book = `<section class="card">
       <h2>Teams you add</h2>
       <p>On a tournament's signup page, create the team with its name, contacts, and GameChanger link, add it to the weekend, then pass ownership to the coach's email.</p>
+    </section>`;
+  } else if (!mine) {
+    book = `<section class="card">
+      <h2>Player / Fan</h2>
+      <p>Follow a tournament or a team from its public page. Your email stays off those pages. Switch this account to Team Manager or Tournament Director in the profile when you need those tools.</p>
     </section>`;
   }
   flowRoot().innerHTML = gateChrome("account", `
     <section class="page-head">
       <h1>${escapeHtml(name)}</h1>
-      <p class="muted">${escapeHtml(home.user.email)} · ${admin ? "Site admin" : home.user.role === "team_coach" ? "Team account" : "Director account"}</p>
+      <p class="muted">${escapeHtml(home.user.email)} · ${escapeHtml(kindLabel)}</p>
       <div class="actions">
-        <a class="btn" data-link href="/start">Create a tournament</a>
-        <a class="btn ghost" data-link href="/find">Find a tournament</a>
+        ${director ? `<a class="btn" data-link href="/start">Create a tournament</a>` : `<a class="btn" data-link href="/find">Find a tournament</a>`}
+        ${director ? `<a class="btn ghost" data-link href="/find">Find a tournament</a>` : ""}
         <a class="btn ghost" data-link href="/year/2026">Year board</a>
         ${admin ? `<a class="btn ghost" data-link href="/admin/events">Remove tournaments</a>` : ""}
       </div>
+    </section>
+    <section class="card" id="profile">
+      <h2>Profile</h2>
+      ${admin ? `<p>Site admin. This login stays a site admin.</p>` : `
+        <p class="muted">Player/Fan follows tournaments and teams. Team Manager runs one club. Tournament Director opens weekends.</p>
+        <form class="form wide" id="kind-form">
+          <label>Account type
+            <select name="intent">${intentSelect(kindValue(home.user.role))}</select>
+          </label>
+          <button class="btn" type="submit">Save account type</button>
+          <p class="error" id="kind-err" hidden></p>
+        </form>`}
     </section>
     ${justCard}
     ${book}
@@ -425,6 +512,7 @@ export async function accountHome() {
     ${followingBlocks(home.following || { teams: [], tournaments: [] })}
     <section class="card" id="update-password">
       <h2>Update your password</h2>
+      ${home.user.google ? `<p class="muted">This login is linked to Google. To add a password, use Forgot my password on the login page.</p>` : ""}
       <form class="form wide" id="password-form">
         <label>Current password <input name="oldPassword" type="password" autocomplete="current-password" required></label>
         <label>New password (8+ characters) <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
@@ -442,6 +530,28 @@ export async function accountHome() {
       ${eventCards(home.joined, "No team signups on this email yet.", "joined")}
     </section>
   `);
+  const kindForm = document.getElementById("kind-form");
+  if (kindForm) {
+    kindForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const err = document.getElementById("kind-err");
+      const intent = new FormData(ev.target).get("intent");
+      const sent = await fetch("/api/account/kind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ intent }),
+      });
+      const out = await sent.json().catch(() => ({}));
+      if (!sent.ok) {
+        err.hidden = false;
+        err.textContent = out.message || "Could not save the account type.";
+        return;
+      }
+      try { await flowPb.collection("users").authRefresh(); } catch (e) {}
+      flashSaved("Account type saved");
+      accountHome();
+    });
+  }
   const editTeam = document.getElementById("edit-team-form");
   if (editTeam && mine) {
     editTeam.addEventListener("submit", async (ev) => {
