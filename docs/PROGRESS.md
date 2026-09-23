@@ -215,6 +215,10 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-23 — Google button no longer opens a blank window
+
+Continue with Google was calling PocketBase `authWithOAuth2` immediately. That opens an empty browser window before it checks whether Google is enabled, then closes the window. On a phone that looks like a blank screen that returns to the page. The live site still has Google turned off: `GET /api/collections/users/auth-methods` returns `oauth2.enabled` false and no providers. The button now checks that list first. When Google is absent it writes the message under the button and does not open a window. When Google is present, the same tab goes to Google and comes back to `/login` to finish, which is the path a phone can keep open. Register these return addresses on the Google client: `https://www.diamondtourney.com/login`, `https://diamondtourney.com/login`, and `http://127.0.0.1:8097/login`. Boot still turns the provider on only when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set. A phone-width pass stays on `/register`, shows that sentence under the button, and does not open a window. With a provider present, the same tab requests `accounts.google.com` and the return address is `/login`.
+
 ### 2026-09-23 — Team page player stats sort like the stats board
 
 A team page listed hitting and pitching as two fixed tables. Player stats on that page now use the same board as `/t/{slug}/stats`: a Hitting tab and a Pitching tab, the same sort buttons (hits, average, OPS, RBIs; innings, ERA, strikeouts, wins), and Qualifiers only checked by default. Average still sorts high to low. ERA still sorts low to high. A blank cell stays an em dash and sorts last. The team filter stays on the full stats board only. There is no catcher table, and no new numbers are calculated.

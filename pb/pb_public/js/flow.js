@@ -59,42 +59,192 @@ function kindValue(role) {
   return "fan";
 }
 
+const GOOGLE_OFF = "Google sign-in is not turned on for this server yet. Use email and password.";
+const GOOGLE_INCOMPLETE = "Google sign-in did not finish. Try again, or use email and password.";
+const GOOGLE_CANCELLED = "Google sign-in was cancelled. Use email and password.";
+
+// null until the public auth-methods check returns. false means this server
+// has no Google provider, so the button must not start a sign-in window.
+let googleReady = null;
+
+function showGoogleError(text) {
+  const err = document.getElementById("google-error");
+  if (!err) return;
+  err.hidden = false;
+  err.textContent = text;
+  try { err.scrollIntoView({ block: "nearest" }); } catch (e) {}
+}
+
+function hideGoogleError() {
+  const err = document.getElementById("google-error");
+  if (!err) return;
+  err.hidden = true;
+  err.textContent = "";
+}
+
+function googleCreateData(intentReader) {
+  const intent = intentReader ? intentReader() : "fan";
+  const role = intent === "team" ? "team_coach" : intent === "director" ? "event_td" : "public";
+  const createData = { role };
+  const nameInput = document.querySelector("#register-form input[name=display_name]");
+  const name = nameInput ? String(nameInput.value || "").trim().slice(0, 120) : "";
+  if (name) createData.display_name = name;
+  return createData;
+}
+
+function cleanGoogleCreateData(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const role = src.role === "team_coach" || src.role === "event_td" ? src.role : "public";
+  const createData = { role };
+  const name = String(src.display_name || "").trim().slice(0, 120);
+  if (name) createData.display_name = name;
+  return createData;
+}
+
+function googleRedirectURL() {
+  return location.origin + "/login";
+}
+
+function googleAuthLocation(authURL, redirectURL) {
+  const encoded = encodeURIComponent(redirectURL);
+  const url = String(authURL || "");
+  if (/redirect_uri=/.test(url)) return url.replace(/redirect_uri=[^&]*/, "redirect_uri=" + encoded);
+  return url + (url.indexOf("?") >= 0 ? "&" : "?") + "redirect_uri=" + encoded;
+}
+
+function safeGoogleBack(raw) {
+  const path = String(raw || "").split("?")[0].split("#")[0];
+  if (!/^\/[A-Za-z0-9/_-]*$/.test(path)) return "/login";
+  return path || "/login";
+}
+
+function stashGoogleError(text) {
+  try { sessionStorage.setItem("dt-google-error", text); } catch (err) {}
+}
+
+function takeGoogleError() {
+  try {
+    const text = sessionStorage.getItem("dt-google-error") || "";
+    sessionStorage.removeItem("dt-google-error");
+    return text;
+  } catch (err) {
+    return "";
+  }
+}
+
+async function loadGoogleReady() {
+  try {
+    const methods = await flowPb.collection("users").listAuthMethods();
+    const oauth = methods && methods.oauth2;
+    const providers = (oauth && oauth.providers) || [];
+    googleReady = !!(oauth && oauth.enabled && providers.some((p) => p && p.name === "google"));
+  } catch (err) {
+    googleReady = null;
+  }
+  return googleReady;
+}
+
+async function startGoogleRedirect(createData) {
+  let provider = null;
+  try {
+    const methods = await flowPb.collection("users").listAuthMethods();
+    const providers = (methods && methods.oauth2 && methods.oauth2.providers) || [];
+    provider = providers.find((p) => p && p.name === "google") || null;
+    googleReady = !!(methods && methods.oauth2 && methods.oauth2.enabled && provider);
+  } catch (err) {
+    googleReady = null;
+    showGoogleError(GOOGLE_INCOMPLETE);
+    return;
+  }
+  if (!provider || !provider.authURL || !provider.codeVerifier || !provider.state) {
+    googleReady = false;
+    showGoogleError(GOOGLE_OFF);
+    return;
+  }
+  const redirectURL = googleRedirectURL();
+  try {
+    sessionStorage.setItem("dt-google-oauth", JSON.stringify({
+      state: String(provider.state),
+      codeVerifier: String(provider.codeVerifier),
+      redirectURL,
+      createData: cleanGoogleCreateData(createData),
+      back: safeGoogleBack(location.pathname),
+    }));
+  } catch (err) {
+    showGoogleError(GOOGLE_INCOMPLETE);
+    return;
+  }
+  location.assign(googleAuthLocation(provider.authURL, redirectURL));
+}
+
 function bindGoogle(button, intentReader) {
   if (!button) return;
-  button.addEventListener("click", async () => {
-    const err = document.getElementById("gate-error");
-    if (err) {
-      err.hidden = true;
-      err.className = "error";
+  const pending = takeGoogleError();
+  if (pending) showGoogleError(pending);
+  loadGoogleReady();
+  button.addEventListener("click", () => {
+    const createData = googleCreateData(intentReader);
+    if (googleReady === false) {
+      showGoogleError(GOOGLE_OFF);
+      return;
     }
-    const intent = intentReader ? intentReader() : "fan";
-    const role = intent === "team" ? "team_coach" : intent === "director" ? "event_td" : "public";
-    const createData = { role };
-    const nameInput = document.querySelector("#register-form input[name=display_name]");
-    if (nameInput && String(nameInput.value || "").trim()) createData.display_name = String(nameInput.value).trim();
-    try {
-      await flowPb.collection("users").authWithOAuth2({ provider: "google", createData });
-      const next = takeAfterLogin();
-      if (next) location.assign(next);
-      else goFlow("/account");
-    } catch (e) {
-      if (!err) return;
-      err.hidden = false;
-      const msg = [
-        e && e.message,
-        e && e.originalError && e.originalError.message,
-        e && e.response && e.response.message,
-        e && e.data && e.data.message,
-      ].filter(Boolean).join(" ");
-      if (/provider|not enabled|not configured|disabled|missing|oauth2/i.test(msg)) {
-        err.textContent = "Google sign-in is not turned on for this server yet. Use email and password.";
-      } else if (/popup|blocked|closed/i.test(msg)) {
-        err.textContent = "The Google window did not open. Allow popups for this site and try again.";
-      } else {
-        err.textContent = "Google sign-in did not finish. Try again, or use email and password.";
-      }
+    hideGoogleError();
+    if (googleReady !== true) {
+      loadGoogleReady().then((ready) => {
+        if (ready !== true) {
+          showGoogleError(ready === false ? GOOGLE_OFF : GOOGLE_INCOMPLETE);
+          return;
+        }
+        startGoogleRedirect(createData);
+      });
+      return;
     }
+    startGoogleRedirect(createData);
   });
+}
+
+// Phone browsers close the PocketBase popup before Google can load. The button
+// sends this tab to Google and returns to /login, which exchanges the code.
+export async function completeGoogleReturn() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code") || "";
+  const state = params.get("state") || "";
+  const oauthError = params.get("error") || "";
+  if (!code && !oauthError) return "";
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem("dt-google-oauth") || "null"); } catch (err) { saved = null; }
+  if (!saved || !saved.codeVerifier || !saved.redirectURL || !saved.state) return "";
+  try { sessionStorage.removeItem("dt-google-oauth"); } catch (err) {}
+  history.replaceState({}, "", safeGoogleBack(saved.back));
+  if (oauthError || !code || state !== String(saved.state)) {
+    stashGoogleError(oauthError === "access_denied" ? GOOGLE_CANCELLED : GOOGLE_INCOMPLETE);
+    return "failed";
+  }
+  try {
+    await flowPb.collection("users").authWithOAuth2Code(
+      "google",
+      code,
+      String(saved.codeVerifier),
+      String(saved.redirectURL),
+      cleanGoogleCreateData(saved.createData),
+    );
+  } catch (err) {
+    const msg = [
+      err && err.message,
+      err && err.originalError && err.originalError.message,
+      err && err.response && err.response.message,
+      err && err.data && err.data.message,
+    ].filter(Boolean).join(" ");
+    stashGoogleError(/provider|not enabled|not configured|disabled|missing|oauth2/i.test(msg) ? GOOGLE_OFF : GOOGLE_INCOMPLETE);
+    return "failed";
+  }
+  const next = takeAfterLogin();
+  if (next) {
+    location.assign(next);
+    return "leave";
+  }
+  history.replaceState({}, "", "/account");
+  return "authed";
 }
 
 function takeAfterLogin() {
@@ -249,6 +399,7 @@ export async function startGate(forcedTab) {
         <p class="muted">Opens your tournaments and any season book on this account. A new Google sign-in starts as Player/Fan. Change that on your profile.</p>
         <div class="form wide">
           <button class="btn google" type="button" id="google-sign-in">${googleMark()} Continue with Google</button>
+          <p class="error" id="google-error" hidden></p>
           <p class="auth-or">or</p>
         </div>
         <form class="form wide" id="login-form">
@@ -268,6 +419,7 @@ export async function startGate(forcedTab) {
             <select name="intent" id="account-intent">${intentSelect("fan")}</select>
           </label>
           <button class="btn google" type="button" id="google-sign-in">${googleMark()} Continue with Google</button>
+          <p class="error" id="google-error" hidden></p>
           <p class="auth-or">or use email</p>
           <label>Your name <input name="display_name" required placeholder="Pat Rivera"></label>
           <label>Email <input name="email" type="email" autocomplete="email" required></label>
