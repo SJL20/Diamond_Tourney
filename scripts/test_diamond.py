@@ -4122,28 +4122,53 @@ class BoxScoreTeamPageTests(unittest.TestCase):
             "pool": "A",
             "status": "cancelled",
         })["game"]
+        stale = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Dukes Book",
+            "away": "Roadrunners Book",
+            "date": "2026-09-01",
+            "time": "09:00",
+            "field": "Field 1",
+            "pool": "A",
+            "game_number": 1,
+        })["game"]
+        # 09:00 + 90 min + 15 min buffer = 10:45Z. Three asks, then silence.
         first = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T12:00:00.000Z",
+            "now": "2026-09-18T10:50:00.000Z",
         })
         self.assertEqual(first["invited"], 2)
+        self.assertEqual(first["reminded"], 0)
         self.assertEqual(len(first["invites"]), 2)
+        self.assertTrue(all(row["game_id"] == played["id"] for row in first["invites"]))
         self.assertEqual(first.get("reason"), "smtp_not_configured")
         tokens = {row["team_id"]: row["token"] for row in first["invites"]}
         self.assertEqual(set(tokens), {home["id"], away["id"]})
         again = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T12:30:00.000Z",
+            "now": "2026-09-18T11:20:00.000Z",
         })
         self.assertEqual(again["invited"], 0)
         self.assertEqual(again["reminded"], 0)
-        reminder = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+        hour = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T11:50:00.000Z",
+        })
+        self.assertEqual(hour["invited"], 0)
+        self.assertEqual(hour["reminded"], 2)
+        self.assertTrue(all(row["reminder"] for row in hour["invites"]))
+        still = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T12:20:00.000Z",
+        })
+        self.assertEqual(still["invited"], 0)
+        self.assertEqual(still["reminded"], 0)
+        two = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T12:50:00.000Z",
+        })
+        self.assertEqual(two["reminded"], 2)
+        self.assertEqual(two["invited"], 0)
+        later = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
             "now": "2026-09-19T12:00:00.000Z",
         })
-        self.assertEqual(reminder["reminded"], 2)
-        third = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-20T12:00:00.000Z",
-        })
-        self.assertEqual(third["reminded"], 0)
-        self.assertEqual(third["invited"], 0)
+        self.assertEqual(later["reminded"], 0)
+        self.assertEqual(later["invited"], 0)
+        self.assertNotIn(stale["id"], [row["game_id"] for row in first["invites"] + hour["invites"] + two["invites"]])
         desk = request(BASE, "GET", f"/api/events/{slug}/boxes/desk", td)
         self.assertFalse(any(g["id"] == cancelled["id"] and g.get("books") for g in desk["games"]
                              if g["id"] == cancelled["id"] and g["books"]))
@@ -5238,7 +5263,7 @@ class PdfUploadExtractTests(unittest.TestCase):
         })
         game = made["game"]
         ran = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T14:00:00.000Z",
+            "now": "2026-09-18T10:00:00.000Z",
         })
         token = next(row["token"] for row in ran["invites"] if row["team_id"] == home["id"])
         pdf = sample_pdf_bytes(game["home"], game["away"])

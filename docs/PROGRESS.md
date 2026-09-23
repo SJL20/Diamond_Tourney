@@ -214,6 +214,14 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-23 — Box-score mail stops after three asks
+
+Keystone Clash kept emailing coaches who had not uploaded a book. The cron sent the first note after the game, then another the next morning, and a row whose reminder time did not stick could go out again the day after that.
+
+Each team now gets at most three notes for a game with no book: when the scheduled end plus the 15-minute buffer has passed, one hour after that, and two hours after that. The cron runs every 15 minutes, so the third note can still go out for 45 minutes after the two-hour mark. After that the window is closed. A weekend that already ended, including Keystone, does not get another note. Uploading the book, or Stop asking, still ends it. A director resend is one extra note and does not restart the three.
+
+Covered by the timing checks in `test_box_mail_tokens_reconcile_and_privacy`.
+
 ### 2026-09-22 — Site admin can edit and delete any master team
 
 `/admin/teams` gives each master team a Details button. Opening it loads the name, age, coach name, GameChanger link, private coach email and phone, second contact, and co-owners, then saves them. The list does not show those emails. Remove deletes that master team even when it has a roster, a season book, or a weekend with a final score. The weekend entry and that team's games on the weekend go with it. A director still cannot remove a weekend team that already has a final score.
