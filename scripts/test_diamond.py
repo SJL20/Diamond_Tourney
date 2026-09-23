@@ -2454,6 +2454,123 @@ class AccountHardeningTests(unittest.TestCase):
                     request(BASE, "DELETE", f"/api/collections/users/records/{row['id']}", admin)
 
 
+class AccountKindTests(unittest.TestCase):
+    def test_register_defaults_to_player_fan(self):
+        email = f"fan.{uuid.uuid4().hex[:8]}@local.test"
+        out = request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "FanPass12!",
+            "passwordConfirm": "FanPass12!",
+            "display_name": "Fan Default",
+            "role": "region_admin",
+        })
+        self.assertEqual(out["role"], "public")
+        confirm_account(email)
+        token = auth(BASE, email, "FanPass12!")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "public")
+        self.assertEqual(home["user"]["kind_label"], "Player/Fan")
+        self.assertFalse(home["user"]["google"])
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", "/api/events/create", token, {
+                "source": "native",
+                "name": "Fan Open",
+                "slug": "fan-open-" + uuid.uuid4().hex[:8],
+                "ages": "10U",
+            })
+        self.assertIn("403", str(denied.exception))
+
+    def test_profile_switches_manager_and_director_and_keeps_the_team(self):
+        email = f"kind.{uuid.uuid4().hex[:8]}@local.test"
+        request(BASE, "POST", "/api/account/register", None, {
+            "email": email,
+            "password": "KindPass12!",
+            "passwordConfirm": "KindPass12!",
+            "display_name": "Kind Switch",
+            "intent": "fan",
+        })
+        confirm_account(email)
+        token = auth(BASE, email, "KindPass12!")
+        manager = request(BASE, "POST", "/api/account/kind", token, {"intent": "team"})
+        self.assertEqual(manager["role"], "team_coach")
+        self.assertEqual(manager["label"], "Team Manager")
+        team = request(BASE, "POST", "/api/teams", token, {"name": "Kind Switch 10U", "age_group": "10U"})
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "team_coach")
+        self.assertEqual(home["user"]["team"]["id"], team["id"])
+        with self.assertRaises(RuntimeError) as manager_open:
+            request(BASE, "POST", "/api/events/create", token, {
+                "source": "native",
+                "name": "Manager Open",
+                "slug": "mgr-open-" + uuid.uuid4().hex[:8],
+                "ages": "10U",
+            })
+        self.assertIn("403", str(manager_open.exception))
+        fan = request(BASE, "POST", "/api/account/kind", token, {"intent": "fan"})
+        self.assertEqual(fan["role"], "public")
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "public")
+        self.assertEqual(home["user"]["kind_label"], "Player/Fan")
+        self.assertEqual(home["user"]["team"]["id"], team["id"])
+        director = request(BASE, "POST", "/api/account/kind", token, {"intent": "director"})
+        self.assertEqual(director["role"], "event_td")
+        self.assertEqual(director["label"], "Tournament Director")
+        created = request(BASE, "POST", "/api/events/create", token, {
+            "source": "native",
+            "name": "Kind Director Open",
+            "slug": "kind-open-" + uuid.uuid4().hex[:8],
+            "ages": "10U",
+        })
+        self.assertTrue(created["event"]["slug"].startswith("kind-open-"))
+        for bad in ("region_admin", "bot", "superuser"):
+            with self.assertRaises(RuntimeError) as refused:
+                request(BASE, "POST", "/api/account/kind", token, {"intent": bad})
+            self.assertTrue(any(code in str(refused.exception) for code in ("400", "403")))
+        home = request(BASE, "GET", "/api/account/home", token)
+        self.assertEqual(home["user"]["role"], "event_td")
+        self.assertEqual(home["user"]["team"]["id"], team["id"])
+
+    def test_site_admin_cannot_change_account_type(self):
+        owner = auth(BASE, "owner@local.test", "RegionAdmin1!")
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", "/api/account/kind", owner, {"intent": "fan"})
+        self.assertIn("403", str(denied.exception))
+        home = request(BASE, "GET", "/api/account/home", owner)
+        self.assertEqual(home["user"]["role"], "region_admin")
+        self.assertTrue(home["user"]["site_admin"])
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        with self.assertRaises(RuntimeError) as admin_denied:
+            request(BASE, "POST", "/api/account/kind", admin, {"intent": "director"})
+        self.assertIn("403", str(admin_denied.exception))
+
+    def test_google_signup_cannot_bypass_the_create_rule(self):
+        admin = auth(BASE, "admin@local.test", "SoftballAdmin1!", "_superusers")
+        col = request(BASE, "GET", "/api/collections/users", admin)
+        self.assertEqual(col["createRule"], "@request.context = 'oauth2'")
+        mapped = (col.get("oauth2") or {}).get("mappedFields") or {}
+        self.assertEqual(mapped.get("name"), "display_name")
+        methods = request(BASE, "GET", "/api/collections/users/auth-methods")
+        self.assertTrue(methods["password"]["enabled"])
+        self.assertNotIn("clientSecret", json.dumps(methods))
+        hijack = f"hijack.{uuid.uuid4().hex[:8]}@local.test"
+        with self.assertRaises(RuntimeError) as oauth:
+            request(BASE, "POST", "/api/collections/users/auth-with-oauth2", None, {
+                "provider": "google",
+                "code": "not-a-real-code",
+                "codeVerifier": "not-a-real-verifier",
+                "redirectURL": "http://127.0.0.1:8097/api/oauth2-redirect",
+                "createData": {"role": "region_admin", "email": hijack},
+            })
+        self.assertTrue(any(code in str(oauth.exception) for code in ("400", "403")))
+        from urllib.parse import quote
+        rows = request(
+            BASE, "GET",
+            "/api/collections/users/records?filter=" + quote(f'email="{hijack}"'),
+            admin,
+        )
+        self.assertEqual(rows.get("items") or [], [])
+
+
 class GcMonitorTests(unittest.TestCase):
     def test_public_gc_url_hosts_only(self):
         self.assertTrue(is_public_gc_url("https://web.gc.com/teams/abc/schedule/xyz/box-score"))
@@ -4122,28 +4239,53 @@ class BoxScoreTeamPageTests(unittest.TestCase):
             "pool": "A",
             "status": "cancelled",
         })["game"]
+        stale = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Dukes Book",
+            "away": "Roadrunners Book",
+            "date": "2026-09-01",
+            "time": "09:00",
+            "field": "Field 1",
+            "pool": "A",
+            "game_number": 1,
+        })["game"]
+        # 09:00 + 90 min + 15 min buffer = 10:45Z. Three asks, then silence.
         first = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T12:00:00.000Z",
+            "now": "2026-09-18T10:50:00.000Z",
         })
         self.assertEqual(first["invited"], 2)
+        self.assertEqual(first["reminded"], 0)
         self.assertEqual(len(first["invites"]), 2)
+        self.assertTrue(all(row["game_id"] == played["id"] for row in first["invites"]))
         self.assertEqual(first.get("reason"), "smtp_not_configured")
         tokens = {row["team_id"]: row["token"] for row in first["invites"]}
         self.assertEqual(set(tokens), {home["id"], away["id"]})
         again = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T12:30:00.000Z",
+            "now": "2026-09-18T11:20:00.000Z",
         })
         self.assertEqual(again["invited"], 0)
         self.assertEqual(again["reminded"], 0)
-        reminder = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+        hour = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T11:50:00.000Z",
+        })
+        self.assertEqual(hour["invited"], 0)
+        self.assertEqual(hour["reminded"], 2)
+        self.assertTrue(all(row["reminder"] for row in hour["invites"]))
+        still = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T12:20:00.000Z",
+        })
+        self.assertEqual(still["invited"], 0)
+        self.assertEqual(still["reminded"], 0)
+        two = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T12:50:00.000Z",
+        })
+        self.assertEqual(two["reminded"], 2)
+        self.assertEqual(two["invited"], 0)
+        later = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
             "now": "2026-09-19T12:00:00.000Z",
         })
-        self.assertEqual(reminder["reminded"], 2)
-        third = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-20T12:00:00.000Z",
-        })
-        self.assertEqual(third["reminded"], 0)
-        self.assertEqual(third["invited"], 0)
+        self.assertEqual(later["reminded"], 0)
+        self.assertEqual(later["invited"], 0)
+        self.assertNotIn(stale["id"], [row["game_id"] for row in first["invites"] + hour["invites"] + two["invites"]])
         desk = request(BASE, "GET", f"/api/events/{slug}/boxes/desk", td)
         self.assertFalse(any(g["id"] == cancelled["id"] and g.get("books") for g in desk["games"]
                              if g["id"] == cancelled["id"] and g["books"]))
@@ -5266,7 +5408,7 @@ class PdfUploadExtractTests(unittest.TestCase):
         })
         game = made["game"]
         ran = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T14:00:00.000Z",
+            "now": "2026-09-18T10:00:00.000Z",
         })
         token = next(row["token"] for row in ran["invites"] if row["team_id"] == home["id"])
         pdf = sample_pdf_bytes(game["home"], game["away"])

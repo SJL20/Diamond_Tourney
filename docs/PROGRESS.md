@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 138 unit/integration cases + 13 acceptance checks |
+| Tests | 142 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -59,7 +59,7 @@ Ranked by what would hurt most on a live weekend.
 ### 1. Any account can administer any tournament — **closed**
 
 See *Closed*. Director writes require `events.created_by`, a listed co-owner, or site admin.
-`event_td` still lets a new account create a weekend of their own.
+Choosing Tournament Director stores `event_td`, and that role can still open a weekend of its own. Player/Fan is the default. Team Manager runs one club.
 The owner (or site admin) adds co-owners by email on tournament setup.
 Those addresses stay off public pages.
 
@@ -159,8 +159,9 @@ direct unit tests for the hook modules.
   lines named on that box. Season-team staging Approve is unchanged. Covered
   by `EventBoxReviewTests`.
 
-- ~~**Anyone with `event_td` could administer any tournament.**~~ Registration
-  still assigns that role so a new account can create a weekend. Director
+- ~~**Anyone with `event_td` could administer any tournament.**~~ A new
+  account can still choose Tournament Director, which stores `event_td` and
+  can create a weekend. Player/Fan is the default. Director
   writes now require `events.created_by`, a listed co-owner, or site admin.
   REST collection writes were locked the same way. The owner adds extra
   directors by email on tournament setup; public board / Find never include
@@ -219,6 +220,20 @@ what the next session should pick up.
 A team page listed hitting and pitching as two fixed tables. Player stats on that page now use the same board as `/t/{slug}/stats`: a Hitting tab and a Pitching tab, the same sort buttons (hits, average, OPS, RBIs; innings, ERA, strikeouts, wins), and Qualifiers only checked by default. Average still sorts high to low. ERA still sorts low to high. A blank cell stays an em dash and sorts last. The team filter stays on the full stats board only. There is no catcher table, and no new numbers are calculated.
 
 Proved by `test_team_page_player_stats_use_the_stats_board`. A browser pass switches Hitting and Pitching and sorts a column on a team page.
+
+### 2026-09-23 — Box-score mail stops after three asks
+
+Keystone Clash kept emailing coaches who had not uploaded a book. The cron sent the first note after the game, then another the next morning, and a row whose reminder time did not stick could go out again the day after that.
+
+Each team now gets at most three notes for a game with no book: when the scheduled end plus the 15-minute buffer has passed, one hour after that, and two hours after that. The cron runs every 15 minutes, so the third note can still go out for 45 minutes after the two-hour mark. After that the window is closed. A weekend that already ended, including Keystone, does not get another note. Uploading the book, or Stop asking, still ends it. A director resend is one extra note and does not restart the three.
+
+Covered by the timing checks in `test_box_mail_tokens_reconcile_and_privacy`.
+
+### 2026-09-23 — Google sign-in and account type
+
+Login and create-account offer Continue with Google next to email and password. A new account is Player/Fan unless the person picks Team Manager or Tournament Director. That same choice is on the profile and can be changed later. Site admin and bot accounts cannot change their own type. A Team Manager who switches to Player/Fan keeps the club already on the account. Opening a weekend requires Tournament Director (or site admin). Google client id and secret are not in git. Boot turns the provider on when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set. The redirect to register in Google Cloud is `https://www.diamondtourney.com/api/oauth2-redirect` (and `http://127.0.0.1:8097/api/oauth2-redirect` for local). Until those secrets are set, the button says Google sign-in is not turned on.
+
+Proved by `AccountKindTests` in the diamond suite. A browser pass covers the register choice, the Google button, and saving a new account type on the profile.
 
 ### 2026-09-22 — Site admin can edit and delete any master team
 
