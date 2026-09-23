@@ -5,7 +5,7 @@ import {
   eventSchedule, eventSignup, eventStandings, eventStats, eventTeamPage, boxUploadPage, boxStopPage, boxHelpPage,
   startTournament,
 } from "./event.js";
-import { accountHome, adminEvents, adminTeams, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
+import { accountHome, adminEvents, adminTeams, completeGoogleReturn, findPage, forgotPage, resetPage, startGate, verifyPage, yearPage } from "./flow.js";
 import { bindEventChrome, collapseSetupOnPhone, flashSaved, isSiteAdmin, measureChrome, pageShell } from "./chrome.js";
 import { authHeader, clearAuth, pb } from "./client.js";
 import { formatDateDisplay, stampDataTh } from "./display.js";
@@ -386,6 +386,10 @@ async function teams() {
 }
 
 async function render() {
+  try {
+    const googleBack = await completeGoogleReturn();
+    if (googleBack === "leave") return;
+  } catch (err) {}
   const { name, params } = matchRoute();
   try {
     if (name === "login") await login();
