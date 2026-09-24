@@ -2467,4 +2467,74 @@ since a director should not silently claim another org's team record.
 - [ ] A team entered in two tournaments is one record, and year stats accumulate
       across both
 
+      ## [ ] 35. Bulk pool assignment — stop typing pool letters one team at a time
+
+**High. Owner-flagged while setting up Gobble Wobble.**
+
+Pool is currently a free-text input on each team (`pb/pb_public/js/event.js` line
+2943, placeholder "A"). A director assigns pools by opening every team and typing
+a letter. With 16 teams that is 16 edits, and a stray lowercase "a" silently
+creates a second pool named "a".
+
+### What directors actually do
+
+Pool assignment is a balancing act, not data entry. A director thinks: how many
+pools, how many per pool, keep clubs apart, keep the strong teams separated, and
+don't put two teams from the same three-hour drive in the same pool if it means
+one plays at 8am.
+
+The interface should support that, not fight it.
+
+### Build
+
+**One screen showing every team and every pool at once.** Pick a number of pools
+(or teams per pool) and the app proposes an assignment; the director then drags
+teams between pools, or uses dropdowns on a list for phone use. Both work — drag
+on desktop, per-row select on mobile.
+
+**Auto-assignment options, as a starting point rather than an answer:**
+
+- **Snake by seed** — 1,2,3,4 / 4,3,2,1 across pools. The default, and what most
+  directors do by hand.
+- **Balanced by class** — spread A, B and C teams evenly rather than stacking one pool
+- **Separate same organization** — keep two Lady Dukes teams out of the same pool.
+  Use the Organization field from the signup import (item 33's mapping work), not
+  string matching on team name.
+- **Random** — reproducible and recorded, for rec events where seeding is not known
+- **Manual** — start from empty
+
+Whatever is proposed, show it and let the director change it before anything is
+saved.
+
+**Constrain pool names.** A dropdown of A, B, C, D or the director's own list,
+not free text. Case-insensitive and trimmed, so "a" and "A " land in pool A.
+Directors who name pools "Gold" and "Silver" should be able to, but by adding a
+pool, not by typing into sixteen boxes.
+
+**Show the balance as they work:** teams per pool, class mix, and a warning when
+pools are uneven or two teams from one organization share a pool.
+
+### Note for round robin
+
+Gobble Wobble is a round robin. Where the format is one pool playing everyone,
+pool assignment should not be presented at all — it is a field that only matters
+when there is more than one pool.
+
+### Depends on
+
+Item 5's import work already maps a Pool column from CSV, so a director who
+assigns pools in a spreadsheet can bring them in. This item is for the ones who
+don't.
+
+### Acceptance criteria
+
+- [ ] One screen assigns every team to a pool without opening each team
+- [ ] Snake, class-balanced, organization-separated and random options offered
+- [ ] Proposals are editable before saving
+- [ ] Pool names come from a list, not free text; existing values normalized
+- [ ] Balance and same-organization warnings shown live
+- [ ] Works on a phone
+- [ ] Pool controls hidden for single-pool formats
+- [ ] **Assign 16 teams to 4 pools in under a minute**
+
 
