@@ -2722,3 +2722,98 @@ directors who prefer typing, never the only path.
 - [ ] **"Three pools of five, keep the two Dukes teams apart" on a 15-team event
       produces three balanced pools with the Dukes teams separated**
 
+## [ ] 38. Umpire assignment — names on games, one or more per game
+
+**High. Owner request. Also the largest line item in a tournament budget.**
+
+`umpire_count` exists on the event (migration `1700000010_tournament_setup.js`,
+surfaced at `pb/pb_public/js/event.js` line 1000 as "Umpires per game", default
+2). It is a number for planning. No game record carries an umpire, and no
+umpire name exists anywhere in the product.
+
+### Not free text per game
+
+The pool-letter mistake (item 35) applies here harder. Typed per game, one umpire
+becomes "J. Smith", "John Smith", "Smith" and "jsmith" — four people who are one
+person, and the pay report is then wrong.
+
+**Build an umpire roster per event**, and assign from it:
+
+    event_umpires
+      event        relation -> events
+      name         text
+      phone        text          // director needs to reach them Saturday morning
+      email        text
+      rate_cents   number        // may differ per umpire
+      certifying   text          // USA Softball, PONY, etc.
+      notes        text
+
+Then a join for assignment:
+
+    game_umpires
+      game         relation
+      umpire       relation -> event_umpires
+      position     select        // plate, base, third
+      status       select        // assigned, confirmed, worked, no-show
+
+### On the game
+
+One or more umpires per game. At least one, default to the event's
+`umpire_count`, allow more — a championship often takes three.
+
+Assignment UI shows the roster as a picker, not a text box, with a position per
+slot. A game below the event's expected count shows as understaffed on the
+director's view.
+
+### Conflict detection
+
+An umpire cannot work two games in the same time slot on different fields. Same
+check that already prevents team double-booking in the scheduler — reuse it.
+
+Also worth warning on: back-to-back games with no gap across the complex, and
+assignment outside an umpire's stated availability (many only work half a day).
+
+### Pay report — the reason this earns its place
+
+Keystone Clash budgeted $65 per umpire per game, two umpires, 22 games — $2,860,
+the single largest cost in the tournament. That is currently tracked by hand.
+
+Once games carry umpires, the report is free: games worked per umpire, rate,
+total owed, with a printable summary. That is what a director needs Sunday night
+with a checkbook, and no other platform in this space produces it.
+
+Mark a game `worked` when it goes final so the count reflects reality, not the
+plan — rainouts and reassignments are constant.
+
+### Visibility — do not put umpire names on public pages by default
+
+Umpires are private individuals. This is youth sports, the pages are public, and
+a parent who disagrees with a call should not be able to look up the name of the
+person who made it, let alone find them through it.
+
+- **Director and region admin:** full roster, assignments, contact details, pay
+- **Coaches:** optionally the names for their own games, if the director enables it
+- **Public:** nothing, unless the director explicitly turns it on for the event
+
+Umpire phone and email are contact details and follow item 2's rule — restricted
+collection, never readable from a public endpoint. Verify with a logged-out API
+call, not by looking at the page.
+
+### Carry the roster forward
+
+Directors use the same umpires across events. Duplicating a tournament (the
+existing "Duplicate this weekend" button) should offer to bring the umpire roster
+with it, and an org-level roster teams can be drawn from is the natural next step.
+
+### Acceptance criteria
+
+- [ ] Umpire roster per event, with name, contact, rate
+- [ ] One or more umpires assignable per game, defaulting to the event's count
+- [ ] Assignment is a picker from the roster, never free text
+- [ ] Position recorded per assignment
+- [ ] Understaffed games flagged on the director's view
+- [ ] Same-slot conflicts blocked, with the reason shown
+- [ ] Pay report: games worked, rate, total per umpire, printable
+- [ ] **Umpire names and contacts absent from public API responses — verified
+      logged out**
+- [ ] Roster carries forward on duplicate
