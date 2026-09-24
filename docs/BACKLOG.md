@@ -2630,3 +2630,95 @@ directors who prefer typing, never the only path.
       produces three balanced pools with the Dukes teams separated**
 
 
+## [ ] 35b. Pool scheduler shows no pool context
+
+**High. Ship independently of any AI work.**
+
+The pool scheduler asks for days, games per team, first pitch and last start — but
+never shows how many pools exist, which teams are in them, or how many teams per
+pool. A director building a schedule cannot see the thing being scheduled.
+
+Add a summary at the top of the scheduler: pool count, teams in each, and any
+team not yet assigned to a pool. Unassigned teams are the important one — a team
+with no pool silently gets no pool games, and right now nothing says so.
+
+Link straight to pool assignment (item 35) from there.
+
+For single-pool formats, say "one pool, 8 teams" rather than hiding it entirely —
+absence of information reads as a bug.
+
+- [ ] Pool count and per-pool team counts shown on the scheduler
+- [ ] Unassigned teams surfaced with a warning
+- [ ] Link to pool assignment
+- [ ] Single-pool formats state so explicitly
+
+---
+
+## [ ] 36. Describe your setup in plain language
+
+**Medium. Depends on 35 and 35b existing first.**
+
+Let a director type what they have instead of filling a form:
+
+> "Three pools of five. Keep the two Lady Dukes teams apart. Pool A is the A
+> teams."
+
+Claude parses it into a proposed pool assignment, which renders in the **normal
+pool assignment UI** for the director to adjust and confirm.
+
+### The rule that makes this safe
+
+**It proposes; it never writes.** The parse produces a draft shown in the
+existing interface. The director approves, and the existing save path does the
+write. Same pattern as the CSV import preview, which works well and is already
+trusted.
+
+This is the boundary set in item 23 — the assistant advises, the director acts.
+Do not let it commit changes directly, even when it is confident.
+
+### Where the model earns its place
+
+"Three pools of five" is arithmetic and does not need a model. The value is in
+the messy half of what directors actually say:
+
+- "Keep the two Dukes teams apart" → organization constraint
+- "Pool A is the A teams" → class-based assignment
+- "Bombers can't play before 5:30 Friday" → availability constraint (which the
+  signup form already collects and the scheduler ignores)
+- "Same as last year" → reference a previous event's structure
+
+### Grounding
+
+Feed it the event's own teams, classes, organizations, field count and hours.
+It assigns real teams from the roster. It must never invent a team, a pool, or a
+constraint that was not stated.
+
+Where the instruction is ambiguous — "three pools" with 16 teams — it proposes
+the nearest sensible split, says what it assumed, and asks.
+
+### Scope
+
+Start with pool assignment only. If it works there, extend to bracket setup and
+field windows. Do not build a general chat box.
+
+### Cost
+
+Negligible. Haiku 4.5, a few thousand tokens per request with the roster attached.
+Cents per tournament.
+
+### Fallback
+
+The structured UI from item 35 must work on its own. This is a shortcut for
+directors who prefer typing, never the only path.
+
+### Acceptance criteria
+
+- [ ] A plain-language description produces a proposed assignment in the normal UI
+- [ ] Nothing is written until the director confirms
+- [ ] Only real teams from the event roster are assigned
+- [ ] Organization, class and availability constraints are honored when stated
+- [ ] Ambiguity produces a stated assumption and a question, not a guess
+- [ ] Structured assignment works with the feature disabled
+- [ ] **"Three pools of five, keep the two Dukes teams apart" on a 15-team event
+      produces three balanced pools with the Dukes teams separated**
+
