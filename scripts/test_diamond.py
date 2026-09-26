@@ -69,12 +69,37 @@ class TiebreakTests(unittest.TestCase):
         self.assertIn("differential", ranked[1]["seed_reason"])
 
     def test_win_pct_counts_tie_as_half(self):
-        # Old W-then-L would rank A (3 wins) above B (2 wins). Win% does not.
+        # Seeds use points, not winning percentage. A 3-2 is 3 points.
+        # A 2-0-1 is 2.5. Percentage still puts the shorter record higher.
         a = {"id": "a", "name": "A", "w": 3, "l": 2, "t": 0, "rs": 20, "ra": 10}
         b = {"id": "b", "name": "B", "w": 2, "l": 0, "t": 1, "rs": 8, "ra": 4}
         self.assertGreater(win_pct(b), win_pct(a))
         ranked = sort_pool([a, b], [])
-        self.assertEqual(ranked[0]["id"], "b")
+        self.assertEqual(ranked[0]["id"], "a")
+        self.assertIn("points", ranked[0]["seed_reason"])
+
+    def test_fewer_games_do_not_outrank_more_points(self):
+        # Scarecrow shape: a 1-0 with the fewest runs allowed was seed 1
+        # ahead of a 2-0 and a 3-0. Points put the 3-0 first.
+        one = {"id": "one", "name": "Unity", "w": 1, "l": 0, "t": 0, "rs": 2, "ra": 1}
+        two = {"id": "two", "name": "Venom", "w": 2, "l": 0, "t": 0, "rs": 14, "ra": 3}
+        three = {"id": "three", "name": "Dogs", "w": 3, "l": 0, "t": 0, "rs": 36, "ra": 8}
+        half = {"id": "half", "name": "Tied", "w": 1, "l": 0, "t": 1, "rs": 4, "ra": 2}
+        ranked = sort_pool([one, two, three, half], [])
+        self.assertEqual([row["id"] for row in ranked], ["three", "two", "half", "one"])
+
+    def test_points_sort_does_not_rewrite_saved_games(self):
+        diamond = (ROOT / "pb/pb_hooks/diamond.js").read_text()
+        standings = diamond.split("function poolStandings", 1)[1].split("function importSchedule", 1)[0]
+        self.assertNotIn("app.save", standings)
+        self.assertNotIn("app.delete", standings)
+        advance = diamond.split("function advanceFlight", 1)[1].split("function fillSeat", 1)[0]
+        self.assertNotIn("sortPool", advance)
+        self.assertNotIn("buildBracket", advance)
+        self.assertNotIn("poolStandings", advance)
+        self.assertIn('if (crit === "record") return standingsPoints(team);', diamond)
+        build = (ROOT / "pb/pb_hooks/schedule.js").read_text().split("function buildBracket", 1)[1].split("function ", 1)[0]
+        self.assertIn("Pool play is not finished", build)
 
     def test_custom_order_can_put_ra_before_h2h(self):
         a = {"id": "a", "name": "A", "w": 1, "l": 1, "t": 0, "rs": 6, "ra": 2}

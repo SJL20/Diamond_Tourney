@@ -39,7 +39,7 @@ The master team is a row in `teams`. It holds the club name, age, coach name, an
 
 Default pool order (director can reorder, remove steps, or pick a preset; each pool can have its own chain):
 
-record (win% with a tie as half) → head-to-head → fewest runs allowed → run differential → most runs scored.
+points (1 per win, half per tie) → head-to-head → fewest runs allowed → run differential → most runs scored. A 2-0 team (2 points) ranks ahead of a 1-0 team (1 point). Winning percentage is not the seed.
 
 Head-to-head is group-aware: it applies only for a 2-team tie, or when every pair in the tied group has a decided game. A 3-team cycle skips H2H. Each seed on the standings tab has a “why this seed” line. Public standings print the configured chain.
 

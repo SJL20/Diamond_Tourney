@@ -1100,7 +1100,7 @@ function standingsBlock(standings, eventSlug) {
       })))}
       ${(pool.teams || []).some((t) => t.seed_reason) ? `<ul class="seed-why">${pool.teams.filter((t) => t.seed_reason).map((t) =>
         `<li><b>Seed ${t.seed} ${teamLink(eventSlug, t.slug, t.name)}</b> — ${escapeHtml(t.seed_reason)}</li>`).join("")}</ul>` : ""}
-      <p class="muted">Tiebreak: ${escapeHtml(pool.tiebreak_label || "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored")}.</p>
+      <p class="muted">Tiebreak: ${escapeHtml(pool.tiebreak_label || "points (1 per win, half per tie), then head-to-head, then fewest runs allowed, then run differential, then most runs scored")}.</p>
     </div>`).join("");
 }
 
@@ -1703,7 +1703,7 @@ export async function eventStandings(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "standings", `
     <section class="page-head">
       <h1>Standings</h1>
-      <p class="muted">Each pool prints the order the director saved. Default is record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Head-to-head stays group-aware.</p>
+      <p class="muted">Each pool prints the order the director saved. Default is points (1 per win, half per tie), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Head-to-head stays group-aware.</p>
     </section>
     <section class="grid two">${(board.standings || []).some((p) => (p.teams || []).length)
       ? standingsBlock(board.standings, slug)
@@ -2578,7 +2578,7 @@ function setupAgeFields(ev = {}) {
 }
 
 const TIEBREAK_OPTS = [
-  ["record", "Record (win% — a tie counts as half)"],
+  ["record", "Points (1 per win, half per tie)"],
   ["h2h", "Head-to-head (2-team ties, or a finished group)"],
   ["ra", "Fewest runs allowed"],
   ["diff", "Run differential"],
@@ -2623,7 +2623,7 @@ function setupTiebreakFields(ev = {}) {
   return `
     <details class="setup-block" open>
       <summary>Pool tiebreak order</summary>
-      <p class="muted">Default for every pool: record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Remove a step if this weekend does not use it. Head-to-head is still skipped on a 3-team cycle or when the tied teams have not all played each other.</p>
+      <p class="muted">Default for every pool: points (1 per win, half per tie), then head-to-head, then fewest runs allowed, then run differential, then most runs scored. Remove a step if this weekend does not use it. Head-to-head is still skipped on a 3-team cycle or when the tied teams have not all played each other.</p>
       ${tiebreakListMarkup(order)}
       ${pools.length ? `<div class="pool-tiebreaks">${pools.map((p) => `
         <details class="setup-block">
