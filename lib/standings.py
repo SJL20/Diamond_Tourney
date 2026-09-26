@@ -1,7 +1,7 @@
-"""Pool tiebreak: record (win% with a tie as half), group-aware H2H, RA, diff, RS.
+"""Pool tiebreak: points (1 per win, 1/2 per tie), group-aware H2H, RA, diff, RS.
 
-Default product order (Tourney Machine style, Derek 2026-09-18):
-  record → head-to-head → fewest RA → run differential → most RS
+Default product order:
+  points → head-to-head → fewest RA → run differential → most RS
 
 Head-to-head applies only when the current tied group is exactly two teams
 that have played, or every pair in a larger group has a decided game.
@@ -17,7 +17,7 @@ from __future__ import annotations
 DEFAULT_ORDER = ("record", "h2h", "ra", "diff", "rs")
 
 CRITERION_LABELS = {
-    "record": "better record (tie counts as half a win)",
+    "record": "more points (1 per win, half per tie)",
     "h2h": "won head-to-head",
     "ra": "fewest runs allowed",
     "diff": "better run differential",
@@ -72,7 +72,7 @@ def parse_order(raw) -> list[str]:
 
 def tiebreak_label(order=None) -> str:
     names = {
-        "record": "record (tie = half)",
+        "record": "points (1 per win, half per tie)",
         "h2h": "head-to-head",
         "ra": "fewest runs allowed",
         "diff": "run differential",
@@ -90,6 +90,13 @@ def win_pct(team: dict) -> float:
     if games <= 0:
         return 0.0
     return (wins + 0.5 * ties) / games
+
+
+def standings_points(team: dict) -> float:
+    """Seed points. A win is 1. A tie is 1/2. Games played do not divide this."""
+    wins = int(team.get("w") or 0)
+    ties = int(team.get("t") or 0)
+    return wins + 0.5 * ties
 
 
 def _runs(game: dict, key: str):
@@ -168,7 +175,7 @@ def h2h_mode(group: list[dict], games: list[dict]) -> str:
 
 def criterion_value(team: dict, crit: str, group: list[dict], games: list[dict], mode: str) -> float:
     if crit == "record":
-        return win_pct(team)
+        return standings_points(team)
     if crit == "ra":
         return -int(team.get("ra") or 0)
     if crit == "diff":

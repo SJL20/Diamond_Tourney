@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 142 unit/integration cases + 13 acceptance checks |
+| Tests | 144 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -200,8 +200,9 @@ worth answering before the next session.
 3. First tournament: name, dates, field complex.
 4. The `team_coach` email for the first real team.
 5. ~~Pool tiebreak order~~ — directors can reorder, remove steps, and set a
-   chain per pool. Default is record (tie = half), group-aware H2H, fewest RA,
-   run differential, most RS. Presets: head-to-head first, runs first.
+   chain per pool. Default is points (1 per win, half per tie), group-aware
+   H2H, fewest RA, run differential, most RS. A 2-0 ranks ahead of a 1-0.
+   Presets: head-to-head first, runs first.
 6. **New — finding 2:** for a weekend imported from a public popup that does not
    publish R, BB, SO, or ER, should the board show blanks or should those games
    stay out of the leaders entirely?
@@ -214,6 +215,14 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-26 — Standings rank by points, not winning percentage
+
+A 1-0 team was seed 1 on Scarecrow Slugfest because every undefeated team shared a 1.000 winning percentage, then fewest runs allowed put the shorter record first. The first step is now points: 1 for a win, half for a tie. A 3-0 is 3, a 2-0 is 2, a 1-0 is 1. Head-to-head, runs allowed, run differential, and runs scored still break a points tie. Winning percentage is still calculated and is not the seed.
+
+The order is computed when the board is read. Final scores, the schedule, and bracket games already saved are not rewritten. Drawing a bracket is still a director action, and it still refuses while pool games are open unless they confirm. A weekend whose saved order leaves out the record step, including Gobble Wobble, does not pick up points. Keystone Clash still uses its stored Tourney Machine seeds.
+
+Proved by `test_fewer_games_do_not_outrank_more_points` and `test_points_sort_does_not_rewrite_saved_games`.
 
 ### 2026-09-23 — Google button no longer opens a blank window
 

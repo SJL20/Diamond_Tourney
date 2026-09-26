@@ -36,7 +36,7 @@ const TIEBREAK_ALIASES = {
 };
 
 const TIEBREAK_LABELS = {
-  record: "better record (tie counts as half a win)",
+  record: "more points (1 per win, half per tie)",
   h2h: "won head-to-head",
   ra: "fewest runs allowed",
   diff: "better run differential",
@@ -99,7 +99,7 @@ function tiebreakKeys(order) {
 
 function tiebreakLabel(order) {
   const names = {
-    record: "record (tie = half)",
+    record: "points (1 per win, half per tie)",
     h2h: "head-to-head",
     ra: "fewest runs allowed",
     diff: "run differential",
@@ -228,6 +228,12 @@ function winPct(team) {
   return (w + 0.5 * t) / games;
 }
 
+function standingsPoints(team) {
+  const w = Number(team.w || 0);
+  const t = Number(team.t || 0);
+  return w + 0.5 * t;
+}
+
 function h2hMode(group, games) {
   if (group.length === 2) return pairGames(group[0].id, group[1].id, games).length ? "pair" : "";
   if (group.length >= 3 && completeRoundRobin(group.map(function (t) { return t.id; }), games)) return "rr";
@@ -235,7 +241,7 @@ function h2hMode(group, games) {
 }
 
 function criterionValue(team, crit, group, games, mode) {
-  if (crit === "record") return winPct(team);
+  if (crit === "record") return standingsPoints(team);
   if (crit === "ra") return -Number(team.ra || 0);
   if (crit === "diff") return Number(team.rs || 0) - Number(team.ra || 0);
   if (crit === "rs") return Number(team.rs || 0);
@@ -351,7 +357,7 @@ function sortPool(teams, games, order) {
     row.diff = Number(row.rs || 0) - Number(row.ra || 0);
     row.win_pct = Math.round(winPct(row) * 1000) / 1000;
     const reason = reasons[row.id] || "";
-    const tieKey = [winPct(row), Number(row.ra || 0), row.diff, Number(row.rs || 0)].join("|");
+    const tieKey = [standingsPoints(row), Number(row.ra || 0), row.diff, Number(row.rs || 0)].join("|");
     if (i > 0 && !reason && tieKey === prevKey) {
       row.seed = ranked[i - 1].seed;
       row.tied = true;

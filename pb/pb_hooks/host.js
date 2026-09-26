@@ -426,7 +426,7 @@ function eventJson(rec, app, auth, opts) {
         const order = diamond.parseTiebreak(rec.get("tiebreak"));
         return { order: order, label: diamond.tiebreakLabel(order), explicit: true };
       } catch (err) {
-        return { order: ["record", "h2h", "ra", "diff", "rs"], label: "record (tie = half), then head-to-head, then fewest runs allowed, then run differential, then most runs scored", explicit: true };
+        return { order: ["record", "h2h", "ra", "diff", "rs"], label: "points (1 per win, half per tie), then head-to-head, then fewest runs allowed, then run differential, then most runs scored", explicit: true };
       }
     })(),
     pools: (function () {
