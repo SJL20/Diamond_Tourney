@@ -537,6 +537,71 @@ function gameDetail(app, event, id, auth) {
   };
 }
 
+function findRecord(app, collection, id) {
+  if (!id) return null;
+  try { return app.findRecordById(collection, id); }
+  catch (err) { return null; }
+}
+
+// Home id, away id, or "" when the runs are equal. null when either side is blank.
+function winnerFromRuns(rec) {
+  const hrRaw = rec.get("home_runs");
+  const arRaw = rec.get("away_runs");
+  if (hrRaw == null || hrRaw === "" || arRaw == null || arRaw === "") return null;
+  const hr = Number(hrRaw);
+  const ar = Number(arRaw);
+  if (hr !== hr || ar !== ar) return null;
+  if (hr > ar) return rec.get("home_team") || "";
+  if (ar > hr) return rec.get("away_team") || "";
+  return "";
+}
+
+function bracketSnap(rec) {
+  let note = "";
+  try { note = rec.get("notes") || ""; } catch (err) { note = ""; }
+  return {
+    id: rec.id,
+    status: rec.get("status") || "",
+    home_runs: rec.get("home_runs"),
+    away_runs: rec.get("away_runs"),
+    winner_id: rec.get("winner") || "",
+    note: note,
+  };
+}
+
+function applyBracketUpdate(app, event, rec, body) {
+  if (!rec || rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+  const hasWinner = body.winner_id != null && String(body.winner_id) !== "";
+  const explicitFinal = body.status === "final" || hasWinner;
+  if ((rec.get("status") || "") === "final" && !explicitFinal) {
+    throw new BadRequestError("Bracket game is already final. Send status final to correct the score.");
+  }
+  if (body.home_runs != null && body.home_runs !== "") rec.set("home_runs", Number(body.home_runs));
+  if (body.away_runs != null && body.away_runs !== "") rec.set("away_runs", Number(body.away_runs));
+  const note = body.inning != null ? body.inning : (body.note != null ? body.note : (body.notes != null ? body.notes : null));
+  if (note != null) rec.set("notes", String(note));
+  if (hasWinner) {
+    rec.set("winner", body.winner_id);
+    rec.set("status", "final");
+  } else if (body.status === "final") {
+    const sentHome = body.home_runs != null && body.home_runs !== "";
+    const sentAway = body.away_runs != null && body.away_runs !== "";
+    if (!sentHome || !sentAway) throw new BadRequestError("Final bracket score needs home_runs and away_runs");
+    rec.set("status", "final");
+    const picked = winnerFromRuns(rec);
+    rec.set("winner", picked == null ? "" : picked);
+  } else if (body.status) {
+    if (body.status !== "live" && body.status !== "scheduled") {
+      throw new BadRequestError("Bracket status must be live or final");
+    }
+    rec.set("status", body.status);
+  } else if (body.home_runs != null || body.away_runs != null) {
+    rec.set("status", "live");
+  }
+  app.save(rec);
+  return bracketSnap(rec);
+}
+
 function postBracketScore(app, event, id, body, auth) {
   const rec = app.findRecordById("bracket_games", id);
   if (rec.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
@@ -547,10 +612,16 @@ function postBracketScore(app, event, id, body, auth) {
   if (body.home_runs != null) rec.set("home_runs", Number(body.home_runs));
   if (body.away_runs != null) rec.set("away_runs", Number(body.away_runs));
   rec.set("status", "final");
-  const hr = Number(rec.get("home_runs") || 0);
-  const ar = Number(rec.get("away_runs") || 0);
-  if (hr > ar) rec.set("winner", rec.get("home_team"));
-  else if (ar > hr) rec.set("winner", rec.get("away_team"));
+  const picked = winnerFromRuns(rec);
+  if (picked == null) {
+    const hr = Number(rec.get("home_runs") || 0);
+    const ar = Number(rec.get("away_runs") || 0);
+    if (hr > ar) rec.set("winner", rec.get("home_team"));
+    else if (ar > hr) rec.set("winner", rec.get("away_team"));
+    else rec.set("winner", "");
+  } else {
+    rec.set("winner", picked);
+  }
   app.save(rec);
   const diamond = require(__hooks + "/diamond.js");
   diamond.advanceBracket(app, event.id);
@@ -571,4 +642,7 @@ module.exports = {
   listPendingBoxes: listPendingBoxes,
   gameDetail: gameDetail,
   postBracketScore: postBracketScore,
+  findRecord: findRecord,
+  applyBracketUpdate: applyBracketUpdate,
+  winnerFromRuns: winnerFromRuns,
 };

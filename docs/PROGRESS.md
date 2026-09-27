@@ -216,6 +216,16 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-27 — Bot can post a live bracket score
+
+`POST /api/bot/event-update` used to update pool rows only. A bracket game id returned 404, and the only bracket path needed `bracket_id` plus `winner_id` and finalized immediately. The public bracket card also hid runs unless the game was already final.
+
+A bot (or the event director) can now send the bracket game id as `schedule_id` or `bracket_id`. `status: "live"` stores both run totals and an inning note (`inning`, `note`, or `notes` on `bracket_games.notes`) and does not set a winner or fill the next game. `status: "final"` with both run totals derives the winner from home vs away and advances the bracket the same way a director final does. Equal runs leave the winner blank. `bracket_id` + `winner_id` still finalizes with that winner. A live post does not change a game that is already final; `status: "final"` is the correction. Pool `schedule_id` updates are unchanged.
+
+The bracket tree, weekend schedule, and team sheet show those live runs and a Live label. Migration `1700000040_bracket_notes.js` only adds the text field.
+
+Covered by `LiveBracketScoreTests`.
+
 ### 2026-09-26 — Standings rank by points, not winning percentage
 
 A 1-0 team was seed 1 on Scarecrow Slugfest because every undefeated team shared a 1.000 winning percentage, then fewest runs allowed put the shorter record first. The first step is now points: 1 for a win, half for a tie. A 3-0 is 3, a 2-0 is 2, a 1-0 is 1. Head-to-head, runs allowed, run differential, and runs scored still break a points tie. Winning percentage is still calculated and is not the seed.
