@@ -96,7 +96,6 @@ export function eventDestinations(event, page = "", pb = null) {
     { href: `/t/${slug}/standings`, key: "standings", label: "Standings", tab: true },
     { href: `/t/${slug}/bracket`, key: "bracket", label: "Bracket", tab: true },
     { href: `/t/${slug}/schedule`, key: "schedule", label: "Games", tab: false },
-    { href: `/t/${slug}/stats`, key: "stats", label: "Stats", tab: false },
     { href: `/t/${slug}/info`, key: "info", label: "Info", tab: false },
   ];
   if (event.signup_open !== false) items.push({ href: `/t/${slug}/signup`, key: "signup", label: "Sign up", tab: false });
@@ -111,8 +110,6 @@ export function teamDestinations(team, page = "", pb = null) {
   const canReview = rec && (isSiteAdmin(rec) || (rec.role === "team_coach" && rec.team === team.id));
   const items = [
     { href: `/teams/${slug}/home`, key: "home", label: "Home", tab: true },
-    { href: `/teams/${slug}/hitting`, key: "hitting", label: "Hitting", tab: true },
-    { href: `/teams/${slug}/pitching`, key: "pitching", label: "Pitching", tab: true },
     { href: `/teams/${slug}/games`, key: "games", label: "Games", tab: true },
     { href: `/teams/${slug}/roster`, key: "roster", label: "Roster", tab: false },
   ];

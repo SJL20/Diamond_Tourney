@@ -238,6 +238,13 @@ function dateInput(v) {
   return String(v).slice(0, 10);
 }
 
+function schedulerDayEnds(ev) {
+  const days = (ev.scheduler && ev.scheduler.days) || [];
+  const first = dateInput(days[0] || ev.start);
+  const last = dateInput((days.length ? days[days.length - 1] : ev.end) || first);
+  return { first, last };
+}
+
 function datesBetween(start, end) {
   const out = [];
   const first = dateInput(start);
@@ -489,6 +496,8 @@ function flightCard(fl, i, teams, fields, canRemove) {
           </select>
         </label>
         <label>Bye seeds (if picked) <input name="flight_bye_seeds" value="${escapeHtml(byeSeeds)}" placeholder="1, 2"></label>
+      </div>
+      <div class="flight-shorts">
         <label>First pitch <input name="flight_start" type="time" value="${escapeHtml(fl.start_time || "")}"></label>
         <label>Minutes per slot <input name="flight_slot" type="number" min="30" value="${escapeHtml(String(fl.slot_minutes || 90))}"></label>
         <label>Finish by <input name="flight_finish" type="time" value="${escapeHtml(fl.finish_time || "")}"></label>
@@ -810,6 +819,15 @@ function gameKindLabel(g) {
   return "Pool";
 }
 
+function runBoxValue(g, side) {
+  const v = side === "home" ? g.home_runs : g.away_runs;
+  if (v == null || v === "") return "";
+  const posted = g.status === "final" || g.status === "live" || g.status === "submitted"
+    || g.score_source === "one_book" || g.score_source === "verified" || g.score_source === "conflict";
+  if (!posted && Number(v) === 0) return "";
+  return v;
+}
+
 function sideRuns(g, side) {
   if (g.score_source === "conflict" || g.book_state === "conflict") return "—";
   if (g.home_runs == null && g.away_runs == null) return "";
@@ -1048,7 +1066,7 @@ function guidelinesBlock(ev) {
   if (!ev) return "";
   const req = ev.required_doc_labels || [];
   const pitch = ev.pitch_limit_mode === "none"
-    ? "No posted weekend pitching cap"
+    ? "No posted weekend inning cap"
     : ev.pitch_limit_mode === "pitch_count"
       ? `${ev.pitch_limit_pitches || "—"} pitches`
       : ev.pitch_limit_mode === "both"
@@ -1081,20 +1099,32 @@ async function fetchBoard(slug) {
   return res.json();
 }
 
+function tieMove(poolName, t) {
+  if (!isDirector() || !t.formula_tie) return "";
+  const pool = escapeHtml(poolName);
+  const id = escapeHtml(t.id || "");
+  const group = escapeHtml(String(t.tie_group || ""));
+  return `<span class="tie-move" data-tie-id="${id}" data-tie-pool="${pool}" data-tie-group="${group}">
+    <button type="button" class="btn ghost" data-tie-up="${id}" data-tie-pool="${pool}" data-tie-group="${group}">Up</button>
+    <button type="button" class="btn ghost" data-tie-down="${id}" data-tie-pool="${pool}" data-tie-group="${group}">Down</button>
+  </span>`;
+}
+
 function standingsBlock(standings, eventSlug) {
   return (standings || []).map((pool) => `
     <div class="card">
       <h2>${pool.name === "All teams" ? "Pool standings" : "Pool " + escapeHtml(pool.name)}</h2>
       ${pool.note ? `<p class="muted">${escapeHtml(pool.note)}</p>` : ""}
+      ${(pool.teams || []).some((t) => t.formula_tie) && isDirector() ? `<p class="muted">These teams are still tied after every formula. Up and Down sets the seed. It does not change a score.</p>` : ""}
       ${deskTable(["#", "Team", "W", "L", "T", "RS", "RA", "Diff"], pool.teams.map((t) => `<tr>
         <td>${t.seed != null ? t.seed : "—"}</td>
-        <td>${teamLink(eventSlug, t.slug, t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}</td>
+        <td>${teamLink(eventSlug, t.slug, t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}${tieMove(pool.name, t)}</td>
         <td>${t.w}</td><td>${t.l}</td><td>${t.t || 0}</td>
         <td>${t.rs}</td><td>${t.ra}</td><td>${t.diff > 0 ? "+" : ""}${t.diff}</td>
       </tr>`))}
       ${statList((pool.teams || []).map((t) => statRow({
         seed: t.seed != null ? t.seed : "—",
-        name: `${teamLink(eventSlug, t.slug, t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}`,
+        name: `${teamLink(eventSlug, t.slug, t.name)}${t.host ? ` <span class="badge host">host</span>` : ""}${tieMove(pool.name, t)}`,
         meta: `RS ${t.rs} · RA ${t.ra} · ${t.diff > 0 ? "+" : ""}${t.diff}`,
         value: `${t.w}-${t.l}${t.t ? "-" + t.t : ""}`,
       })))}
@@ -1358,7 +1388,8 @@ function bracketFaceRuns(g, side) {
 
 function matchCard(g, roster = [], plan = null) {
   const isBye = g.status === "bye" || g.is_bye || g.away === "Bye";
-  const tie = !isBye && !!(g.tie || (g.status === "final" && g.home_runs === g.away_runs && g.home && g.away));
+  const bothRuns = g.home_runs != null && g.home_runs !== "" && g.away_runs != null && g.away_runs !== "";
+  const tie = !isBye && !!(g.tie || (g.status === "final" && bothRuns && Number(g.home_runs) === Number(g.away_runs) && g.home && g.away));
   const homeWin = !tie && g.status === "final" && g.winner && g.winner === g.home;
   const awayWin = !tie && g.status === "final" && g.winner && g.winner === g.away;
   const fieldLabel = g.field || "—";
@@ -1378,12 +1409,14 @@ function matchCard(g, roster = [], plan = null) {
     <details class="bk-desk-box">
       <summary>Edit game</summary>
       <form class="bk-desk" data-bk-desk="${escapeHtml(g.id)}">
-        <label>Field
-          <select name="field">${optionList(plan?.fields || [], chosenField)}</select>
-        </label>
-        <label>Time
-          <select name="time">${optionList(plan?.times || [], chosenTime)}</select>
-        </label>
+        <div class="bk-desk-row">
+          <label>Field
+            <select name="field">${optionList(plan?.fields || [], chosenField)}</select>
+          </label>
+          <label>Time
+            <select name="time">${optionList(plan?.times || [], chosenTime)}</select>
+          </label>
+        </div>
         <label>Date
           ${plan?.dates?.length
             ? `<select name="date">${optionList(plan.dates, chosenDate)}</select>`
@@ -1399,9 +1432,14 @@ function matchCard(g, roster = [], plan = null) {
         </div>
       </form>
       ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
-        <input name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" aria-label="Home runs">
-        <input name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" aria-label="Away runs">
-        <button class="btn ghost" type="submit">Final</button>
+        <label class="bk-score-line"><span>${escapeHtml(g.home)}</span>
+          <input name="home_runs" type="number" min="0" value="${runBoxValue(g, "home")}" aria-label="${escapeHtml(g.home)} runs"></label>
+        <label class="bk-score-line"><span>${escapeHtml(g.away)}</span>
+          <input name="away_runs" type="number" min="0" value="${runBoxValue(g, "away")}" aria-label="${escapeHtml(g.away)} runs"></label>
+        <div class="bk-score-actions">
+          <button class="btn ghost" type="button" data-live>Live</button>
+          <button class="btn" type="submit">Final</button>
+        </div>
       </form>` : ""}
     </details>` : "";
   return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""} ${isBye ? "bye" : ""} ${set ? "slot-set" : "slot-open"}">
@@ -1422,8 +1460,11 @@ function matchCard(g, roster = [], plan = null) {
   </article>`;
 }
 
-function renderBracketTree(games, title, blurb, showChampion, roster, plan) {
-  if (!games.length) return "";
+function isByeCard(g) {
+  return !!(g && (g.status === "bye" || g.is_bye || g.away === "Bye"));
+}
+
+function bracketRounds(games) {
   const byRound = {};
   for (const g of games) {
     const r = g.round;
@@ -1436,6 +1477,19 @@ function renderBracketTree(games, title, blurb, showChampion, roster, plan) {
   const rounds = Object.keys(byRound).sort(
     (a, b) => (ROUND_META[a]?.order || 50) - (ROUND_META[b]?.order || 50),
   );
+  if (!rounds.length) return { rounds: [], byRound };
+  const first = rounds[0];
+  byRound[first] = byRound[first].filter((g) => !isByeCard(g));
+  const shown = rounds.filter((r) => byRound[r].length);
+  return { rounds: shown, byRound };
+}
+
+function renderBracketTree(games, title, blurb, showChampion, roster, plan) {
+  if (!games.length) return "";
+  const packed = bracketRounds(games);
+  const rounds = packed.rounds;
+  const byRound = packed.byRound;
+  if (!rounds.length && !showChampion) return "";
   const champ = games.find((g) => g.round === "F" && g.status === "final" && g.winner);
   return `<section class="card bk-card ${showChampion ? "champ-side" : "cons-side"}">
     <h2>${title}</h2>
@@ -1511,14 +1565,19 @@ function bindBracketDesk(slug, root) {
     return true;
   };
   root.querySelectorAll("[data-bk-id]").forEach((form) => {
-    form.addEventListener("submit", async (evnt) => {
-      evnt.preventDefault();
+    const sendScore = async (live) => {
       const data = Object.fromEntries(new FormData(form));
+      if (live) data.live = true;
       if (await post("/bracket/" + form.dataset.bkId + "/score", data)) {
-        flashSaved("Score saved");
+        flashSaved(live ? "Live score saved" : "Final saved");
         eventBracket(slug);
       }
+    };
+    form.addEventListener("submit", async (evnt) => {
+      evnt.preventDefault();
+      await sendScore(false);
     });
+    form.querySelector("[data-live]")?.addEventListener("click", () => sendScore(true));
   });
   root.querySelectorAll("[data-bk-desk]").forEach((form) => {
     const dateEl = form.elements.date;
@@ -1630,6 +1689,57 @@ function upcomingFromBoard(board) {
   return (board.overall || []).filter((g) => g.home && g.away && g.status !== "final" && g.status !== "postponed").slice().sort(compareGames);
 }
 
+function teamJump(teams, eventSlug) {
+  if (!teams || !teams.length) return "";
+  const opts = teams.map((t) =>
+    `<option value="${escapeHtml(teamHref(eventSlug, t.slug))}">${escapeHtml(t.name)}</option>`).join("");
+  return `<label class="team-jump">Go to team
+    <select id="go-team"><option value="">Choose a team</option>${opts}</select>
+  </label>`;
+}
+
+function homeFieldNow(board) {
+  const ev = board.event;
+  const games = (board.overall || []).filter((g) => g.home && g.away && g.status !== "bye" && !g.is_bye);
+  const byField = new Map();
+  for (const g of games) {
+    const key = g.field || "Field not set";
+    if (!byField.has(key)) byField.set(key, []);
+    byField.get(key).push(g);
+  }
+  const names = [...byField.keys()].sort((a, b) => {
+    if (a === "Field not set") return 1;
+    if (b === "Field not set") return -1;
+    return compareFieldNames(a, b);
+  });
+  const open = (g) => g.status !== "final" && g.status !== "postponed" && g.status !== "cancelled" && g.status !== "forfeit" && g.status !== "rained_out";
+  const cards = [];
+  for (const name of names) {
+    const list = byField.get(name).slice().sort(compareGames);
+    const live = list.find((g) => g.status === "live");
+    const next = list.find(open);
+    const pick = live || next;
+    if (pick) cards.push({ name, game: pick });
+  }
+  const finals = games.filter((g) => g.status === "final").slice().sort(compareGames);
+  const now = cards.length
+    ? `<section class="home-fields">${cards.map((c) => `
+        <article class="card home-field${c.game.status === "live" ? " live" : ""}">
+          <p class="kicker">${escapeHtml(c.name)}${c.game.status === "live" ? " · Live" : " · Next"}</p>
+          ${gameCard(c.game, ev.slug)}
+        </article>`).join("")}</section>`
+    : `<section class="card empty"><p>No game is on a field right now. The weekend schedule lists what is posted.</p></section>`;
+  const done = finals.length
+    ? `<section class="card home-finals"><h2>Final</h2>
+        <ul class="home-final-list">${finals.map((g) => `<li>
+          <span class="muted">${escapeHtml([g.field || "Field not set", formatTimeDisplay(g.time) || ""].filter(Boolean).join(" · "))}</span>
+          <span>${teamLink(ev.slug, g.home_slug, g.home || "TBD")} ${escapeHtml(scoreCell(g))} ${teamLink(ev.slug, g.away_slug, g.away || "TBD")}</span>
+        </li>`).join("")}</ul>
+      </section>`
+    : "";
+  return now + done;
+}
+
 function homePhaseBlock(board) {
   const ev = board.event;
   const upcoming = upcomingFromBoard(board);
@@ -1687,6 +1797,7 @@ export async function eventHome(slug) {
         ${ev.signup_open ? `<a class="btn" data-link href="/t/${ev.slug}/signup">Sign a team up</a>` : `<span class="muted">Signup is closed.</span>`}
         <a class="btn ghost" data-link href="/t/${ev.slug}/overall">Weekend schedule</a>
         <a class="btn ghost" data-link href="/t/${ev.slug}/bracket">Open bracket</a>
+        ${teamJump(board.roster, ev.slug)}
         ${ev.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/index.html">Popup site</a>` : ""}
         ${ev.tm_url ? `<a class="btn ghost" href="${escapeHtml(ev.tm_url)}" target="_blank" rel="noopener">Tourney Machine</a>` : ""}
       </div>
@@ -1698,18 +1809,53 @@ export async function eventHome(slug) {
       <p>${escapeHtml(champ.record || "")}${champ.line ? " — " + escapeHtml(champ.line) : ""}</p>
       ${packet?.runner_up ? `<div class="ru"><span>Runner-up</span><b>${escapeHtml(packet.runner_up.team)}</b> ${escapeHtml(packet.runner_up.record || "")}</div>` : ""}
     </section>` : ""}
-    ${homePhaseBlock(board)}
-    ${teamChips(board.roster, ev.slug)}
-    ${(board.standings || []).some((p) => (p.teams || []).length)
-      ? `<section class="grid two">${standingsBlock(board.standings, ev.slug)}</section>` : ""}
+    ${homeFieldNow(board)}
     ${homeGettingThere(ev, board.photos || [])}
     ${fieldsBlock(ev, board.fields, { demote: true })}
   `);
+  document.getElementById("go-team")?.addEventListener("change", (evnt) => {
+    if (evnt.target.value) goEvent(evnt.target.value);
+  });
   await bindFollowToggle();
+}
+
+function bindManualTiebreak(slug) {
+  eventRoot().querySelectorAll("[data-tie-up], [data-tie-down]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pool = btn.getAttribute("data-tie-pool") || "";
+      const group = btn.getAttribute("data-tie-group") || "";
+      const id = btn.getAttribute("data-tie-up") || btn.getAttribute("data-tie-down") || "";
+      const dir = btn.hasAttribute("data-tie-up") ? -1 : 1;
+      const ids = [];
+      eventRoot().querySelectorAll(".tie-move").forEach((node) => {
+        if (node.getAttribute("data-tie-pool") !== pool || node.getAttribute("data-tie-group") !== group) return;
+        const tid = node.getAttribute("data-tie-id") || "";
+        if (tid && !ids.includes(tid)) ids.push(tid);
+      });
+      const idx = ids.indexOf(id);
+      const next = idx + dir;
+      if (idx < 0 || next < 0 || next >= ids.length) return;
+      const swap = ids[idx];
+      ids[idx] = ids[next];
+      ids[next] = swap;
+      const res = await fetch("/api/events/" + encodeURIComponent(slug) + "/standings/tiebreak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader() },
+        body: JSON.stringify({ pool, team_ids: ids }),
+      });
+      if (!res.ok) {
+        alert(await res.text());
+        return;
+      }
+      flashSaved("Tiebreak saved");
+      eventStandings(slug);
+    });
+  });
 }
 
 export async function eventStandings(slug) {
   const board = await fetchBoard(slug);
+  rememberEvent(board.event);
   eventRoot().innerHTML = eventChrome(board.event, "standings", `
     <section class="page-head">
       <h1>Standings</h1>
@@ -1719,6 +1865,7 @@ export async function eventStandings(slug) {
       ? standingsBlock(board.standings, slug)
       : `<section class="card">${tabEmpty(board.event, slug, "standings")}</section>`}</section>
   `);
+  bindManualTiebreak(slug);
 }
 
 export async function eventPools(slug) {
@@ -1734,7 +1881,7 @@ function bracketPageActions(board, slug) {
     <div class="actions">
       ${empty ? `<button class="btn" type="button" id="publish-blank-bracket">Publish blank bracket</button>` : ""}
       <button class="btn ghost" type="button" id="draw-standings-bracket"${finals ? "" : " disabled"}>Draw from standings</button>
-      ${empty ? "" : `<button class="btn ghost" type="button" id="print-bracket">Print</button>`}
+      ${empty ? "" : `<a class="btn ghost" data-link href="/t/${slug}/bracket/print">Print</a>`}
     </div>
     ${finals ? "" : `<p class="muted">Draw from standings waits until a pool game is final.</p>`}
     ${bracketImportDesk()}
@@ -1775,7 +1922,6 @@ function bindBracketPageActions(slug, board) {
       window.alert(err.message || String(err));
     }
   });
-  document.getElementById("print-bracket")?.addEventListener("click", () => window.print());
 }
 
 export async function eventBracket(slug) {
@@ -1787,6 +1933,7 @@ export async function eventBracket(slug) {
     <section class="page-head">
       <h1>Bracket</h1>
       <p class="muted">Championship on top. Consolation sits to the side and never feeds the title game.${director ? " Every card starts collapsed so the tree stays readable. Open Edit game to set field, time, sides, or the final. New games still default to the next open slot." : " Field and first pitch sit on a card after they are set."}</p>
+      <p class="actions"><a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/bracket/print">Printable bracket</a></p>
     </section>
     ${bracketPageActions(board, slug)}
     ${board.bracket.length ? `<div class="bracket-print">${bracketBoards(board.bracket, board.roster, plan)}</div>` : (director ? "" : `<section class="card">${tabEmpty(board.event, slug, "bracket")}</section>`)}
@@ -1798,6 +1945,64 @@ export async function eventBracket(slug) {
     bindBracketImport(slug, (err) => { window.alert(err.message || String(err)); });
     bindBracketPageActions(slug, board);
   }
+}
+
+function printMatch(g) {
+  const homeScore = g.home_runs == null || g.home_runs === "" ? "" : String(g.home_runs);
+  const awayScore = g.away_runs == null || g.away_runs === "" ? "" : String(g.away_runs);
+  return `<div class="bk-sheet-match">
+    <div class="bk-sheet-line"><span>${escapeHtml(g.home || "TBD")}</span><b>${escapeHtml(homeScore)}</b></div>
+    <div class="bk-sheet-line"><span>${escapeHtml(g.away || "TBD")}</span><b>${escapeHtml(awayScore)}</b></div>
+  </div>`;
+}
+
+function printTree(games, title) {
+  const packed = bracketRounds(games);
+  if (!packed.rounds.length) return "";
+  return `<section class="bk-sheet-tree">
+    <h2>${escapeHtml(title)}</h2>
+    <div class="bk-sheet">${packed.rounds.map((r, ri) => {
+      const list = packed.byRound[r];
+      const pairs = [];
+      for (let i = 0; i < list.length; i += 2) pairs.push(list.slice(i, i + 2));
+      const more = ri < packed.rounds.length - 1;
+      return `<div class="bk-sheet-col">
+        <h3>${escapeHtml(ROUND_META[r]?.label || r)}</h3>
+        ${pairs.map((pair) => `<div class="bk-sheet-pair${more ? " has-next" : ""}">${pair.map(printMatch).join("")}</div>`).join("")}
+      </div>`;
+    }).join("")}</div>
+  </section>`;
+}
+
+function printBoards(games) {
+  const flights = uniqueStrings((games || []).map((g) => g.flight || ""));
+  const groups = flights.length ? flights : [""];
+  return groups.map((flight) => {
+    const slice = flights.length ? games.filter((g) => (g.flight || "") === flight) : games;
+    const prefix = flight ? flightTitle(flight) + " · " : "";
+    const champ = slice.filter((g) => gameSide(g) === "championship" || gameSide(g) === "winners");
+    const losers = slice.filter((g) => gameSide(g) === "losers");
+    const cons = slice.filter((g) => gameSide(g) === "consolation");
+    return `${printTree(champ, prefix + "Championship")}${printTree(losers, prefix + "Losers")}${printTree(cons, prefix + "Consolation")}`;
+  }).join("");
+}
+
+export async function eventBracketPrint(slug) {
+  const board = await fetchBoard(slug);
+  rememberEvent(board.event);
+  const sheet = board.bracket.length ? printBoards(board.bracket) : "";
+  eventRoot().innerHTML = eventChrome(board.event, "bracket", `
+    <section class="page-head no-print">
+      <h1>Printable bracket</h1>
+      <p class="muted">${escapeHtml(board.event.name)}. Team and score only, for one page on the fence.</p>
+      <div class="actions">
+        <button class="btn" type="button" id="print-sheet">Print</button>
+        <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/bracket">Back to bracket</a>
+      </div>
+    </section>
+    ${sheet || `<section class="card empty">No bracket games yet.</section>`}
+  `);
+  document.getElementById("print-sheet")?.addEventListener("click", () => window.print());
 }
 
 export async function eventOverall(slug) {
@@ -1997,96 +2202,18 @@ export async function eventGame(slug, id) {
   }
 }
 
+function statsHidden(ev, page) {
+  return eventChrome(ev, page, `<section class="card"><p>Player stats are not posted on the board yet.</p></section>`);
+}
+
 export async function eventLeaders(slug) {
   const board = await fetchBoard(slug);
-  const publishedHit = board.leaders.published_hitting || [];
-  const publishedPit = board.leaders.published_pitching || [];
-  const fullHit = board.leaders.full_hitting || [];
-  const hit = (publishedHit.length ? publishedHit : board.leaders.hitting).map((r) => `<tr>
-    <td>${escapeHtml(r.player || r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-    <td>${r.ab ?? ""}</td><td>${r.h ?? ""}</td><td>${r.rbi ?? ""}</td>
-    <td>${r.avg_display || r.avg || ""}</td><td>${r.ops || ""}</td>
-  </tr>`);
-  const pit = (publishedPit.length ? publishedPit : board.leaders.pitching).map((r) => `<tr>
-    <td>${escapeHtml(r.player || r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-    <td>${r.ip ?? ""}</td><td>${r.k ?? r.so ?? ""}</td><td>${r.era_display || r.era || ""}</td>
-  </tr>`);
-  const full = fullHit.filter((r) => r.q !== false).concat(fullHit.filter((r) => r.q === false));
-  const cap = hasPitchIpCap(board.event, board.leaders);
-  const minAb = board.leaders.min_ab != null ? board.leaders.min_ab : 8;
-  const minIp = board.leaders.min_ip != null ? board.leaders.min_ip : 3;
-  const hitRank = board.leaders.qualify_source === "packet" ? "ranked by OPS on the popup" : "ranked by batting average";
-  const counts = (board.leaders.pitch_counts || []).map((r) => cap ? `<tr>
-    <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-    <td>${r.ip}</td><td>${r.limit_ip != null ? r.limit_ip : board.event.pitch_limit_ip}.0</td>
-    <td>${r.over ? `<span class="badge l">over</span>` : `<span class="badge w">ok</span>`}</td>
-  </tr>` : `<tr>
-    <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-    <td>${r.ip}</td>
-  </tr>`);
-  const approveBanner = await directorApproveBanner(slug, board.event);
-  eventRoot().innerHTML = eventChrome(board.event, "stats", `
-    <section class="page-head">
-      <h1>Stat leaders</h1>
-      <p class="muted">${escapeHtml(qualifyNote(board.leaders))}</p>
-      <div class="actions">
-        <a class="btn ghost" data-link href="/t/${board.event.slug}/stats">Full board</a>
-        <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
-      </div>
-    </section>
-    ${approveBanner}
-    <section class="grid two">
-      <div class="card"><h2>Hitting leaders</h2><p class="muted">Min ${minAb} AB · ${hitRank}</p>
-        ${deskTable(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS"], hit)}
-        ${statList((publishedHit.length ? publishedHit : board.leaders.hitting).map((r) => hitStatRow(r, escapeHtml(r.player || r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</div>
-      <div class="card"><h2>Pitching leaders</h2><p class="muted">Min ${minIp} IP · ERA as published</p>
-        ${deskTable(["Player", "Team", "IP", "K", "ERA"], pit)}
-        ${statList((publishedPit.length ? publishedPit : board.leaders.pitching).map((r) => pitStatRow(r, escapeHtml(r.player || r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</div>
-    </section>
-    ${full.length ? `<section class="card"><h2>Full published hitting board</h2>
-      <p class="muted">Every published line. Qualifiers first.</p>
-      ${deskTable(["Player", "Team", "AB", "H", "RBI", "AVG", "OPS", ""], full.map((r) => `<tr>
-        <td>${escapeHtml(r.player)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-        <td>${r.ab ?? "—"}</td><td>${r.h ?? "—"}</td><td>${r.rbi ?? "—"}</td><td>${r.avg ?? "—"}</td><td>${r.ops ?? "—"}</td>
-        <td>${r.q ? `<span class="badge w">qual</span>` : `<span class="badge t">below</span>`}</td>
-      </tr>`))}
-      ${statList(full.map((r) => hitStatRow(r, escapeHtml(r.player), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}</section>` : ""}
-    <section class="card"><h2>Pitching counts</h2>
-      <p class="muted">${cap ? `Weekend limit ${board.event.pitch_limit_ip}.0 IP. Tracked in one place, not forty texts.` : "No posted weekend inning cap. IP used is tracked here."}</p>
-      ${deskTable(cap ? ["Player", "Team", "IP used", "Limit", ""] : ["Player", "Team", "IP used"], counts)}
-      ${statList((board.leaders.pitch_counts || []).map((r) => statRow({
-        name: escapeHtml(r.name_key),
-        meta: `${teamNameLink(slug, board.roster, r.team)}${cap && r.limit_ip != null ? ` · cap ${r.limit_ip}.0` : ""}`,
-        value: escapeHtml(String(r.ip ?? "—")),
-      })))}
-    </section>`);
+  eventRoot().innerHTML = statsHidden(board.event, "stats");
 }
 
 export async function eventAwards(slug) {
   const board = await fetchBoard(slug);
-  const at = board.leaders.all_tournament;
-  eventRoot().innerHTML = eventChrome(board.event, "awards", `
-    <section class="page-head print-sheet">
-      <h1>All-tournament</h1>
-      <p class="muted">Picked on numbers, not on which kid the director happened to watch. Weekend awards stay 8 AB / 3.0 IP.</p>
-      <div class="actions"><button class="btn" type="button" onclick="window.print()">Print award sheet</button></div>
-    </section>
-    <section class="grid two">
-      <div class="card"><h2>Hitters</h2>
-        ${deskTable(["Player", "Team", "AVG", "RBI"], at.hitters.map((r) => `<tr>
-          <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-          <td>${r.avg_display}</td><td>${r.rbi}</td></tr>`))}
-        ${statList(at.hitters.map((r) => hitStatRow(r, escapeHtml(r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}
-      </div>
-      <div class="card"><h2>Pitchers</h2>
-        ${deskTable(["Player", "Team", "IP", "ERA"], at.pitchers.map((r) => `<tr>
-          <td>${escapeHtml(r.name_key)}</td><td>${teamNameLink(slug, board.roster, r.team)}</td>
-          <td>${r.ip}</td><td>${r.era_display}</td></tr>`))}
-        ${statList(at.pitchers.map((r) => pitStatRow(r, escapeHtml(r.name_key), { teamHtml: teamNameLink(slug, board.roster, r.team) })))}
-      </div>
-    </section>
-    <p class="muted">Print Sunday at the field while everybody is still there.</p>
-  `);
+  eventRoot().innerHTML = statsHidden(board.event, "awards");
 }
 
 export async function eventList() {
@@ -2416,31 +2543,7 @@ function mountStatBoard({ hitting, pitching, slug, roster, showTeam, emptyHtml }
 
 export async function eventStats(slug) {
   const board = await fetchBoard(slug);
-  const hitting = board.leaders.full_hitting || [];
-  const pitching = board.leaders.full_pitching || [];
-  const teams = [...new Set([...hitting, ...pitching].map((r) => r.team).filter(Boolean))].sort();
-  const approveBanner = await directorApproveBanner(slug, board.event);
-  eventRoot().innerHTML = eventChrome(board.event, "stats", `
-    <section class="page-head">
-      <h1>Full stats board</h1>
-      <p class="muted">${escapeHtml(qualifyNote(board.leaders) || "Published scorebook lines. Filter by team. Qualifying line scales with games played, up to 8 AB / 3.0 IP.")}</p>
-      <div class="actions">
-        <a class="btn ghost" data-link href="/t/${board.event.slug}/leaders">Leaders</a>
-        <a class="btn ghost" data-link href="/t/${board.event.slug}/awards">Awards</a>
-        ${board.event.slug === "keystone-clash-2026" ? `<a class="btn ghost" href="/popup/stats.html">Popup stats</a>` : ""}
-      </div>
-    </section>
-    ${approveBanner}
-    ${statBoardShell({ showTeam: true, teams })}
-  `);
-  mountStatBoard({
-    hitting,
-    pitching,
-    slug,
-    roster: board.roster,
-    showTeam: true,
-    emptyHtml: () => tabEmpty(board.event, slug, "stats"),
-  });
+  eventRoot().innerHTML = statsHidden(board.event, "stats");
 }
 
 function isKeystoneParkingAsset(url) {
@@ -3821,7 +3924,8 @@ export async function eventAdmin(slug) {
           ${scheduleImportDesk()}
           <form class="form wide" id="auto-form">
             <div class="form-grid two">
-              <label>Days (one per line or comma) <textarea name="days" rows="2">${escapeHtml((ev.scheduler && ev.scheduler.days && ev.scheduler.days.length ? ev.scheduler.days : [ev.start, ev.end].filter(Boolean)).join("\n") || "")}</textarea></label>
+              <label>First day <input name="day_start" type="date" value="${escapeHtml(schedulerDayEnds(ev).first)}"></label>
+              <label>Last day <input name="day_end" type="date" value="${escapeHtml(schedulerDayEnds(ev).last)}"></label>
               <label>Games per team in pool <input name="games_per_team" type="number" min="1" value="${escapeHtml(String((ev.scheduler && ev.scheduler.games_per_team) || 2))}"></label>
               <label>First pitch <input name="start_time" type="time" value="${escapeHtml(ev.hours_start || "08:00")}"></label>
               <label>No start after <input name="end_time" type="time" value="${escapeHtml(ev.hours_end || "18:00")}"></label>
@@ -3841,22 +3945,22 @@ export async function eventAdmin(slug) {
             </div>
           </form>
           <h3>Games by field</h3>
-          ${games.length ? table(["Game", "When", "Field", "Home", "Away", "Score", ""], games.map((g) => `<tr>
+          ${games.length ? table(["Game", "When", "Field", "Home", "Away", ""], games.map((g) => `<tr>
             <td>${gameNoCell(g)}</td>
-            <td><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}" style="width:auto">
-                <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}" style="width:auto"></td>
+            <td><span class="sched-when"><input data-edit="${g.id}" name="when_date" type="date" value="${escapeHtml(g.date || "")}">
+                <input data-edit="${g.id}" name="when_time" type="time" value="${escapeHtml(g.time || "")}"></span></td>
             <td><select data-edit="${g.id}" name="field">${fieldOpts.replace(`value="${escapeHtml(g.field)}"`, `value="${escapeHtml(g.field)}" selected`)}</select></td>
-            <td><select data-edit="${g.id}" name="home_id" required>${teamOptions(teams, g.home_id, "Select a registered team")}</select></td>
-            <td><select data-edit="${g.id}" name="away_id" required>${teamOptions(teams, g.away_id, "Select a registered team")}</select></td>
-            <td><input data-edit="${g.id}" name="home_runs" type="number" min="0" value="${g.home_runs ?? ""}" style="width:4.2rem">
-                <input data-edit="${g.id}" name="away_runs" type="number" min="0" value="${g.away_runs ?? ""}" style="width:4.2rem"></td>
-            <td>
+            <td><span class="sched-side"><select data-edit="${g.id}" name="home_id" required>${teamOptions(teams, g.home_id, "Select a registered team")}</select>
+                <input data-edit="${g.id}" name="home_runs" type="number" min="0" value="${runBoxValue(g, "home")}" aria-label="Home runs"></span></td>
+            <td><span class="sched-side"><select data-edit="${g.id}" name="away_id" required>${teamOptions(teams, g.away_id, "Select a registered team")}</select>
+                <input data-edit="${g.id}" name="away_runs" type="number" min="0" value="${runBoxValue(g, "away")}" aria-label="Away runs"></span></td>
+            <td><span class="sched-actions">
               <button class="btn ghost" type="button" data-save-game="${g.id}">Save</button>
               <button class="btn ghost" type="button" data-score-game="${g.id}">Final</button>
               <a data-link href="/t/${ev.slug}/games/${g.id}">Box</a>
               <button class="btn ghost" type="button" data-delete-game="${g.id}">Remove</button>
               ${escapeHtml(g.status)}
-            </td>
+            </span></td>
           </tr>`), { className: "card-table sched-edit" }) : `<p class="empty">No pool games yet. Sign up teams in the same pool, then auto-schedule or add a game below.</p>`}
           <form class="form wide" id="add-game-form">
             <h3>Add one game</h3>
@@ -4056,8 +4160,10 @@ export async function eventAdmin(slug) {
     } catch (err) { showErr(err); }
   });
   function schedulerBody(fd) {
+    const first = fd.get("day_start") || "";
+    const last = fd.get("day_end") || first;
     return {
-      days: String(fd.get("days") || ""),
+      days: datesBetween(first, last).join(","),
       games_per_team: Number(fd.get("games_per_team") || 2),
       start_time: fd.get("start_time") || "08:00",
       end_time: fd.get("end_time") || "18:00",
@@ -4632,12 +4738,6 @@ export async function eventTeamPage(eventSlug, teamSlug) {
         ${page.box_scores ? `<p class="muted">Box scores: ${page.box_scores.filter((b) => b.submitted).length} submitted</p>` : ""}
         <p class="muted">Follow this team to add yourself to its fan list. Your email stays off the public page.</p>
       </section>
-      ${(page.hitting || []).length || (page.pitching || []).length ? statBoardShell({
-        showTeam: false,
-        teams: [],
-        title: "Player stats",
-        note: page.stats_note || qualifyNote(null),
-      }) : ""}
       ${(page.bracket_path || []).length ? `<section class="card">
         <h2>Bracket path</h2>
         ${table(["Game", "Round", "Opponent", "Score", "When"], page.bracket_path.map((g) => {
@@ -4655,16 +4755,6 @@ export async function eventTeamPage(eventSlug, teamSlug) {
       </section>` : ""}
     </article>
   `);
-  if ((page.hitting || []).length || (page.pitching || []).length) {
-    mountStatBoard({
-      hitting: page.hitting || [],
-      pitching: page.pitching || [],
-      slug: ev.slug,
-      roster: [],
-      showTeam: false,
-      emptyHtml: () => `<p class="empty">No player lines in this view.</p>`,
-    });
-  }
   await bindFollowToggle();
 }
 

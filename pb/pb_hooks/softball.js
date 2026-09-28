@@ -543,6 +543,57 @@ function requireEventAdmin(e, event) {
   throw new ForbiddenError("Only the director who created this tournament, a listed co-owner, or a site admin can do that.");
 }
 
+function pad2(n) {
+  return n < 10 ? "0" + n : String(n);
+}
+
+function nthWeekday(year, monthIndex, weekday, n) {
+  const firstDow = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+  return 1 + ((weekday - firstDow + 7) % 7) + (n - 1) * 7;
+}
+
+// US Eastern wall clock. DST is the second Sunday in March through the first Sunday in November.
+function easternOffsetHours(y, mo, d, h, mi) {
+  const startDay = nthWeekday(y, 2, 0, 2);
+  const endDay = nthWeekday(y, 10, 0, 1);
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+  const startWall = Date.UTC(y, 2, startDay, 2, 0);
+  const endWall = Date.UTC(y, 10, endDay, 2, 0);
+  if (wall >= startWall && wall < endWall) return -4;
+  return -5;
+}
+
+function easternWallUtc(y, mo, d, h, mi) {
+  const off = easternOffsetHours(y, mo, d, h, mi);
+  return Date.UTC(y, mo - 1, d, h - off, mi);
+}
+
+function easternYmd(utcMs) {
+  const ms = Number(utcMs);
+  if (!ms) return "";
+  for (let off = -4; off >= -5; off--) {
+    const local = new Date(ms + off * 3600000);
+    const y = local.getUTCFullYear();
+    const mo = local.getUTCMonth() + 1;
+    const d = local.getUTCDate();
+    const h = local.getUTCHours();
+    const mi = local.getUTCMinutes();
+    if (easternOffsetHours(y, mo, d, h, mi) === off) {
+      return y + "-" + pad2(mo) + "-" + pad2(d);
+    }
+  }
+  const local = new Date(ms - 4 * 3600000);
+  return local.getUTCFullYear() + "-" + pad2(local.getUTCMonth() + 1) + "-" + pad2(local.getUTCDate());
+}
+
+function shiftYmd(ymd, days) {
+  const m = String(ymd || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return "";
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + Number(days || 0) * 86400000;
+  const d = new Date(ms);
+  return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
+}
+
 function requireEventAdminOrBot(e, event) {
   const auth = e.auth;
   if (!auth) throw new UnauthorizedError("login required");
@@ -581,6 +632,9 @@ module.exports = {
   requireRole: requireRole,
   requireEventAdmin: requireEventAdmin,
   requireEventAdminOrBot: requireEventAdminOrBot,
+  easternWallUtc: easternWallUtc,
+  easternYmd: easternYmd,
+  shiftYmd: shiftYmd,
   notifyBotB: notifyBotB,
   rebuildTeamRecord: rebuildTeamRecord,
 };

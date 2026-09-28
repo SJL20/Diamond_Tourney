@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 145 unit/integration cases + 13 acceptance checks |
+| Tests | 147 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -215,6 +215,40 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-28 — Review both open pull requests before merge
+
+PR #53 (`cursor/live-bracket-scores-9944`) is the bot live-score path. `POST /api/bot/event-update` accepts a bracket game id as `schedule_id` or `bracket_id`. Live stores both run totals and an inning note and does not set a winner. Final derives the winner from the two totals and then `advanceBracket` fills the next game only when that game is final and has a winner. A tie leaves the winner blank. A live post on an already-final game is rejected. Pool updates are unchanged. Migration `1700000040_bracket_notes.js` only adds `notes`. CI on that pull request is green.
+
+This branch is the director desk, one box-score email, hidden player stats, and the find filter. Its CI failed because hiding the pitching-counts table removed the sentence “No posted weekend inning cap.” That sentence is back on the public weekend guidelines when pitching mode is none. Player lines stay off the board. The director Live/Final route stays separate from the bot route.
+
+### 2026-09-28 — Dropdowns and buttons hug their label
+
+Dropdowns and buttons size to the text on them. A short choice such as a pool letter, a field name, Live, or Save stays a small bubble. A long team name still grows with that name and stops at the edge of the column. Typed fields (names, notes, dates) still fill the column. The phone admin section picker, the admin menu, and the Google button still span their row.
+
+Proved in the browser on the Keystone Edit game form and Harbor Eight games-by-field rows. Field, time, team menus, Live, Final, Save, and Remove each sit as wide as their own label. A long team name is wider than a clock time. No score was saved.
+
+### 2026-09-28 — Shorter bracket desk, one box-score email, stats hidden
+
+PR #53 is merged. It lets `POST /api/bot/event-update` take a bracket game id: a live post stores the runs and does not fill the next game, and a final post picks the winner and advances. The director buttons added here are a separate route, `POST /api/events/{slug}/bracket/{id}/score`.
+
+The Edit game form is about half as tall. Field and time share a row. Save, Swap, and Reopen share a row. Each team name sits on the same line as its run box, with Live and Final beside each other. Live stores the runs, leaves the winner empty, and does not move a team. A later Live post on a game that is already final is ignored. Final still advances the winner. A blank run box does not count as 0 and does not win. The runs column cannot store a blank, so a cleared box is saved as 0 with `runs_entered` false and the board shows that side empty. A typed 0 still shows.
+
+The public tree and the printable sheet drop bye cards from the first round only. Later byes stay. Printable bracket is a link at the top of `/t/{slug}/bracket` and opens `/t/{slug}/bracket/print`. That sheet is team and score only. The director Print button opens the same sheet.
+
+Player stats, leaders, and awards are not drawn on the public board, the year board, the event team page, or the logged-in season book. `/t/{slug}/stats`, `/leaders`, `/awards`, and `/teams/{slug}/hitting` and `/pitching` say “Player stats are not posted on the board yet.” Stored lines stay. The director Approve stats desk stays. Formulas are unchanged.
+
+Games by field drops the separate Score column. Each run box sits beside that team. Date and time share the When cell. An unplayed game whose stored runs are still the column default of 0 shows an empty box.
+
+Box-score mail is one note per team per game, one hour after the printed start, read as Eastern time, and only on that same Eastern day. A 9:00 game sends nothing at 9:30 and one note at 10:00. A later run that day does not send another. No start time, or a cancelled, forfeit, postponed, rained-out, or bye game, still sends nothing. A director Resend is one extra note and does not start a series.
+
+A director can order a pool group only after points, head-to-head, runs allowed, run differential, and runs scored still leave them tied. The order is stored on the event. Those teams take the next seeds and the reason is “director tiebreak.” A later score that separates them drops the order. A bot cannot call `POST /api/events/{slug}/standings/tiebreak`. A drawn bracket is left as saved.
+
+Find still defaults to current and future weekends, through the 7th day after the end date.
+
+Not in this pass: the admin jump list, the venue day rows, and the bracket-scheduler card are still the taller spacing.
+
+Proved by `test_live_bracket_score_stores_runs_and_does_not_advance`, `test_director_tiebreak_orders_a_true_tie_only`, the timing block in `test_box_mail_tokens_reconcile_and_privacy`, and `test_team_page_player_stats_use_the_stats_board`. `python3 -m unittest scripts.test_metrics scripts.test_pdf_box scripts.test_diamond` and `python3 scripts/acceptance_test.py` passed. A browser pass on Keystone Clash opened the printable sheet, the Edit game form (Field and Time on one row, Live and Final on one row), the stats sentence, and the checked Find box. Harbor Eight’s Games by field rows show the run box beside each team. No score was saved in the browser.
 
 ### 2026-09-27 — Bot can post a live bracket score
 

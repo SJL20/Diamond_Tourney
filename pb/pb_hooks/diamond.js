@@ -392,8 +392,202 @@ function eventTiebreak(app, eventId) {
   }
 }
 
+// Goja does not export a key added with bracket notation, and a JSON value read
+// back from PocketBase is not a plain array (length is missing, for-in walks
+// scan/unmarshalJSON). Round-trip through a JSON string and copy by index.
+function idList(v) {
+  const out = [];
+  if (v == null || v === "") return out;
+  let src = v;
+  if (typeof src !== "string") {
+    try { src = JSON.stringify(src); } catch (err) { return out; }
+  }
+  if (!src || src === "[]" || src === "null") return out;
+  try { src = JSON.parse(src); } catch (err) { return out; }
+  if (!src || typeof src.length !== "number") return out;
+  for (let i = 0; i < src.length; i++) {
+    const s = String(src[i] == null ? "" : src[i]);
+    if (!s || s === "undefined" || s === "null") continue;
+    out.push(s);
+  }
+  return out;
+}
+
+function tiePairs(raw) {
+  const pairs = [];
+  if (raw == null || raw === "" || raw === "[]") return pairs;
+  let src = raw;
+  if (typeof src !== "string") {
+    try { src = JSON.stringify(src); } catch (err) { return pairs; }
+  }
+  let obj;
+  try { obj = JSON.parse(src); } catch (err) { return pairs; }
+  if (!obj || typeof obj !== "object") return pairs;
+  const keys = [];
+  for (const k in obj) keys.push(k);
+  for (let i = 0; i < keys.length; i++) {
+    const k = String(keys[i] || "");
+    if (!k || k === "scan" || k === "unmarshalJSON") continue;
+    const list = idList(obj[k]);
+    if (list.length) pairs.push([k, list]);
+  }
+  return pairs;
+}
+
+function tiebreakPayload(prev, pool, ids) {
+  const bits = [];
+  const pairs = tiePairs(prev);
+  for (let i = 0; i < pairs.length; i++) {
+    if (pairs[i][0] === pool) continue;
+    bits.push(JSON.stringify(pairs[i][0]) + ":" + JSON.stringify(pairs[i][1]));
+  }
+  bits.push(JSON.stringify(String(pool)) + ":" + JSON.stringify(idList(ids)));
+  return JSON.parse("{" + bits.join(",") + "}");
+}
+
+function runsEntered(raw) {
+  if (raw == null || raw === "") return null;
+  let src = raw;
+  if (typeof src !== "string") {
+    try { src = JSON.stringify(src); } catch (err) { return null; }
+  }
+  try { src = JSON.parse(src); } catch (err) { return null; }
+  if (!src || typeof src !== "object") return null;
+  return src;
+}
+
+function shownRuns(rec, side) {
+  const entered = runsEntered(rec.getString("runs_entered"));
+  if (entered) {
+    const flag = entered[side];
+    if (flag === false || flag === "false" || String(flag) === "false") return null;
+  }
+  const v = rec.get(side === "home" ? "home_runs" : "away_runs");
+  return v == null || v === "" ? null : v;
+}
+
+function manualTiebreakMap(app, eventId) {
+  try {
+    const ev = app.findRecordById("events", eventId);
+    const map = {};
+    const pairs = tiePairs(ev.getString("tiebreak_manual"));
+    for (let i = 0; i < pairs.length; i++) map[pairs[i][0]] = pairs[i][1];
+    return map;
+  } catch (err) {
+    return {};
+  }
+}
+
+function markFormulaTieGroups(ranked) {
+  let i = 0;
+  let group = 0;
+  while (i < ranked.length) {
+    let j = i + 1;
+    const shared = !!(ranked[i].tied && ranked[i].seed != null);
+    while (j < ranked.length && shared && ranked[j].tied && ranked[j].seed === ranked[i].seed) j++;
+    if (j - i > 1) {
+      group++;
+      for (let k = i; k < j; k++) {
+        ranked[k].formula_tie = true;
+        ranked[k].tie_group = group;
+      }
+    } else {
+      ranked[i].formula_tie = false;
+      ranked[i].tie_group = 0;
+    }
+    i = j;
+  }
+  return ranked;
+}
+
+function applyDirectorTiebreak(ranked, orderedIds) {
+  const ids = idList(orderedIds);
+  if (ids.length < 2) return ranked;
+  const rank = {};
+  for (let i = 0; i < ids.length; i++) rank[String(ids[i])] = i;
+  const out = ranked.slice();
+  let i = 0;
+  while (i < out.length) {
+    if (!out[i].formula_tie) { i++; continue; }
+    const group = out[i].tie_group;
+    let j = i + 1;
+    while (j < out.length && out[j].tie_group === group) j++;
+    const slice = out.slice(i, j);
+    const known = slice.some(function (t) { return rank[String(t.id)] != null; });
+    if (known) {
+      slice.sort(function (a, b) {
+        const ar = rank[String(a.id)];
+        const br = rank[String(b.id)];
+        if (ar == null && br == null) return 0;
+        if (ar == null) return 1;
+        if (br == null) return -1;
+        return ar - br;
+      });
+      const base = Number(out[i].seed || i + 1);
+      for (let k = 0; k < slice.length; k++) {
+        slice[k].seed = base + k;
+        if (rank[String(slice[k].id)] != null) slice[k].seed_reason = "director tiebreak";
+        out[i + k] = slice[k];
+      }
+    }
+    i = j;
+  }
+  return out;
+}
+
+function mergeTieOrder(prev, groupIds) {
+  const set = {};
+  for (let i = 0; i < groupIds.length; i++) set[String(groupIds[i])] = true;
+  const next = [];
+  const seen = {};
+  let gi = 0;
+  const prior = prev || [];
+  for (let i = 0; i < prior.length; i++) {
+    const id = String(prior[i]);
+    if (set[id]) {
+      if (gi < groupIds.length) {
+        const placed = String(groupIds[gi]);
+        next.push(placed);
+        seen[placed] = true;
+        gi++;
+      }
+    } else next.push(id);
+  }
+  while (gi < groupIds.length) {
+    const placed = String(groupIds[gi]);
+    if (!seen[placed]) next.push(placed);
+    gi++;
+  }
+  return next;
+}
+
+function saveManualTiebreak(app, event, body) {
+  const pool = String((body && body.pool) || "").trim();
+  if (!pool) throw new BadRequestError("Name the pool.");
+  const rawIds = (body && body.team_ids) || [];
+  if (!rawIds.length || rawIds.length < 2) throw new BadRequestError("Name the teams in order.");
+  const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "", 500, 0, { e: event.id });
+  const allowed = {};
+  for (let i = 0; i < teams.length; i++) allowed[teams[i].id] = true;
+  const ids = [];
+  for (let i = 0; i < rawIds.length; i++) {
+    const id = String(rawIds[i] || "");
+    if (allowed[id] && ids.indexOf(id) < 0) ids.push(id);
+  }
+  if (ids.length < 2) throw new BadRequestError("Those teams are not on this tournament.");
+  const raw = event.getString("tiebreak_manual");
+  const stored = {};
+  const pairs = tiePairs(raw);
+  for (let i = 0; i < pairs.length; i++) stored[pairs[i][0]] = pairs[i][1];
+  const nextIds = mergeTieOrder(stored[pool] || [], ids);
+  event.set("tiebreak_manual", tiebreakPayload(raw, pool, nextIds));
+  app.save(event);
+  return { ok: true, standings: poolStandings(app, event.id) };
+}
+
 function poolStandings(app, eventId) {
   const eventOrder = eventTiebreak(app, eventId);
+  const manual = manualTiebreakMap(app, eventId);
   const teams = app.findRecordsByFilter("event_teams", "event = {:e}", "name", 500, 0, { e: eventId });
   const published = teams.some(function (t) {
     return Number(t.get("published_w") || 0) + Number(t.get("published_l") || 0) + Number(t.get("published_t") || 0) > 0;
@@ -450,7 +644,7 @@ function poolStandings(app, eventId) {
   const names = Object.keys(pools).sort();
   for (const name of names) {
     const order = poolTiebreak(app, eventId, name, eventOrder);
-    const ranked = sortPool(pools[name], games, order);
+    const ranked = applyDirectorTiebreak(markFormulaTieGroups(sortPool(pools[name], games, order)), manual[name] || []);
     out.push({ name: name, teams: ranked, tiebreak_label: tiebreakLabel(order), tiebreak: { order: order, label: tiebreakLabel(order) } });
   }
   return out;
@@ -928,8 +1122,10 @@ function publicBoard(app, event, auth) {
   try { feeds = scheduleMod.parseScheduler(event.get("scheduler")).bracket_feeds || {}; } catch (err) { feeds = {}; }
   const bracket = bracketRecs.map(function (g) {
       const round = g.get("round");
-      const hr = Number(g.get("home_runs") || 0);
-      const ar = Number(g.get("away_runs") || 0);
+      const homeRuns = shownRuns(g, "home");
+      const awayRuns = shownRuns(g, "away");
+      const hr = homeRuns == null || homeRuns === "" ? null : Number(homeRuns);
+      const ar = awayRuns == null || awayRuns === "" ? null : Number(awayRuns);
       const label = normGameLabel(g.get("game_id"));
       const fl = String(g.get("flight") || "").toLowerCase();
       const feed = feeds[(fl ? fl + ":" : "") + label] || feeds[label] || feeds[g.get("game_id")] || {};
@@ -959,8 +1155,8 @@ function publicBoard(app, event, auth) {
         away_id: g.get("away_team") || "",
         home_slug: (function () { try { return app.findRecordById("event_teams", g.get("home_team")).get("slug"); } catch (err) { return ""; } })(),
         away_slug: (function () { try { return app.findRecordById("event_teams", g.get("away_team")).get("slug"); } catch (err) { return ""; } })(),
-        home_runs: conflict ? null : g.get("home_runs"),
-        away_runs: conflict ? null : g.get("away_runs"),
+        home_runs: conflict ? null : homeRuns,
+        away_runs: conflict ? null : awayRuns,
         score_source: source,
         book_state: source || "",
         winner: teamName(g.get("winner")),
@@ -973,7 +1169,7 @@ function publicBoard(app, event, auth) {
         field: g.get("field_name") || "",
         time: g.get("time") || "",
         date: g.get("date") || "",
-        tie: g.get("status") === "final" && hr === ar,
+        tie: g.get("status") === "final" && hr != null && ar != null && hr === ar,
       };
     });
   return {
@@ -1091,5 +1287,6 @@ module.exports = {
   poolTiebreak: poolTiebreak,
   tiebreakLabel: tiebreakLabel,
   sortPool: sortPool,
+  saveManualTiebreak: saveManualTiebreak,
   DEFAULT_TIEBREAK: DEFAULT_TIEBREAK,
 };

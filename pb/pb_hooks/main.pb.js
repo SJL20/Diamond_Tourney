@@ -379,8 +379,9 @@ routerAdd("GET", "/api/year/{year}/board", (e) => {
 
 routerAdd("GET", "/api/events/search", (e) => {
   const host = require(__hooks + "/host.js");
-  const q = (e.requestInfo().query || {}).q || "";
-  return e.json(200, { events: host.searchEvents(e.app, q) });
+  const query = e.requestInfo().query || {};
+  const q = query.q || "";
+  return e.json(200, { events: host.searchEvents(e.app, q, { current: query.current }) });
 });
 
 routerAdd("POST", "/api/events/create", (e) => {
@@ -758,6 +759,14 @@ routerAdd("POST", "/api/events/{slug}/schedule/{id}/delete", (e) => {
   const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
   sb.requireEventAdmin(e, event);
   return e.json(200, schedule.deleteGame(e.app, event, e.request.pathValue("id")));
+}, $apis.requireAuth());
+
+routerAdd("POST", "/api/events/{slug}/standings/tiebreak", (e) => {
+  const sb = require(__hooks + "/softball.js");
+  const diamond = require(__hooks + "/diamond.js");
+  const event = e.app.findFirstRecordByData("events", "slug", e.request.pathValue("slug"));
+  sb.requireEventAdmin(e, event);
+  return e.json(200, diamond.saveManualTiebreak(e.app, event, e.requestInfo().body || {}));
 }, $apis.requireAuth());
 
 routerAdd("POST", "/api/events/{slug}/bracket/{id}/score", (e) => {

@@ -4,8 +4,7 @@ const BUFFER_MINUTES = 15;
 const DEFAULT_GAME_MINUTES = 90;
 const TOKEN_DAYS = 7;
 const HOUR_MS = 60 * 60 * 1000;
-const SLOT_GRACE_MS = 45 * 60 * 1000;
-const MAX_MAILS = 3;
+const MAX_MAILS = 1;
 
 function teamSlug(app, id) {
   if (!id) return "";
@@ -37,10 +36,16 @@ function isSuppressed(game) {
 
 function parseClock(date, time) {
   const d = String(date || "");
-  const t = String(time || "00:00");
+  const t = String(time || "").trim();
+  if (!d || !t) return 0;
   const m = (d + "T" + t).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})/);
   if (!m) return 0;
-  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  const sb = require(__hooks + "/softball.js");
+  return sb.easternWallUtc(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]));
+}
+
+function gameStartMs(game) {
+  return parseClock(game.get("date"), game.get("time"));
 }
 
 function expectedEndMs(event, game) {
@@ -66,14 +71,13 @@ function hasDate(rec, field) {
   return dateMs(rec.get(field)) > 0;
 }
 
-// 1 = just after the scheduled end, 2 = +1 hour, 3 = +2 hours, 4 = window closed.
-function mailSlot(overMs, nowMs) {
-  if (!overMs || nowMs < overMs) return 0;
-  const late = nowMs - overMs;
-  if (late < HOUR_MS) return 1;
-  if (late < 2 * HOUR_MS) return 2;
-  if (late < 2 * HOUR_MS + SLOT_GRACE_MS) return 3;
-  return 4;
+// 1 = one hour after the printed start, on that same Eastern day. 0 = too early. 4 = that day has passed.
+function mailSlot(startMs, nowMs, gameDate) {
+  if (!startMs || nowMs < startMs + HOUR_MS) return 0;
+  const sb = require(__hooks + "/softball.js");
+  const day = String(gameDate || "").slice(0, 10);
+  if (!day || sb.easternYmd(nowMs) !== day) return 4;
+  return 1;
 }
 
 function setMailCount(rec, n) {
@@ -220,8 +224,8 @@ function dueGames(app, event, nowMs) {
     } catch (err) { rows = []; }
     for (let i = 0; i < rows.length; i++) {
       if (isSuppressed(rows[i])) continue;
-      const end = expectedEndMs(event, rows[i]);
-      if (end && end <= nowMs) out.push({ kind: kind, rec: rows[i] });
+      const slot = mailSlot(gameStartMs(rows[i]), nowMs, rows[i].get("date"));
+      if (slot === 1) out.push({ kind: kind, rec: rows[i] });
     }
   }
   add("schedule", "event_schedule");
@@ -253,7 +257,7 @@ function runBoxMail(app, opts) {
         let team;
         try { team = app.findRecordById("event_teams", ids[t]); } catch (err) { continue; }
         if (optedOut(app, team)) { summary.skipped++; continue; }
-        const slot = mailSlot(expectedEndMs(event, game), nowMs);
+        const slot = mailSlot(gameStartMs(game), nowMs, game.get("date"));
         let rec = findInvite(app, event.id, game.id, team.id, kind);
         if (rec && hasDate(rec, "submitted_at")) { summary.skipped++; continue; }
         if (rec && rec.get("unsubscribed")) { summary.skipped++; continue; }

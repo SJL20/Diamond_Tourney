@@ -537,6 +537,12 @@ function gameDetail(app, event, id, auth) {
   };
 }
 
+function parseRuns(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function findRecord(app, collection, id) {
   if (!id) return null;
   try { return app.findRecordById(collection, id); }
@@ -609,23 +615,46 @@ function postBracketScore(app, event, id, body, auth) {
   if (!isDirector(auth, event, app)) {
     throw new ForbiddenError("Only the director can finalize a bracket game.");
   }
-  if (body.home_runs != null) rec.set("home_runs", Number(body.home_runs));
-  if (body.away_runs != null) rec.set("away_runs", Number(body.away_runs));
-  rec.set("status", "final");
-  const picked = winnerFromRuns(rec);
-  if (picked == null) {
-    const hr = Number(rec.get("home_runs") || 0);
-    const ar = Number(rec.get("away_runs") || 0);
-    if (hr > ar) rec.set("winner", rec.get("home_team"));
-    else if (ar > hr) rec.set("winner", rec.get("away_team"));
-    else rec.set("winner", "");
-  } else {
-    rec.set("winner", picked);
+  const live = body.live === true || body.live === "true" || body.status === "live";
+  if (live && rec.get("status") === "final") {
+    return { ok: true, status: "final", ignored: "final" };
   }
+  const hr = parseRuns(body.home_runs);
+  const ar = parseRuns(body.away_runs);
+  // The runs columns are NOT NULL, so a blank box is stored as 0 plus runs_entered false.
+  // The board hides that 0. A typed 0 stays visible. A blank side does not win.
+  let entered = { home: true, away: true };
+  try {
+    let prev = rec.get("runs_entered");
+    if (typeof prev === "string" && prev) prev = JSON.parse(prev);
+    if (prev && typeof prev === "object") {
+      if (prev.home === false) entered.home = false;
+      if (prev.away === false) entered.away = false;
+    }
+  } catch (err) {}
+  if (body.home_runs != null) {
+    if (hr == null) { rec.set("home_runs", 0); entered.home = false; }
+    else { rec.set("home_runs", hr); entered.home = true; }
+  }
+  if (body.away_runs != null) {
+    if (ar == null) { rec.set("away_runs", 0); entered.away = false; }
+    else { rec.set("away_runs", ar); entered.away = true; }
+  }
+  rec.set("runs_entered", { home: !!entered.home, away: !!entered.away });
+  if (live) {
+    rec.set("status", "live");
+    rec.set("winner", "");
+    app.save(rec);
+    return { ok: true, status: "live" };
+  }
+  rec.set("status", "final");
+  if (hr != null && ar != null && hr > ar) rec.set("winner", rec.get("home_team"));
+  else if (hr != null && ar != null && ar > hr) rec.set("winner", rec.get("away_team"));
+  else rec.set("winner", "");
   app.save(rec);
   const diamond = require(__hooks + "/diamond.js");
   diamond.advanceBracket(app, event.id);
-  return { ok: true };
+  return { ok: true, status: "final" };
 }
 
 module.exports = {
