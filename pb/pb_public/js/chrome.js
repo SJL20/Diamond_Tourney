@@ -276,9 +276,10 @@ export function measureChrome() {
   if (typeof ResizeObserver === "undefined") return;
   if (chromeWatch) chromeWatch.disconnect();
   chromeWatch = new ResizeObserver(() => writeChromeVars());
-  if (site) chromeWatch.observe(site);
-  if (event) chromeWatch.observe(event);
-  if (tab) chromeWatch.observe(tab);
+  const box = { box: "border-box" };
+  if (site) chromeWatch.observe(site, box);
+  if (event) chromeWatch.observe(event, box);
+  if (tab) chromeWatch.observe(tab, box);
 }
 
 export function collapseSetupOnPhone() {
