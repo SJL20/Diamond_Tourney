@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 147 unit/integration cases + 13 acceptance checks |
+| Tests | 148 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -215,6 +215,16 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-28 — Pages and stylesheets recheck after a deploy
+
+Deleting browsing history and signing out leaves the saved stylesheet and scripts in place. Those copies were stored with no freshness rule, so a normal Chrome tab kept the stylesheet that froze Loading. A private window has no saved copy, so it loaded the fix.
+
+HTML, CSS, and JavaScript now send `Cache-Control: no-cache`. That includes `/`, `/login`, and tournament addresses such as `/t/keystone-clash-2026`. The API, the PocketBase dashboard, and CSV templates are left alone. An unchanged file still answers 304. `index.html` loads the stylesheet and `app.js` from `?v=20260928c`, and an import map sends the other scripts to that same token.
+
+A phone that already stored the old files does not ask the server again until that copy expires or cached images and files are cleared. The server cannot delete a copy the browser has not requested. After one fresh page load, later deploys are rechecked.
+
+Proved with headers: `/css/app.css`, `/js/app.js`, `/`, `/login`, and `/t/keystone-clash-2026` send `no-cache`. `/api/health`, `/_/`, and the bracket CSV do not. A conditional CSS request returns 304 and still sends `no-cache`. At 390×844 the login page leaves Loading, and each script request uses `?v=20260928c` with `no-cache`. The account API response has no cache header. Keystone Clash home shows the champion note. `bash scripts/ci.sh` is green: 148 tests and the acceptance checks.
 
 ### 2026-09-28 — Phone no longer sticks on Loading
 
