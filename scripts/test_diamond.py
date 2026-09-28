@@ -412,6 +412,11 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("data-live", desk)
         self.assertIn("Printable bracket", src)
         self.assertIn("bk-sheet", src)
+        self.assertIn('g.status === "live" ? "Live"', desk)
+        self.assertIn('bracketFaceRuns(g, "home")', desk)
+        self.assertNotIn('g.status === "final" ? g.home_runs : ""', desk)
+        self.assertIn("function bracketFaceRuns", src)
+        self.assertIn(".bk-match.live", css)
         self.assertLess(desk.find("class=\"bk-score\""), desk.find("</details>"))
         self.assertGreater(desk.find("</details>"), desk.find("data-bk-id"))
         self.assertIn(".bk-desk-box:not([open]) > *:not(summary)", css)
@@ -5608,6 +5613,185 @@ class PdfUploadExtractTests(unittest.TestCase):
         self.assertEqual(detail["box"]["status"], "needs_review")
         self.assertEqual(self._lines(detail["box"], "hitting", "FAKE Ada L")["rbi"], None)
         self.assertNotIn("FAKE Ada L", json.dumps(board["leaders"]))
+
+
+class LiveBracketScoreTests(unittest.TestCase):
+    """Bot can post a live bracket score, then a final that advances."""
+
+    def test_bot_posts_live_and_final_bracket_scores(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        slug = "live-bk-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Live Bracket",
+            "slug": slug,
+            "format": "single-elim",
+            "start": "2026-09-27",
+            "end": "2026-09-27",
+        })
+        ids = []
+        for name in ("Live Hawks", "Live Heat", "Live Cats", "Live Fox"):
+            joined = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "as_director": True,
+            })
+            ids.append(joined["team"]["id"])
+        request(BASE, "POST", f"/api/events/{slug}/bracket/custom", td, {
+            "games": [
+                {"round": "SF", "slot": 1, "side": "championship", "game_id": "S1", "home_id": ids[0], "away_id": ids[1]},
+                {"round": "SF", "slot": 2, "side": "championship", "game_id": "S2", "home_id": ids[2], "away_id": ids[3]},
+                {"round": "F", "slot": 1, "side": "championship", "game_id": "FIN"},
+            ],
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        sf1 = next(g for g in board["bracket"] if g["round"] == "SF" and int(g["slot"]) == 1)
+        sf2 = next(g for g in board["bracket"] if g["round"] == "SF" and int(g["slot"]) == 2)
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertFalse(final.get("home_id"))
+        self.assertFalse(final.get("away_id"))
+
+        live = request(BASE, "POST", "/api/bot/event-update", bot, {
+            "event_slug": slug,
+            "schedule_id": sf1["id"],
+            "home_runs": 3,
+            "away_runs": 1,
+            "status": "live",
+            "inning": "Bot 4",
+        })
+        self.assertTrue(live["ok"])
+        self.assertEqual(live["event"], slug)
+        self.assertIn("standings", live)
+        self.assertEqual(live["bracket"]["id"], sf1["id"])
+        self.assertEqual(live["bracket"]["status"], "live")
+        self.assertEqual(live["bracket"]["winner_id"], "")
+        self.assertEqual(int(live["bracket"]["home_runs"]), 3)
+        self.assertEqual(int(live["bracket"]["away_runs"]), 1)
+        self.assertEqual(live["bracket"]["note"], "Bot 4")
+
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(g for g in board["bracket"] if g["id"] == sf1["id"])
+        self.assertEqual(row["status"], "live")
+        self.assertEqual(int(row["home_runs"]), 3)
+        self.assertEqual(int(row["away_runs"]), 1)
+        self.assertFalse(row.get("winner"))
+        self.assertFalse(row.get("winner_id"))
+        self.assertEqual(row.get("note"), "Bot 4")
+        overall = next(g for g in board["overall"] if g["id"] == sf1["id"])
+        self.assertEqual(overall["kind"], "bracket")
+        self.assertEqual(overall["status"], "live")
+        self.assertEqual(int(overall["home_runs"]), 3)
+        self.assertEqual(overall.get("note"), "Bot 4")
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertFalse(final.get("home_id"))
+
+        again = request(BASE, "POST", "/api/bot/event-update", bot, {
+            "event_slug": slug,
+            "bracket_id": sf1["id"],
+            "home_runs": 4,
+            "away_runs": 2,
+            "status": "live",
+            "note": "T5",
+        })
+        self.assertEqual(again["bracket"]["status"], "live")
+        self.assertEqual(again["bracket"]["winner_id"], "")
+        self.assertEqual(int(again["bracket"]["home_runs"]), 4)
+        self.assertEqual(again["bracket"]["note"], "T5")
+
+        done = request(BASE, "POST", "/api/bot/event-update", bot, {
+            "event_slug": slug,
+            "bracket_id": sf1["id"],
+            "home_runs": 6,
+            "away_runs": 2,
+            "status": "final",
+        })
+        self.assertEqual(done["bracket"]["status"], "final")
+        self.assertEqual(done["bracket"]["winner_id"], ids[0])
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(g for g in board["bracket"] if g["id"] == sf1["id"])
+        self.assertEqual(row["status"], "final")
+        self.assertEqual(row["winner_id"], ids[0])
+        self.assertEqual(row["winner"], "Live Hawks")
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertEqual(final["home_id"], ids[0])
+        self.assertFalse(final.get("away_id"))
+
+        with self.assertRaises(RuntimeError) as blocked:
+            request(BASE, "POST", "/api/bot/event-update", bot, {
+                "event_slug": slug,
+                "schedule_id": sf1["id"],
+                "home_runs": 9,
+                "away_runs": 0,
+                "status": "live",
+            })
+        self.assertIn("already final", str(blocked.exception))
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(g for g in board["bracket"] if g["id"] == sf1["id"])
+        self.assertEqual(int(row["home_runs"]), 6)
+        self.assertEqual(int(row["away_runs"]), 2)
+        self.assertEqual(row["winner_id"], ids[0])
+
+        tied = request(BASE, "POST", "/api/bot/event-update", bot, {
+            "event_slug": slug,
+            "schedule_id": sf2["id"],
+            "home_runs": 4,
+            "away_runs": 4,
+            "status": "final",
+        })
+        self.assertEqual(tied["bracket"]["status"], "final")
+        self.assertEqual(tied["bracket"]["winner_id"], "")
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(g for g in board["bracket"] if g["id"] == sf2["id"])
+        self.assertTrue(row["tie"])
+        self.assertFalse(row.get("winner_id"))
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertEqual(final["home_id"], ids[0])
+        self.assertFalse(final.get("away_id"))
+
+        named = request(BASE, "POST", "/api/bot/event-update", bot, {
+            "event_slug": slug,
+            "bracket_id": sf2["id"],
+            "winner_id": ids[3],
+            "home_runs": 4,
+            "away_runs": 4,
+        })
+        self.assertEqual(named["bracket"]["status"], "final")
+        self.assertEqual(named["bracket"]["winner_id"], ids[3])
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        final = next(g for g in board["bracket"] if g["round"] == "F")
+        self.assertEqual(final["home_id"], ids[0])
+        self.assertEqual(final["away_id"], ids[3])
+
+        made = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home_id": ids[0],
+            "away_id": ids[1],
+            "date": "2026-09-27",
+            "time": "09:00",
+            "pool": "A",
+        })
+        pool_id = made["game"]["id"]
+        pool = request(BASE, "POST", "/api/bot/event-update", bot, {
+            "event_slug": slug,
+            "schedule_id": pool_id,
+            "home_runs": 2,
+            "away_runs": 1,
+            "status": "live",
+        })
+        self.assertTrue(pool["ok"])
+        self.assertIn("standings", pool)
+        self.assertNotIn("bracket", pool)
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        grow = next(g for g in board["schedule"] if g["id"] == pool_id)
+        self.assertEqual(grow["status"], "live")
+        self.assertEqual(int(grow["home_runs"]), 2)
+        self.assertEqual(int(grow["away_runs"]), 1)
+
+        with self.assertRaises(RuntimeError) as missing:
+            request(BASE, "POST", "/api/bot/event-update", bot, {
+                "event_slug": slug,
+                "schedule_id": "not-a-real-game",
+            })
+        self.assertIn("404", str(missing.exception))
 
 
 if __name__ == "__main__":

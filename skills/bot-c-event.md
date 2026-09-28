@@ -31,18 +31,49 @@ During an event window: a final score or box arrives (Slack `#event-scores` or w
 
 CLI: `python3 scripts/bot_c_event_box.py --list` then `--event SLUG --game ID --json lines.json`. Use `--review` when QC is uncertain so status stays `needs_review`.
 
-5. Or POST `/api/bot/event-update` for a score-only update when the public page shows a score but no readable lines:
+5. Or POST `/api/bot/event-update` for a score-only update when the public page shows a score but no readable lines.
+
+Pool game (`schedule_id` is an `event_schedule` id):
 
 ```json
 {
   "event_slug": "EVENT_SLUG",
-  "schedule_id": "…",
+  "schedule_id": "POOL_GAME_ID",
   "home_runs": 6,
   "away_runs": 4,
   "status": "final",
   "box": { "hitting": [], "pitching": [], "source": "gc" }
 }
 ```
+
+Bracket game — the id in `board.bracket` / `board.overall` where `kind` is `bracket`. Pass it as `schedule_id` (falls back to `bracket_games` when it is not a pool row) or as `bracket_id`.
+
+Live, no winner, bracket does not advance:
+
+```json
+{
+  "event_slug": "EVENT_SLUG",
+  "schedule_id": "BRACKET_GAME_ID",
+  "home_runs": 3,
+  "away_runs": 1,
+  "status": "live",
+  "inning": "Bot 4"
+}
+```
+
+Final. Winner is the home or away team from the runs. A tie leaves the winner blank and does not advance. `bracket_id` + `winner_id` still finalizes with that winner.
+
+```json
+{
+  "event_slug": "EVENT_SLUG",
+  "bracket_id": "BRACKET_GAME_ID",
+  "home_runs": 6,
+  "away_runs": 2,
+  "status": "final"
+}
+```
+
+A live post does not change a bracket game that is already final. Send `status: "final"` to correct it.
 
 6. If only a final score exists, omit player lines and note “no box” — leaders stay unchanged.
 7. Do not unlock `event_players.roster_locked`.

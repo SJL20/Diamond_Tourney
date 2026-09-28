@@ -970,31 +970,35 @@ routerAdd("POST", "/api/bot/event-update", (e) => {
   const body = e.requestInfo().body || {};
   const event = e.app.findFirstRecordByData("events", "slug", body.event_slug);
   sb.requireEventAdminOrBot(e, event);
+  let bracketSnap = null;
   if (body.schedule_id) {
-    const row = e.app.findRecordById("event_schedule", body.schedule_id);
-    if (row.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
-    if (body.home_runs != null) row.set("home_runs", body.home_runs);
-    if (body.away_runs != null) row.set("away_runs", body.away_runs);
-    if (body.status) row.set("status", body.status);
-    if (e.auth) {
-      try {
-        require(__hooks + "/score.js").setUserRel(e.app, row, "scored_by", e.auth);
-      } catch (err) {}
+    const row = score.findRecord(e.app, "event_schedule", body.schedule_id);
+    if (row) {
+      if (row.get("event") !== event.id) throw new BadRequestError("Game is not on this tournament");
+      if (body.home_runs != null) row.set("home_runs", body.home_runs);
+      if (body.away_runs != null) row.set("away_runs", body.away_runs);
+      if (body.status) row.set("status", body.status);
+      if (e.auth) {
+        try { score.setUserRel(e.app, row, "scored_by", e.auth); } catch (err) {}
+      }
+      e.app.save(row);
+      if (body.box) score.attachUpdateBox(e.app, event, row, body, e.auth);
+    } else {
+      const bg = score.findRecord(e.app, "bracket_games", body.schedule_id);
+      if (!bg) throw new NotFoundError("Game not found");
+      bracketSnap = score.applyBracketUpdate(e.app, event, bg, body);
     }
-    e.app.save(row);
-    if (body.box) score.attachUpdateBox(e.app, event, row, body, e.auth);
   }
-  if (body.bracket_id && body.winner_id) {
-    const bg = e.app.findRecordById("bracket_games", body.bracket_id);
-    bg.set("winner", body.winner_id);
-    bg.set("status", "final");
-    if (body.home_runs != null) bg.set("home_runs", body.home_runs);
-    if (body.away_runs != null) bg.set("away_runs", body.away_runs);
-    e.app.save(bg);
+  if (body.bracket_id && (!bracketSnap || bracketSnap.id !== body.bracket_id)) {
+    const bg = score.findRecord(e.app, "bracket_games", body.bracket_id);
+    if (!bg) throw new NotFoundError("Bracket game not found");
+    bracketSnap = score.applyBracketUpdate(e.app, event, bg, body);
   }
   const diamond = require(__hooks + "/diamond.js");
   diamond.advanceBracket(e.app, event.id);
-  return e.json(200, { ok: true, event: event.get("slug"), standings: diamond.poolStandings(e.app, event.id) });
+  const out = { ok: true, event: event.get("slug"), standings: diamond.poolStandings(e.app, event.id) };
+  if (bracketSnap) out.bracket = bracketSnap;
+  return e.json(200, out);
 }, $apis.requireAuth());
 
 // Reachability ping for linked GC / Tourney Machine pages. Live score and box

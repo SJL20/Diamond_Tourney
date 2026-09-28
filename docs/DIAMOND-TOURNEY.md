@@ -60,7 +60,7 @@ Allowed:
 - Poll about every **5 minutes** while an event is `live` (30 minutes when none is live).
 - Open the public page only. Read posted scores and box lines. Write:
   - Season book → `POST /api/bot/ingest` → `staging_games`. **Coach must Approve.** Bots never approve staging and never delete approved rows.
-  - Tournament → `POST /api/bot/event-box` (lines + score) or `POST /api/bot/event-update` (score only). Use `needs_review` when the page is messy.
+  - Tournament → `POST /api/bot/event-box` (lines + score) or `POST /api/bot/event-update` (score only). Use `needs_review` when the page is messy. A bracket game id from the public board works as `schedule_id` (or `bracket_id`): `status: "live"` posts the in-progress score and inning note without a winner; `status: "final"` with both run totals derives the winner and advances the bracket. A tie does not set a winner. `bracket_id` + `winner_id` still finalizes.
 - GC mobile PDF / screenshot / pasted box remains a supported door (`GET /api/bot/event-boxes`).
 - A PDF upload with a text layer is read on the server into `needs_review`. Headers pick the columns. A blank cell stays blank. A scan with no text layer stays queued for a person. The bot still cannot approve.
 

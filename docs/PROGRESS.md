@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 144 unit/integration cases + 13 acceptance checks |
+| Tests | 145 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -230,7 +230,7 @@ Proved in the browser on the Keystone Edit game form and Harbor Eight games-by-f
 
 ### 2026-09-28 — Shorter bracket desk, one box-score email, stats hidden
 
-PR #53 is still open and this branch does not edit it. That PR lets `POST /api/bot/event-update` take a bracket game id: a live post stores the runs and does not fill the next game, and a final post picks the winner and advances. The director buttons added here are a separate route, `POST /api/events/{slug}/bracket/{id}/score`.
+PR #53 is merged. It lets `POST /api/bot/event-update` take a bracket game id: a live post stores the runs and does not fill the next game, and a final post picks the winner and advances. The director buttons added here are a separate route, `POST /api/events/{slug}/bracket/{id}/score`.
 
 The Edit game form is about half as tall. Field and time share a row. Save, Swap, and Reopen share a row. Each team name sits on the same line as its run box, with Live and Final beside each other. Live stores the runs, leaves the winner empty, and does not move a team. A later Live post on a game that is already final is ignored. Final still advances the winner. A blank run box does not count as 0 and does not win. The runs column cannot store a blank, so a cleared box is saved as 0 with `runs_entered` false and the board shows that side empty. A typed 0 still shows.
 
@@ -249,6 +249,16 @@ Find still defaults to current and future weekends, through the 7th day after th
 Not in this pass: the admin jump list, the venue day rows, and the bracket-scheduler card are still the taller spacing.
 
 Proved by `test_live_bracket_score_stores_runs_and_does_not_advance`, `test_director_tiebreak_orders_a_true_tie_only`, the timing block in `test_box_mail_tokens_reconcile_and_privacy`, and `test_team_page_player_stats_use_the_stats_board`. `python3 -m unittest scripts.test_metrics scripts.test_pdf_box scripts.test_diamond` and `python3 scripts/acceptance_test.py` passed. A browser pass on Keystone Clash opened the printable sheet, the Edit game form (Field and Time on one row, Live and Final on one row), the stats sentence, and the checked Find box. Harbor Eight’s Games by field rows show the run box beside each team. No score was saved in the browser.
+
+### 2026-09-27 — Bot can post a live bracket score
+
+`POST /api/bot/event-update` used to update pool rows only. A bracket game id returned 404, and the only bracket path needed `bracket_id` plus `winner_id` and finalized immediately. The public bracket card also hid runs unless the game was already final.
+
+A bot (or the event director) can now send the bracket game id as `schedule_id` or `bracket_id`. `status: "live"` stores both run totals and an inning note (`inning`, `note`, or `notes` on `bracket_games.notes`) and does not set a winner or fill the next game. `status: "final"` with both run totals derives the winner from home vs away and advances the bracket the same way a director final does. Equal runs leave the winner blank. `bracket_id` + `winner_id` still finalizes with that winner. A live post does not change a game that is already final; `status: "final"` is the correction. Pool `schedule_id` updates are unchanged.
+
+The bracket tree, weekend schedule, and team sheet show those live runs and a Live label. Migration `1700000040_bracket_notes.js` only adds the text field.
+
+Covered by `LiveBracketScoreTests`. `bash scripts/ci.sh` is green: 145 tests and the acceptance checks. A browser pass on `/t/sunday-live-board/bracket` shows North Hawks 4, West Heat 2, Live, Bot 4, with the other semi still Scheduled and the final still TBD. Schedule shows `4–2 · live · Bot 4`.
 
 ### 2026-09-26 — Standings rank by points, not winning percentage
 
