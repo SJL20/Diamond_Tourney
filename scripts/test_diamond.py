@@ -408,6 +408,10 @@ class TournamentUiTests(unittest.TestCase):
         self.assertNotIn('${set ? "" : "open"}', src)
         desk = src.split("function matchCard", 1)[1].split("function renderBracketTree", 1)[0]
         self.assertIn("bk-score", desk)
+        self.assertIn("bk-score-line", desk)
+        self.assertIn("data-live", desk)
+        self.assertIn("Printable bracket", src)
+        self.assertIn("bk-sheet", src)
         self.assertLess(desk.find("class=\"bk-score\""), desk.find("</details>"))
         self.assertGreater(desk.find("</details>"), desk.find("data-bk-id"))
         self.assertIn(".bk-desk-box:not([open]) > *:not(summary)", css)
@@ -581,6 +585,71 @@ class DerekFixesLiveTests(unittest.TestCase):
         self.assertEqual([t["name"] for t in pool["teams"]], ["Cycle B", "Cycle A", "Cycle C"])
         self.assertIn("cycle", pool["teams"][0]["seed_reason"])
         self.assertIn("head-to-head", pool.get("tiebreak_label") or "")
+
+    def test_director_tiebreak_orders_a_true_tie_only(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "tie-pick-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Tie Pick",
+            "slug": slug,
+            "format": "pool-only",
+            "tiebreak_order": "record,h2h,ra,diff,rs",
+        })
+        hawks = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Tie Hawks",
+            "pool": "A",
+            "as_director": True,
+        })["team"]
+        heat = request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+            "team_name": "Tie Heat",
+            "pool": "A",
+            "as_director": True,
+        })["team"]
+        game = request(BASE, "POST", f"/api/events/{slug}/schedule/game", td, {
+            "home": "Tie Hawks",
+            "away": "Tie Heat",
+            "date": "2026-10-18",
+            "time": "09:00",
+            "pool": "A",
+        })["game"]
+        request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+            "home_runs": 4,
+            "away_runs": 4,
+            "status": "final",
+            "confirm": True,
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        pool = next(row for row in board["standings"] if row["name"] == "A")
+        self.assertEqual({t["seed"] for t in pool["teams"]}, {1})
+        self.assertTrue(all(t.get("formula_tie") for t in pool["teams"]))
+        bot = auth(BASE, "bot@local.test", "BotStaging1!")
+        with self.assertRaises(RuntimeError) as denied:
+            request(BASE, "POST", f"/api/events/{slug}/standings/tiebreak", bot, {
+                "pool": "A",
+                "team_ids": [heat["id"], hawks["id"]],
+            })
+        self.assertIn("403", str(denied.exception))
+        saved = request(BASE, "POST", f"/api/events/{slug}/standings/tiebreak", td, {
+            "pool": "A",
+            "team_ids": [heat["id"], hawks["id"]],
+        })
+        ordered = saved["standings"][0]["teams"]
+        self.assertEqual([t["name"] for t in ordered], ["Tie Heat", "Tie Hawks"])
+        self.assertEqual([t["seed"] for t in ordered], [1, 2])
+        self.assertTrue(all(t["seed_reason"] == "director tiebreak" for t in ordered))
+        self.assertTrue(all(t.get("formula_tie") for t in ordered))
+        request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+            "home_runs": 5,
+            "away_runs": 4,
+            "status": "final",
+            "confirm": True,
+        })
+        split = next(row for row in request(BASE, "GET", f"/api/event/{slug}/board")["standings"] if row["name"] == "A")
+        self.assertEqual([t["name"] for t in split["teams"]], ["Tie Hawks", "Tie Heat"])
+        self.assertEqual([t["seed"] for t in split["teams"]], [1, 2])
+        self.assertTrue(all(t["seed_reason"] != "director tiebreak" for t in split["teams"]))
+        self.assertFalse(any(t.get("formula_tie") for t in split["teams"]))
 
     def test_duplicate_skips_scores_and_family_email(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
@@ -1880,6 +1949,96 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(overall_final["field"], "Harbor 2")
         self.assertEqual(overall_final["time"], "11:30")
         self.assertEqual(overall_final["kind"], "bracket")
+
+    def test_live_bracket_score_stores_runs_and_does_not_advance(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "live-desk-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Live Desk",
+            "slug": slug,
+            "format": "pool-to-bracket",
+            "start": "2026-09-19",
+            "end": "2026-09-20",
+            "fields": [{"name": "Harbor 1"}],
+        })
+        for name, pool in (("Live Hawks", "A"), ("Live Heat", "A"), ("Live Cats", "B"), ("Live Fox", "B")):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": pool,
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        for game in auto["schedule"]:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                "home_runs": 4, "away_runs": 1, "status": "final", "confirm": True,
+            })
+        request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "confirm": True,
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        game = next(g for g in board["bracket"] if g.get("home_id") and g.get("away_id") and g.get("status") != "bye")
+        before = {
+            g["id"]: (g.get("home"), g.get("away"))
+            for g in board["bracket"] if g["id"] != game["id"]
+        }
+        live = request(BASE, "POST", f"/api/events/{slug}/bracket/{game['id']}/score", td, {
+            "home_runs": 3,
+            "away_runs": 1,
+            "live": True,
+        })
+        self.assertEqual(live["status"], "live")
+        shown = request(BASE, "GET", f"/api/event/{slug}/board")
+        row = next(g for g in shown["bracket"] if g["id"] == game["id"])
+        self.assertEqual(row["status"], "live")
+        self.assertEqual(int(row["home_runs"]), 3)
+        self.assertEqual(int(row["away_runs"]), 1)
+        self.assertFalse(row.get("winner"))
+        after_live = {
+            g["id"]: (g.get("home"), g.get("away"))
+            for g in shown["bracket"] if g["id"] != game["id"]
+        }
+        self.assertEqual(after_live, before)
+        blank = request(BASE, "POST", f"/api/events/{slug}/bracket/{game['id']}/score", td, {
+            "home_runs": 2,
+            "away_runs": "",
+            "live": True,
+        })
+        self.assertEqual(blank["status"], "live")
+        blank_row = next(g for g in request(BASE, "GET", f"/api/event/{slug}/board")["bracket"] if g["id"] == game["id"])
+        self.assertEqual(int(blank_row["home_runs"]), 2)
+        self.assertIsNone(blank_row["away_runs"])
+        final = request(BASE, "POST", f"/api/events/{slug}/bracket/{game['id']}/score", td, {
+            "home_runs": 4,
+            "away_runs": 2,
+        })
+        self.assertEqual(final["status"], "final")
+        done = request(BASE, "GET", f"/api/event/{slug}/board")
+        finished = next(g for g in done["bracket"] if g["id"] == game["id"])
+        self.assertEqual(finished["status"], "final")
+        self.assertEqual(finished["winner"], finished["home"])
+        moved = {
+            g["id"]: (g.get("home"), g.get("away"))
+            for g in done["bracket"] if g["id"] != game["id"]
+        }
+        self.assertNotEqual(moved, before)
+        self.assertTrue(any(finished["winner"] in pair for pair in moved.values()))
+        ignored = request(BASE, "POST", f"/api/events/{slug}/bracket/{game['id']}/score", td, {
+            "home_runs": 9,
+            "away_runs": 0,
+            "live": True,
+        })
+        self.assertEqual(ignored.get("ignored"), "final")
+        still = next(g for g in request(BASE, "GET", f"/api/event/{slug}/board")["bracket"] if g["id"] == game["id"])
+        self.assertEqual(still["status"], "final")
+        self.assertEqual(int(still["home_runs"]), 4)
+        self.assertEqual(int(still["away_runs"]), 2)
 
     def test_field_day_hours_skip_closed_diamond(self):
         td = auth(BASE, "td@local.test", "EventTd1!")
@@ -4273,44 +4432,37 @@ class BoxScoreTeamPageTests(unittest.TestCase):
             "pool": "A",
             "game_number": 1,
         })["game"]
-        # 09:00 + 90 min + 15 min buffer = 10:45Z. Three asks, then silence.
+        # 09:00 Eastern is 13:00Z in September (EDT). One note, one hour after first pitch.
+        early = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
+            "now": "2026-09-18T13:30:00.000Z",
+        })
+        self.assertEqual(early["invited"], 0)
+        self.assertEqual(early["reminded"], 0)
+        self.assertEqual(early["invites"], [])
         first = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T10:50:00.000Z",
+            "now": "2026-09-18T14:00:00.000Z",
         })
         self.assertEqual(first["invited"], 2)
         self.assertEqual(first["reminded"], 0)
         self.assertEqual(len(first["invites"]), 2)
         self.assertTrue(all(row["game_id"] == played["id"] for row in first["invites"]))
+        self.assertTrue(all(not row["reminder"] for row in first["invites"]))
         self.assertEqual(first.get("reason"), "smtp_not_configured")
         tokens = {row["team_id"]: row["token"] for row in first["invites"]}
         self.assertEqual(set(tokens), {home["id"], away["id"]})
         again = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T11:20:00.000Z",
+            "now": "2026-09-18T15:00:00.000Z",
         })
         self.assertEqual(again["invited"], 0)
         self.assertEqual(again["reminded"], 0)
-        hour = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T11:50:00.000Z",
-        })
-        self.assertEqual(hour["invited"], 0)
-        self.assertEqual(hour["reminded"], 2)
-        self.assertTrue(all(row["reminder"] for row in hour["invites"]))
-        still = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T12:20:00.000Z",
-        })
-        self.assertEqual(still["invited"], 0)
-        self.assertEqual(still["reminded"], 0)
-        two = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T12:50:00.000Z",
-        })
-        self.assertEqual(two["reminded"], 2)
-        self.assertEqual(two["invited"], 0)
+        self.assertEqual(again["invites"], [])
         later = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-19T12:00:00.000Z",
+            "now": "2026-09-19T16:00:00.000Z",
         })
         self.assertEqual(later["reminded"], 0)
         self.assertEqual(later["invited"], 0)
-        self.assertNotIn(stale["id"], [row["game_id"] for row in first["invites"] + hour["invites"] + two["invites"]])
+        self.assertEqual(later["invites"], [])
+        self.assertNotIn(stale["id"], [row["game_id"] for row in first["invites"]])
         desk = request(BASE, "GET", f"/api/events/{slug}/boxes/desk", td)
         self.assertFalse(any(g["id"] == cancelled["id"] and g.get("books") for g in desk["games"]
                              if g["id"] == cancelled["id"] and g["books"]))
@@ -4395,7 +4547,7 @@ class BoxScoreTeamPageTests(unittest.TestCase):
             "pool": "A",
         })
         ran = request(BASE, "POST", f"/api/events/{pdf_slug}/boxes/run", td, {
-            "now": "2026-09-18T12:00:00.000Z",
+            "now": "2026-09-18T13:00:00.000Z",
         })
         file_tok = next(row["token"] for row in ran["invites"] if row["team_id"] == pdf_home["id"])
         uploaded = request_multipart(BASE, f"/api/box/{file_tok}", None, {
@@ -5150,11 +5302,14 @@ class FollowAndStatsTests(unittest.TestCase):
         stats = event.split("export async function eventStats", 1)[1].split("function isKeystoneParkingAsset", 1)[0]
         self.assertIn("function mountStatBoard", event)
         self.assertIn("function statBoardShell", event)
-        self.assertIn("showTeam: true", stats)
-        self.assertIn("mountStatBoard", stats)
-        self.assertIn("showTeam: false", team)
-        self.assertIn('title: "Player stats"', team)
-        self.assertIn("mountStatBoard", team)
+        self.assertIn("Player stats are not posted on the board yet.", event)
+        self.assertIn("statsHidden(board.event, \"stats\")", stats)
+        self.assertNotIn("mountStatBoard", stats)
+        self.assertNotIn("showTeam: true", stats)
+        self.assertNotIn("showTeam: false", team)
+        self.assertNotIn('title: "Player stats"', team)
+        self.assertNotIn("mountStatBoard", team)
+        self.assertNotIn("statBoardShell", team)
         self.assertIn('data-stats-tab="hit">Hitting', event)
         self.assertIn('data-stats-tab="pit">Pitching', event)
         self.assertNotIn("<h2>Team stats</h2>", team)
@@ -5433,7 +5588,7 @@ class PdfUploadExtractTests(unittest.TestCase):
         })
         game = made["game"]
         ran = request(BASE, "POST", f"/api/events/{slug}/boxes/run", td, {
-            "now": "2026-09-18T10:00:00.000Z",
+            "now": "2026-09-18T13:00:00.000Z",
         })
         token = next(row["token"] for row in ran["invites"] if row["team_id"] == home["id"])
         pdf = sample_pdf_bytes(game["home"], game["away"])
