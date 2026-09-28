@@ -1029,6 +1029,51 @@ function feedsFromGames(games) {
   return feeds;
 }
 
+function seedFromRef(raw) {
+  const ref = parseRef(raw);
+  return ref.kind === "seed" ? Number(ref.value) || 0 : 0;
+}
+
+// Seat seed stays with the team: a later round that only says winner:G1
+// still shows the number from the seed: seat, or a unique stored team seed.
+function bracketSeatSeeds(games, teams) {
+  const placed = {};
+  const list = games || [];
+  for (let i = 0; i < list.length; i++) {
+    const g = list[i] || {};
+    const hs = seedFromRef(g.home_ref);
+    const as = seedFromRef(g.away_ref);
+    if (hs && g.home_id && placed[g.home_id] == null) placed[g.home_id] = hs;
+    if (as && g.away_id && placed[g.away_id] == null) placed[g.away_id] = as;
+  }
+  const counts = {};
+  const rows = teams || [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] || {};
+    const n = Number(row.seed) || 0;
+    if (n > 0 && row.id) counts[n] = (counts[n] || 0) + 1;
+  }
+  const stored = {};
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] || {};
+    const n = Number(row.seed) || 0;
+    if (n > 0 && row.id && counts[n] === 1) stored[row.id] = n;
+  }
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const g = list[i] || {};
+    const homeId = g.home_id || "";
+    const awayId = g.away_id || "";
+    const directH = seedFromRef(g.home_ref);
+    const directA = seedFromRef(g.away_ref);
+    out.push({
+      home_seed: directH || (homeId && (placed[homeId] || stored[homeId])) || 0,
+      away_seed: directA || (awayId && (placed[awayId] || stored[awayId])) || 0,
+    });
+  }
+  return out;
+}
+
 function missingSplits(assigned) {
   const rows = (assigned && assigned.flights) || [];
   if (rows.length <= 1) return [];
@@ -1049,6 +1094,8 @@ module.exports = {
   parseRef: parseRef,
   refToken: refToken,
   displayRef: displayRef,
+  seedFromRef: seedFromRef,
+  bracketSeatSeeds: bracketSeatSeeds,
   seedPositions: seedPositions,
   winnerRoundNames: winnerRoundNames,
   normalizeFlight: normalizeFlight,

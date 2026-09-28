@@ -205,4 +205,35 @@ const picked = br.buildSingleElimGames(six, br.normalizeFlight({
 const pickedByes = picked.games.filter((g) => g.is_bye).map((g) => g.home && g.home.seed).sort();
 eq(pickedByes, [3, 4], "director-picked byes");
 
+const seeded = br.bracketSeatSeeds([
+  { home_id: "a", away_id: "b", home_ref: "seed:1", away_ref: "seed:4" },
+  { home_id: "a", away_id: "", home_ref: "winner:G1", away_ref: "winner:G2" },
+  { home_id: "", away_id: "", home_ref: "seed:2", away_ref: "seed:3" },
+], [
+  { id: "a", seed: 9 },
+  { id: "c", seed: 1 },
+  { id: "d", seed: 1 },
+]);
+eq(seeded[0], { home_seed: 1, away_seed: 4 }, "first round uses the seat seed");
+eq(seeded[1].home_seed, 1, "later round keeps the team seed");
+eq(seeded[1].away_seed, 0, "empty winner seat has no seed");
+eq(seeded[2], { home_seed: 2, away_seed: 3 }, "unfilled seed seats still carry the number");
+
+const stored = br.bracketSeatSeeds([
+  { home_id: "oaks", away_id: "river", home_ref: "", away_ref: "" },
+  { home_id: "oaks", away_id: "maple", home_ref: "", away_ref: "" },
+], [
+  { id: "oaks", seed: 2 },
+  { id: "river", seed: 7 },
+  { id: "maple", seed: 3 },
+  { id: "pool-a", seed: 1 },
+  { id: "pool-b", seed: 1 },
+]);
+eq(stored[0], { home_seed: 2, away_seed: 7 }, "unique stored seeds fill a name-only bracket");
+eq(stored[1].away_seed, 3, "same team keeps that seed in the next game");
+eq(br.bracketSeatSeeds(
+  [{ home_id: "pool-a", away_id: "pool-b", home_ref: "", away_ref: "" }],
+  [{ id: "pool-a", seed: 1 }, { id: "pool-b", seed: 1 }],
+)[0], { home_seed: 0, away_seed: 0 }, "duplicated pool seeds are not shown as bracket seeds");
+
 console.log("brackets.js ok");
