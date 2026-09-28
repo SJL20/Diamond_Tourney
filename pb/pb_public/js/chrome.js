@@ -259,6 +259,8 @@ function writeChromeVars() {
   const site = document.querySelector(".site-bar");
   const event = document.querySelector(".event-bar");
   const tab = document.querySelector(".tourney-tabbar");
+  // Measured total, including the notch. The bar's own min-height is a fixed
+  // 52px so writing this back cannot make the bar grow on every pass.
   const siteH = site ? Math.round(site.getBoundingClientRect().height) : 52;
   const eventH = event ? Math.round(event.getBoundingClientRect().height) : 0;
   const tabH = tab ? Math.round(tab.getBoundingClientRect().height) : 0;
@@ -274,9 +276,10 @@ export function measureChrome() {
   if (typeof ResizeObserver === "undefined") return;
   if (chromeWatch) chromeWatch.disconnect();
   chromeWatch = new ResizeObserver(() => writeChromeVars());
-  if (site) chromeWatch.observe(site);
-  if (event) chromeWatch.observe(event);
-  if (tab) chromeWatch.observe(tab);
+  const box = { box: "border-box" };
+  if (site) chromeWatch.observe(site, box);
+  if (event) chromeWatch.observe(event, box);
+  if (tab) chromeWatch.observe(tab, box);
 }
 
 export function collapseSetupOnPhone() {

@@ -216,6 +216,14 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-28 — Phone no longer sticks on Loading
+
+A phone stayed on the “Loading…” line. Every dropdown used `field-sizing: content` together with `max-width: 100%`, and that pair can loop layout on a narrow screen before the first paint. The site bar also stored its own measured height, including the notch, back into `--site-h` and used that as its min-height, so a notched phone grew the bar on every measure.
+
+Dropdowns still use `width: fit-content` and `max-width: 100%`. They no longer use `field-sizing`. The inner site bar is a fixed 52px. `--site-h` is still the measured total and only places the tournament bar and the scroll padding. Buttons are unchanged.
+
+Proved at 390×844. Create account shows the Player/Fan dropdown and is not stuck on Loading. Keystone Clash home shows Go to team. A 47px notch pad leaves the bar at 99px, and 900ms later it is still 99px with `--site-h` at `99px`. Harbor Eight games-by-field rows show team menus and scroll. No score was saved.
+
 ### 2026-09-28 — Review both open pull requests before merge
 
 PR #53 (`cursor/live-bracket-scores-9944`) is the bot live-score path. `POST /api/bot/event-update` accepts a bracket game id as `schedule_id` or `bracket_id`. Live stores both run totals and an inning note and does not set a winner. Final derives the winner from the two totals and then `advanceBracket` fills the next game only when that game is final and has a winner. A tie leaves the winner blank. A live post on an already-final game is rejected. Pool updates are unchanged. Migration `1700000040_bracket_notes.js` only adds `notes`. CI on that pull request is green.

@@ -93,7 +93,6 @@ button, input, select, textarea { font: inherit; }
   z-index: 40;
   background: var(--navy);
   color: #fff;
-  min-height: var(--site-h);
   padding-top: env(safe-area-inset-top, 0px);
 }
 .site-bar-inner {
@@ -101,7 +100,7 @@ button, input, select, textarea { font: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: var(--site-h);
+  min-height: 52px;
 }
 .brand {
   display: flex;
@@ -620,11 +619,11 @@ input, select, textarea {
   background: #fff;
   color: var(--ink);
 }
-/* Dropdowns hug the chosen label. Text fields still fill the column. */
+/* Dropdowns stay as wide as their options and stop at the column.
+   field-sizing: content plus max-width: 100% loops layout on a phone. */
 select {
   width: fit-content;
   max-width: 100%;
-  field-sizing: content;
   justify-self: start;
 }
 textarea { resize: vertical; min-height: 72px; }
@@ -854,7 +853,7 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
   border-radius: 4px;
 }
 .bk-desk input { width: 100%; }
-.bk-desk select { width: fit-content; max-width: 100%; field-sizing: content; }
+.bk-desk select { width: fit-content; max-width: 100%; }
 .bk-desk .actions { margin: 0; display: flex; flex-wrap: wrap; gap: 3px; }
 .bk-desk .actions .btn {
   flex: 0 0 auto;
@@ -1400,7 +1399,7 @@ details.fields-block > summary {
   }
   .card-table td:not([data-th])::before { display: none; }
   .sched-edit input { width: auto; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; }
-  .sched-edit select { width: fit-content; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; field-sizing: content; }
+  .sched-edit select { width: fit-content; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; }
   .card-table.sched-edit tr { padding: 6px; gap: 1px; margin: 0 0 6px; }
   .card-table.sched-edit td { padding: 2px 0; gap: 4px; }
 }
@@ -1413,9 +1412,9 @@ details.fields-block > summary {
   min-width: 0;
 }
 .sched-edit input { font-size: 13px; padding: 3px 6px; min-height: 0; width: auto; max-width: 100%; }
-.sched-edit select { font-size: 13px; padding: 3px 6px; min-height: 0; width: fit-content; max-width: 100%; field-sizing: content; }
+.sched-edit select { font-size: 13px; padding: 3px 6px; min-height: 0; width: fit-content; max-width: 100%; }
 .sched-when input[type="time"] { width: 7.2rem; max-width: 7.2rem; }
-.sched-side select { flex: 0 1 auto; width: fit-content; max-width: 100%; min-width: 0; field-sizing: content; }
+.sched-side select { flex: 0 1 auto; width: fit-content; max-width: 100%; min-width: 0; }
 .sched-side input[type="number"] { width: 3.2rem; max-width: 3.2rem; flex: 0 0 auto; }
 .sched-actions .btn { flex: 0 0 auto; width: fit-content; padding: 3px 6px; min-height: 0; font-size: 0.75rem; }
 .sched-edit input[name="game_id"],
