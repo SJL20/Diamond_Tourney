@@ -1066,7 +1066,7 @@ function guidelinesBlock(ev) {
   if (!ev) return "";
   const req = ev.required_doc_labels || [];
   const pitch = ev.pitch_limit_mode === "none"
-    ? "No posted weekend pitching cap"
+    ? "No posted weekend inning cap"
     : ev.pitch_limit_mode === "pitch_count"
       ? `${ev.pitch_limit_pitches || "—"} pitches`
       : ev.pitch_limit_mode === "both"

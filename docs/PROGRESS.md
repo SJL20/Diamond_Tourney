@@ -216,6 +216,12 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-28 — Review both open pull requests before merge
+
+PR #53 (`cursor/live-bracket-scores-9944`) is the bot live-score path. `POST /api/bot/event-update` accepts a bracket game id as `schedule_id` or `bracket_id`. Live stores both run totals and an inning note and does not set a winner. Final derives the winner from the two totals and then `advanceBracket` fills the next game only when that game is final and has a winner. A tie leaves the winner blank. A live post on an already-final game is rejected. Pool updates are unchanged. Migration `1700000040_bracket_notes.js` only adds `notes`. CI on that pull request is green.
+
+This branch is the director desk, one box-score email, hidden player stats, and the find filter. Its CI failed because hiding the pitching-counts table removed the sentence “No posted weekend inning cap.” That sentence is back on the public weekend guidelines when pitching mode is none. Player lines stay off the board. The director Live/Final route stays separate from the bot route.
+
 ### 2026-09-28 — Dropdowns and buttons hug their label
 
 Dropdowns and buttons size to the text on them. A short choice such as a pool letter, a field name, Live, or Save stays a small bubble. A long team name still grows with that name and stops at the edge of the column. Typed fields (names, notes, dates) still fill the column. The phone admin section picker, the admin menu, and the Google button still span their row.
