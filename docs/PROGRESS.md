@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 144 unit/integration cases + 13 acceptance checks |
+| Tests | 145 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -215,6 +215,16 @@ worth answering before the next session.
 
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
+
+### 2026-09-27 — Bot can post a live bracket score
+
+`POST /api/bot/event-update` used to update pool rows only. A bracket game id returned 404, and the only bracket path needed `bracket_id` plus `winner_id` and finalized immediately. The public bracket card also hid runs unless the game was already final.
+
+A bot (or the event director) can now send the bracket game id as `schedule_id` or `bracket_id`. `status: "live"` stores both run totals and an inning note (`inning`, `note`, or `notes` on `bracket_games.notes`) and does not set a winner or fill the next game. `status: "final"` with both run totals derives the winner from home vs away and advances the bracket the same way a director final does. Equal runs leave the winner blank. `bracket_id` + `winner_id` still finalizes with that winner. A live post does not change a game that is already final; `status: "final"` is the correction. Pool `schedule_id` updates are unchanged.
+
+The bracket tree, weekend schedule, and team sheet show those live runs and a Live label. Migration `1700000040_bracket_notes.js` only adds the text field.
+
+Covered by `LiveBracketScoreTests`. `bash scripts/ci.sh` is green: 145 tests and the acceptance checks. A browser pass on `/t/sunday-live-board/bracket` shows North Hawks 4, West Heat 2, Live, Bot 4, with the other semi still Scheduled and the final still TBD. Schedule shows `4–2 · live · Bot 4`.
 
 ### 2026-09-26 — Standings rank by points, not winning percentage
 
