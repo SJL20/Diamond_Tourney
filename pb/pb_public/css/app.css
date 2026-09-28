@@ -490,6 +490,10 @@ tr.total { font-weight: 700; background: #f3eee4; }
   align-items: center;
   font-weight: 600;
   line-height: 1.2;
+  width: fit-content;
+  max-width: 100%;
+  flex: 0 0 auto;
+  justify-self: start;
 }
 .btn.secondary { background: var(--navy); }
 .btn.ghost {
@@ -590,6 +594,9 @@ tr.total { font-weight: 700; background: #f3eee4; }
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  flex: 0 0 auto;
 }
 .tab.active {
   background: var(--navy);
@@ -612,6 +619,13 @@ input, select, textarea {
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
+}
+/* Dropdowns hug the chosen label. Text fields still fill the column. */
+select {
+  width: fit-content;
+  max-width: 100%;
+  field-sizing: content;
+  justify-self: start;
 }
 textarea { resize: vertical; min-height: 72px; }
 
@@ -683,9 +697,9 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 }
 @media (max-width: 800px) {
   .flight-plan [data-add-flight] {
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
     min-height: 44px;
-    justify-content: center;
   }
   .flight-card {
     scroll-margin-top: calc(var(--chrome-h, 52px) + 8px);
@@ -783,7 +797,7 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 }
 .bk-score-line input { width: 3.2rem; flex: 0 0 auto; padding: 3px 6px; font-size: 13px; min-height: 0; }
 .bk-score-actions { display: flex; gap: 4px; }
-.bk-score-actions .btn { flex: 1; justify-content: center; padding: 4px 8px; min-height: 0; font-size: 0.78rem; }
+.bk-score-actions .btn { flex: 0 0 auto; width: fit-content; justify-content: center; padding: 4px 8px; min-height: 0; font-size: 0.78rem; }
 /* Author display:grid / display:flex on the desk would otherwise keep a
    closed <details> looking expanded. Hide everything but the summary. */
 .bk-desk-box:not([open]) > *:not(summary) { display: none !important; }
@@ -828,16 +842,18 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .bk-desk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
 .bk-desk label { display: grid; gap: 0; font-size: 0.62rem; min-width: 0; }
 .bk-desk input, .bk-desk select {
-  width: 100%;
   min-width: 0;
   min-height: 0;
   font-size: 13px;
   padding: 3px 6px;
   border-radius: 4px;
 }
-.bk-desk .actions { margin: 0; display: flex; gap: 3px; }
+.bk-desk input { width: 100%; }
+.bk-desk select { width: fit-content; max-width: 100%; field-sizing: content; }
+.bk-desk .actions { margin: 0; display: flex; flex-wrap: wrap; gap: 3px; }
 .bk-desk .actions .btn {
-  flex: 1;
+  flex: 0 0 auto;
+  width: fit-content;
   justify-content: center;
   padding: 4px 8px;
   min-height: 0;
@@ -1378,8 +1394,8 @@ details.fields-block > summary {
     color: var(--muted);
   }
   .card-table td:not([data-th])::before { display: none; }
-  .sched-edit input,
-  .sched-edit select { width: auto; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; }
+  .sched-edit input { width: auto; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; }
+  .sched-edit select { width: fit-content; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; field-sizing: content; }
   .card-table.sched-edit tr { padding: 6px; gap: 1px; margin: 0 0 6px; }
   .card-table.sched-edit td { padding: 2px 0; gap: 4px; }
 }
@@ -1391,12 +1407,12 @@ details.fields-block > summary {
   align-items: center;
   min-width: 0;
 }
-.sched-edit input,
-.sched-edit select { font-size: 13px; padding: 3px 6px; min-height: 0; width: auto; max-width: 100%; }
+.sched-edit input { font-size: 13px; padding: 3px 6px; min-height: 0; width: auto; max-width: 100%; }
+.sched-edit select { font-size: 13px; padding: 3px 6px; min-height: 0; width: fit-content; max-width: 100%; field-sizing: content; }
 .sched-when input[type="time"] { width: 7.2rem; max-width: 7.2rem; }
-.sched-side select { flex: 1 1 8rem; width: auto; min-width: 0; }
+.sched-side select { flex: 0 1 auto; width: fit-content; max-width: 100%; min-width: 0; field-sizing: content; }
 .sched-side input[type="number"] { width: 3.2rem; max-width: 3.2rem; flex: 0 0 auto; }
-.sched-actions .btn { padding: 3px 6px; min-height: 0; font-size: 0.75rem; }
+.sched-actions .btn { flex: 0 0 auto; width: fit-content; padding: 3px 6px; min-height: 0; font-size: 0.75rem; }
 .sched-edit input[name="game_id"],
 .sched-edit input[name="slot"] { width: 4.5rem; max-width: 4.5rem; }
 .sched-edit select[name="round"] { width: auto; max-width: 9rem; }

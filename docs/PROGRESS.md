@@ -216,6 +216,12 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-28 — Dropdowns and buttons hug their label
+
+Dropdowns and buttons size to the text on them. A short choice such as a pool letter, a field name, Live, or Save stays a small bubble. A long team name still grows with that name and stops at the edge of the column. Typed fields (names, notes, dates) still fill the column. The phone admin section picker, the admin menu, and the Google button still span their row.
+
+Proved in the browser on the Keystone Edit game form and Harbor Eight games-by-field rows. Field, time, team menus, Live, Final, Save, and Remove each sit as wide as their own label. A long team name is wider than a clock time. No score was saved.
+
 ### 2026-09-28 — Shorter bracket desk, one box-score email, stats hidden
 
 PR #53 is still open and this branch does not edit it. That PR lets `POST /api/bot/event-update` take a bracket game id: a live post stores the runs and does not fill the next game, and a final post picks the winner and advances. The director buttons added here are a separate route, `POST /api/events/{slug}/bracket/{id}/score`.
