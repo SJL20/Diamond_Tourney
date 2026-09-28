@@ -1601,13 +1601,36 @@ function verifyAccount(app, token) {
   return { verified: true, email: user.email(), welcome_sent: !!(welcome && welcome.sent), welcome_reason: (welcome && welcome.reason) || "" };
 }
 
-function searchEvents(app, q) {
+function searchCurrent(opts) {
+  if (!opts) return false;
+  const v = opts.current;
+  return v === true || v === 1 || v === "1" || v === "true";
+}
+
+function searchDateClause(current) {
+  if (!current) return "";
+  return " && ((end >= {:cut}) || (end = '' && start >= {:cut}))";
+}
+
+function searchEvents(app, q, opts) {
   const needle = String(q || "").trim().toLowerCase();
+  const current = searchCurrent(opts);
+  const sb = require(__hooks + "/softball.js");
+  const cut = current ? sb.shiftYmd(sb.easternYmd(Date.now()), -7) : "";
+  const dateClause = searchDateClause(current);
   const seen = {};
   const out = [];
+  function stillCurrent(rec) {
+    if (!current) return true;
+    const end = dateStr(rec.get("end"));
+    const start = dateStr(rec.get("start"));
+    const when = end || start;
+    return !!when && when >= cut;
+  }
   function pushRec(rec) {
     if (!rec || seen[rec.id]) return;
     if (!rec.get("public") || rec.get("status") === "archived") return;
+    if (!stillCurrent(rec)) return;
     seen[rec.id] = true;
     out.push(eventJson(rec, app));
   }
@@ -1618,18 +1641,25 @@ function searchEvents(app, q) {
     try {
       const rows = app.findRecordsByFilter(
         "events",
-        "public = true && status != 'archived' && (name ~ {:q} || venue ~ {:q} || ages ~ {:q} || slug ~ {:q})",
+        "public = true && status != 'archived' && (name ~ {:q} || venue ~ {:q} || ages ~ {:q} || slug ~ {:q})" + dateClause,
         "-start",
         80,
         0,
-        { q: needle },
+        { q: needle, cut: cut },
       );
       for (let i = 0; i < rows.length; i++) pushRec(rows[i]);
     } catch (err) {}
     return out;
   }
   try {
-    const rows = app.findRecordsByFilter("events", "public = true && status != 'archived'", "-start", 80, 0);
+    const rows = app.findRecordsByFilter(
+      "events",
+      "public = true && status != 'archived'" + dateClause,
+      "-start",
+      80,
+      0,
+      { cut: cut },
+    );
     for (let i = 0; i < rows.length; i++) pushRec(rows[i]);
   } catch (err) {}
   return out;
