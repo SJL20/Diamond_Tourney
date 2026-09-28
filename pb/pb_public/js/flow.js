@@ -358,15 +358,18 @@ function renderFindResults(events) {
     ${(featured ? rest : events).length ? `<ul class="list">${(featured ? rest : events).map(row).join("")}</ul>` : ""}`;
 }
 
-async function runFind(q) {
-  const res = await fetch("/api/events/search?q=" + encodeURIComponent(q || ""));
+async function runFind(q, current) {
+  const res = await fetch("/api/events/search?q=" + encodeURIComponent(q || "") + "&current=" + (current ? "1" : "0"));
   if (!res.ok) throw new Error("Search failed");
   const out = await res.json();
   renderFindResults(out.events || []);
 }
 
 function bindFind(form) {
-  const run = () => runFind(new FormData(form).get("q") || "");
+  const run = () => runFind(new FormData(form).get("q") || "", form.querySelector("[name=current]")?.checked !== false);
+  form.querySelector("[name=current]")?.addEventListener("change", () => {
+    run().catch(() => {});
+  });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const err = document.getElementById("gate-error");
@@ -434,6 +437,7 @@ export async function startGate(forcedTab) {
         <p class="muted">Search public boards. Join with a GameChanger URL, or open the live standings.</p>
         <form class="form wide" id="find-form">
           <label>Name, venue, or age <input name="q" placeholder="Keystone, Harbor Eight, 10U"></label>
+          <label class="check"><input type="checkbox" name="current" checked> Current and future tournaments</label>
           <button class="btn" type="submit">Search</button>
         </form>
       </section>
@@ -1181,14 +1185,6 @@ export async function yearPage(year) {
     <td>${t.events}</td>
     <td>${t.gc_linked ? `<span class="badge linked">GC</span>` : ""}</td>
   </tr>`);
-  const hit = (board.hitting || []).map((r) => `<tr>
-    <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
-    <td>${r.ab ?? "—"}</td><td>${r.h ?? "—"}</td><td>${r.rbi ?? "—"}</td><td>${r.avg_display ?? "—"}</td>
-  </tr>`);
-  const pit = (board.pitching || []).map((r) => `<tr>
-    <td>${escapeHtml(r.name_key)}</td><td>${escapeHtml(r.team)}</td>
-    <td>${r.ip}</td><td>${r.er}</td><td>${r.so}</td><td>${r.era_display}</td>
-  </tr>`);
   function table(headers, rows) {
     const stamped = (rows || []).map((r) => stampDataTh(r, headers));
     return `<div class="table-wrap"><table class="card-table desktop-table"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
@@ -1199,16 +1195,6 @@ export async function yearPage(year) {
     <div class="stat-main"><b class="stat-name">${escapeHtml(t.name)}</b>
       <span class="stat-meta">RS ${t.rs} · RA ${t.ra} · ${t.diff > 0 ? "+" : ""}${t.diff} · ${t.events} weekends</span></div>
     <span class="stat-val">${t.w}-${t.l}</span>
-  </li>`);
-  const hitList = (board.hitting || []).map((r) => `<li class="stat-row">
-    <div class="stat-main"><b class="stat-name">${escapeHtml(r.name_key)}</b>
-      <span class="stat-meta">${escapeHtml(r.team)} · ${r.ab} AB · ${r.h} H</span></div>
-    <span class="stat-val">${escapeHtml(String(r.avg_display || "—"))}</span>
-  </li>`);
-  const pitList = (board.pitching || []).map((r) => `<li class="stat-row">
-    <div class="stat-main"><b class="stat-name">${escapeHtml(r.name_key)}</b>
-      <span class="stat-meta">${escapeHtml(r.team)} · ${r.ip} IP · ${r.so} K</span></div>
-    <span class="stat-val">${escapeHtml(String(r.era_display || "—"))}</span>
   </li>`);
   flowRoot().innerHTML = gateChrome("year", `
     <section class="page-head">
@@ -1221,14 +1207,6 @@ export async function yearPage(year) {
       <p class="muted">Wins, then losses, then runs allowed, then runs scored. Events column is how many weekends that club appeared.</p>
       ${table(["#", "Club", "W", "L", "RS", "RA", "Diff", "Events", ""], teams)}
       ${teamList.length ? `<ul class="stat-list phone-stat-list">${teamList.join("")}</ul>` : ""}
-    </section>
-    <section class="grid two">
-      <div class="card"><h2>Hitting</h2><p class="muted">Min 8 AB across the year</p>
-        ${table(["Player", "Team", "AB", "H", "RBI", "AVG"], hit)}
-        ${hitList.length ? `<ul class="stat-list phone-stat-list">${hitList.join("")}</ul>` : ""}</div>
-      <div class="card"><h2>Pitching</h2><p class="muted">Min 3.0 IP · youth ERA base 7</p>
-        ${table(["Player", "Team", "IP", "ER", "SO", "ERA"], pit)}
-        ${pitList.length ? `<ul class="stat-list phone-stat-list">${pitList.join("")}</ul>` : ""}</div>
     </section>
   `);
 }

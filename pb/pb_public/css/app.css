@@ -764,9 +764,26 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .rain-banner.delay { background: #ffe0c2; }
 .rain-banner.postponed, .rain-banner.moved { background: #f8d7d0; }
 .rain-banner.clear { background: #eef4ea; }
-.bk-score { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; padding: 8px 12px 10px; }
+.bk-score { display: grid; gap: 4px; margin: 0; padding: 4px 8px 6px; }
 .bk-desk-box .bk-score { border-top: 1px solid var(--line); }
-.bk-score input { width: 4.2rem; }
+.bk-score-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+.bk-score-line span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bk-score-line input { width: 3.2rem; flex: 0 0 auto; padding: 3px 6px; font-size: 13px; min-height: 0; }
+.bk-score-actions { display: flex; gap: 4px; }
+.bk-score-actions .btn { flex: 1; justify-content: center; padding: 4px 8px; min-height: 0; font-size: 0.78rem; }
 /* Author display:grid / display:flex on the desk would otherwise keep a
    closed <details> looking expanded. Hide everything but the summary. */
 .bk-desk-box:not([open]) > *:not(summary) { display: none !important; }
@@ -805,12 +822,27 @@ details.setup-block[open] > summary { margin-bottom: 10px; }
 .bk-desk-box[open] > summary { border-bottom: 1px solid var(--line); }
 .bk-desk {
   display: grid;
-  gap: 6px;
-  padding: 8px 12px 10px;
+  gap: 3px;
+  padding: 4px 8px;
 }
-.bk-desk label { display: grid; gap: 2px; font-size: 0.72rem; min-width: 0; }
-.bk-desk input, .bk-desk select { width: 100%; min-width: 0; font-size: 16px; }
-.bk-desk .actions { margin: 2px 0 0; display: grid; gap: 4px; }
+.bk-desk-row { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+.bk-desk label { display: grid; gap: 0; font-size: 0.62rem; min-width: 0; }
+.bk-desk input, .bk-desk select {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+.bk-desk .actions { margin: 0; display: flex; gap: 3px; }
+.bk-desk .actions .btn {
+  flex: 1;
+  justify-content: center;
+  padding: 4px 8px;
+  min-height: 0;
+  font-size: 0.72rem;
+}
 .hours-global {
   margin: 10px 0;
   padding: 10px 12px;
@@ -1347,8 +1379,64 @@ details.fields-block > summary {
   }
   .card-table td:not([data-th])::before { display: none; }
   .sched-edit input,
-  .sched-edit select { width: 100%; max-width: 100%; font-size: 16px; }
+  .sched-edit select { width: auto; max-width: 100%; font-size: 13px; padding: 3px 6px; min-height: 0; }
+  .card-table.sched-edit tr { padding: 6px; gap: 1px; margin: 0 0 6px; }
+  .card-table.sched-edit td { padding: 2px 0; gap: 4px; }
 }
+
+.sched-when, .sched-side, .sched-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.sched-edit input,
+.sched-edit select { font-size: 13px; padding: 3px 6px; min-height: 0; width: auto; max-width: 100%; }
+.sched-when input[type="time"] { width: 7.2rem; max-width: 7.2rem; }
+.sched-side select { flex: 1 1 8rem; width: auto; min-width: 0; }
+.sched-side input[type="number"] { width: 3.2rem; max-width: 3.2rem; flex: 0 0 auto; }
+.sched-actions .btn { padding: 3px 6px; min-height: 0; font-size: 0.75rem; }
+.sched-edit input[name="game_id"],
+.sched-edit input[name="slot"] { width: 4.5rem; max-width: 4.5rem; }
+.sched-edit select[name="round"] { width: auto; max-width: 9rem; }
+
+.bk-sheet-tree { margin: 0 0 16px; }
+.bk-sheet-tree h2 { font-size: 1rem; margin: 0 0 6px; }
+.bk-sheet { display: flex; gap: 0; align-items: stretch; overflow-x: auto; }
+.bk-sheet-col { flex: 1 1 0; display: flex; flex-direction: column; min-width: 7.2rem; }
+.bk-sheet-col h3 { font-size: 0.68rem; margin: 0 0 4px; text-align: center; font-family: "Oswald", sans-serif; }
+.bk-sheet-pair {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  position: relative;
+  margin: 0 12px 0 0;
+}
+.bk-sheet-pair.has-next::after {
+  content: "";
+  position: absolute;
+  right: -12px;
+  top: 22%;
+  bottom: 22%;
+  width: 12px;
+  border: 1px solid #222;
+  border-left: 0;
+}
+.bk-sheet-match { border: 1px solid #222; margin: 3px 0; background: #fff; }
+.bk-sheet-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 1.25;
+  border-bottom: 1px solid #ccc;
+}
+.bk-sheet-line:last-child { border-bottom: 0; }
+.bk-sheet-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-sheet-line b { font-variant-numeric: tabular-nums; min-width: 1.2rem; text-align: right; }
 
 @media (min-width: 801px) {
   .game-list,
@@ -1359,6 +1447,8 @@ details.fields-block > summary {
 @media print {
   body { background: #fff; }
   .site-bar, .event-bar, .tourney-tabbar, .tourney-more-sheet, .footer, .btn, .nav, .no-print, .bk-desk-box, #bracket-import { display: none !important; }
+  .bk-sheet { overflow: visible; }
+  .bk-sheet-tree, .bk-sheet-match { break-inside: avoid; page-break-inside: avoid; }
   .card, .hero, .page-head { box-shadow: none; border: 1px solid #ccc; }
   .bracket-print { display: block; }
   .bk-col, .bk-card { break-inside: avoid; page-break-inside: avoid; }

@@ -1,7 +1,6 @@
-import { battingAverage, contactPct, era, strikePct, outsToIp } from "./metrics.js";
 import {
   directorDuplicate, directorImport, directorImportPopup, directorLinkTm, directorNative, eventAdmin, eventAwards,
-  eventBracket, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
+  eventBracket, eventBracketPrint, eventGame, eventHome, eventInfo, eventLeaders, eventList, eventOverall,
   eventSchedule, eventSignup, eventStandings, eventStats, eventTeamPage, boxUploadPage, boxStopPage, boxHelpPage,
   startTournament,
 } from "./event.js";
@@ -32,6 +31,7 @@ const ROUTES = [
   [/^\/t\/?$/, "events"],
   [/^\/t\/([^/]+)\/standings\/?$/, "estandings"],
   [/^\/t\/([^/]+)\/pools\/?$/, "estandings"],
+  [/^\/t\/([^/]+)\/bracket\/print\/?$/, "ebracketprint"],
   [/^\/t\/([^/]+)\/bracket\/?$/, "ebracket"],
   [/^\/t\/([^/]+)\/overall\/?$/, "eoverall"],
   [/^\/t\/([^/]+)\/schedule\/?$/, "eschedule"],
@@ -142,7 +142,7 @@ async function publicTeam(slug) {
       <h1>${escapeHtml(team.name)}</h1>
       <p class="muted">${escapeHtml(team.age_group)} · public card</p>
       <div class="row"><div class="stat"><b>${team.public_record_wins || 0}-${team.public_record_losses || 0}</b><span>W-L</span></div></div>
-      <p>Player stats are in the team book after login.</p>
+      <p>Player stats are not posted on the board yet.</p>
     </section>
   `);
 }
@@ -159,45 +159,6 @@ async function loadPlayers(teamId) {
     filter: `team="${teamId}"`,
     sort: "jersey",
   });
-}
-
-async function loadHitting(teamId) {
-  return pb.collection("hitting_game").getFullList({
-    filter: `game.team="${teamId}" && game.status="approved"`,
-    expand: "player,game",
-  });
-}
-
-async function loadPitching(teamId) {
-  return pb.collection("pitching_game").getFullList({
-    filter: `game.team="${teamId}" && game.status="approved"`,
-    expand: "player,game",
-  });
-}
-
-function rollHit(rows) {
-  const map = new Map();
-  for (const row of rows) {
-    const id = row.player;
-    const cur = map.get(id) || { player: row.expand?.player, ab: 0, r: 0, h: 0, rbi: 0, bb: 0, so: 0 };
-    cur.ab += row.ab || 0; cur.r += row.r || 0; cur.h += row.h || 0;
-    cur.rbi += row.rbi || 0; cur.bb += row.bb || 0; cur.so += row.so || 0;
-    map.set(id, cur);
-  }
-  return [...map.values()];
-}
-
-function rollPit(rows) {
-  const map = new Map();
-  for (const row of rows) {
-    const id = row.player;
-    const cur = map.get(id) || { player: row.expand?.player, ip_outs: 0, h: 0, r: 0, er: 0, bb: 0, so: 0, pitches: 0, strikes: 0 };
-    cur.ip_outs += row.ip_outs || 0; cur.h += row.h || 0; cur.r += row.r || 0;
-    cur.er += row.er || 0; cur.bb += row.bb || 0; cur.so += row.so || 0;
-    cur.pitches += row.pitches || 0; cur.strikes += row.strikes || 0;
-    map.set(id, cur);
-  }
-  return [...map.values()];
 }
 
 async function home(slug) {
@@ -232,56 +193,20 @@ async function roster(slug) {
     ${table(["#", "Name", "Key", "Pos", "B/T", "Grad"], rows)}</section>`);
 }
 
+function statsHiddenCard() {
+  return `<section class="card"><p>Player stats are not posted on the board yet.</p></section>`;
+}
+
 async function hitting(slug) {
-  const team = await requireTeamPage(slug, "hitting");
+  const team = await requireTeamPage(slug, "home");
   if (!team) return;
-  const rolled = rollHit(await loadHitting(team.id));
-  const totals = rolled.reduce((a, r) => ({ ab: a.ab + r.ab, r: a.r + r.r, h: a.h + r.h, rbi: a.rbi + r.rbi, bb: a.bb + r.bb, so: a.so + r.so }), { ab: 0, r: 0, h: 0, rbi: 0, bb: 0, so: 0 });
-  const rows = rolled.sort((a, b) => Number(a.player?.jersey || 0) - Number(b.player?.jersey || 0)).map((r) => `<tr>
-    <td>${escapeHtml(r.player?.jersey)}</td><td>${escapeHtml(r.player?.display_name)}</td>
-    <td>${r.ab}</td><td>${r.r}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.bb}</td><td>${r.so}</td>
-    <td>${battingAverage(r.h, r.ab)}</td><td>${contactPct(r.ab, r.so)}</td>
-  </tr>`);
-  const compact = rolled.map((r) => `<li class="stat-row">
-    <div class="stat-main"><b class="stat-name">${escapeHtml(r.player?.display_name || "")}</b>
-      <span class="stat-meta">${r.ab} AB · ${r.h} H · ${r.rbi} RBI</span></div>
-    <span class="stat-val">${battingAverage(r.h, r.ab)}</span>
-  </li>`).join("");
-  app.innerHTML = chrome(team, "hitting", `<section class="card"><h2>Hitting</h2>
-    <p class="muted">Approved games only. BA to three decimals. Contact% = (AB − SO) / AB.</p>
-    ${table(["#", "Player", "AB", "R", "H", "RBI", "BB", "SO", "BA", "Contact%"], rows,
-      `<td colspan="2">Team</td><td>${totals.ab}</td><td>${totals.r}</td><td>${totals.h}</td><td>${totals.rbi}</td><td>${totals.bb}</td><td>${totals.so}</td><td>${battingAverage(totals.h, totals.ab)}</td><td>${contactPct(totals.ab, totals.so)}</td>`,
-      { className: "card-table desktop-table" })}
-    ${compact ? `<ul class="stat-list phone-stat-list">${compact}</ul>` : ""}
-  </section>`);
+  app.innerHTML = chrome(team, "home", statsHiddenCard());
 }
 
 async function pitching(slug) {
-  const team = await requireTeamPage(slug, "pitching");
+  const team = await requireTeamPage(slug, "home");
   if (!team) return;
-  const rolled = rollPit(await loadPitching(team.id));
-  const totals = rolled.reduce((a, r) => ({
-    ip_outs: a.ip_outs + r.ip_outs, h: a.h + r.h, r: a.r + r.r, er: a.er + r.er,
-    bb: a.bb + r.bb, so: a.so + r.so, pitches: a.pitches + r.pitches, strikes: a.strikes + r.strikes,
-  }), { ip_outs: 0, h: 0, r: 0, er: 0, bb: 0, so: 0, pitches: 0, strikes: 0 });
-  const rows = rolled.map((r) => `<tr>
-    <td>${escapeHtml(r.player?.jersey)}</td><td>${escapeHtml(r.player?.display_name)}</td>
-    <td>${outsToIp(r.ip_outs)}</td><td>${r.h}</td><td>${r.r}</td><td>${r.er}</td><td>${r.bb}</td><td>${r.so}</td>
-    <td>${r.pitches || "—"}</td><td>${r.strikes || "—"}</td>
-    <td>${era(r.er, r.ip_outs)}</td><td>${strikePct(r.strikes, r.pitches)}</td>
-  </tr>`);
-  const compact = rolled.map((r) => `<li class="stat-row">
-    <div class="stat-main"><b class="stat-name">${escapeHtml(r.player?.display_name || "")}</b>
-      <span class="stat-meta">${outsToIp(r.ip_outs)} IP · ${r.so} K</span></div>
-    <span class="stat-val">${era(r.er, r.ip_outs)}</span>
-  </li>`).join("");
-  app.innerHTML = chrome(team, "pitching", `<section class="card"><h2>Pitching</h2>
-    <p class="muted">IP stored as outs. Youth ERA = (ER × 7) / IP.</p>
-    ${table(["#", "Player", "IP", "H", "R", "ER", "BB", "SO", "P", "S", "ERA", "Strike%"], rows,
-      `<td colspan="2">Team</td><td>${outsToIp(totals.ip_outs)}</td><td>${totals.h}</td><td>${totals.r}</td><td>${totals.er}</td><td>${totals.bb}</td><td>${totals.so}</td><td>${totals.pitches}</td><td>${totals.strikes}</td><td>${era(totals.er, totals.ip_outs)}</td><td>${strikePct(totals.strikes, totals.pitches)}</td>`,
-      { className: "card-table desktop-table" })}
-    ${compact ? `<ul class="stat-list phone-stat-list">${compact}</ul>` : ""}
-  </section>`);
+  app.innerHTML = chrome(team, "home", statsHiddenCard());
 }
 
 async function games(slug) {
@@ -303,20 +228,11 @@ async function box(slug, gameId) {
   const team = await requireTeamPage(slug, "games");
   if (!team) return;
   const game = await pb.collection("team_games").getOne(gameId);
-  const hittingRows = await pb.collection("hitting_game").getFullList({ filter: `game="${gameId}"`, expand: "player" });
-  const pitchingRows = await pb.collection("pitching_game").getFullList({ filter: `game="${gameId}"`, expand: "player" });
-  const h = hittingRows.map((r) => `<tr><td>${escapeHtml(r.expand.player.jersey)}</td><td>${escapeHtml(r.expand.player.display_name)}</td>
-    <td>${r.ab}</td><td>${r.r}</td><td>${r.h}</td><td>${r.rbi}</td><td>${r.bb}</td><td>${r.so}</td></tr>`);
-  const p = pitchingRows.map((r) => `<tr><td>${escapeHtml(r.expand.player.jersey)}</td><td>${escapeHtml(r.expand.player.display_name)}</td>
-    <td>${outsToIp(r.ip_outs)}</td><td>${r.h}</td><td>${r.r}</td><td>${r.er}</td><td>${r.bb}</td><td>${r.so}</td><td>${era(r.er, r.ip_outs)}</td></tr>`);
   app.innerHTML = chrome(team, "games", `
     <section class="hero"><h1>${escapeHtml(game.opponent)}</h1>
       <p>${escapeHtml(formatDateDisplay(game.date) || game.date)} · ${game.us_runs}-${game.them_runs} · <span class="badge ${game.result.toLowerCase()}">${game.result}</span></p>
     </section>
-    <section class="grid two">
-      <div class="card"><h2>Hitting</h2>${table(["#", "Player", "AB", "R", "H", "RBI", "BB", "SO"], h)}</div>
-      <div class="card"><h2>Pitching</h2>${table(["#", "Player", "IP", "H", "R", "ER", "BB", "SO", "ERA"], p)}</div>
-    </section>`);
+    ${statsHiddenCard()}`);
 }
 
 function previewTable(payload) {
@@ -415,6 +331,7 @@ async function render() {
     else if (name === "events") await eventList();
     else if (name === "ehome") await eventHome(params[0]);
     else if (name === "estandings" || name === "epools") await eventStandings(params[0]);
+    else if (name === "ebracketprint") await eventBracketPrint(params[0]);
     else if (name === "ebracket") await eventBracket(params[0]);
     else if (name === "eoverall") await eventOverall(params[0]);
     else if (name === "eschedule") await eventSchedule(params[0]);
