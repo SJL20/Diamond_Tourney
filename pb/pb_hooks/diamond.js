@@ -1172,6 +1172,20 @@ function publicBoard(app, event, auth) {
         tie: g.get("status") === "final" && hr != null && ar != null && hr === ar,
       };
     });
+  let storedSeeds = [];
+  try {
+    const teamRows = app.findRecordsByFilter("event_teams", "event = {:e}", "", 500, 0, { e: eventId });
+    for (let i = 0; i < teamRows.length; i++) {
+      storedSeeds.push({ id: teamRows[i].id, seed: Number(teamRows[i].get("seed") || 0) });
+    }
+  } catch (err) {
+    storedSeeds = [];
+  }
+  const seatSeeds = require(__hooks + "/brackets.js").bracketSeatSeeds(bracket, storedSeeds);
+  for (let i = 0; i < bracket.length; i++) {
+    bracket[i].home_seed = seatSeeds[i].home_seed;
+    bracket[i].away_seed = seatSeeds[i].away_seed;
+  }
   return {
     event: host.eventJson(event, app, auth),
     fields: scheduleMod.eventFields(app, eventId),

@@ -446,6 +446,13 @@ class TournamentUiTests(unittest.TestCase):
         self.assertIn("data-live", desk)
         self.assertIn("Printable bracket", src)
         self.assertIn("bk-sheet", src)
+        self.assertIn("function bracketSeedHtml", src)
+        self.assertIn("bracketSeedHtml(g.home_seed", desk)
+        sheet = src.split("function printSide", 1)[1].split("function printTree", 1)[0]
+        self.assertIn("bracketSeedHtml", sheet)
+        self.assertIn("bk-sheet-name", sheet)
+        printed = src.split("function printMatch", 1)[1].split("function printTree", 1)[0]
+        self.assertIn("printSide", printed)
         self.assertIn('g.status === "live" ? "Live"', desk)
         self.assertIn('bracketFaceRuns(g, "home")', desk)
         self.assertNotIn('g.status === "final" ? g.home_runs : ""', desk)
@@ -5826,6 +5833,57 @@ class LiveBracketScoreTests(unittest.TestCase):
                 "schedule_id": "not-a-real-game",
             })
         self.assertIn("404", str(missing.exception))
+
+    def test_bracket_seed_stays_on_the_team_line(self):
+        td = auth(BASE, "td@local.test", "EventTd1!")
+        slug = "seed-line-" + uuid.uuid4().hex[:8]
+        request(BASE, "POST", "/api/events/create", td, {
+            "source": "native",
+            "name": "Seed Line Classic",
+            "slug": slug,
+            "format": "pool-to-bracket",
+            "start": "2026-09-19",
+            "end": "2026-09-20",
+            "fields": [{"name": "Harbor 1"}],
+        })
+        for name in ("Seed Hawks", "Seed Heat", "Seed Cats", "Seed Fox"):
+            request(BASE, "POST", f"/api/events/{slug}/signup", td, {
+                "team_name": name,
+                "pool": "A",
+                "as_director": True,
+            })
+        auto = request(BASE, "POST", f"/api/events/{slug}/schedule/auto", td, {
+            "days": ["2026-09-19"],
+            "games_per_team": 1,
+            "replace": True,
+            "format": "pool-to-bracket",
+        })
+        for game in auto["schedule"]:
+            request(BASE, "POST", f"/api/events/{slug}/schedule/{game['id']}/score", td, {
+                "home_runs": 4, "away_runs": 1, "status": "final", "confirm": True,
+            })
+        request(BASE, "POST", f"/api/events/{slug}/bracket/build", td, {
+            "replace": True,
+            "confirm": True,
+        })
+        board = request(BASE, "GET", f"/api/event/{slug}/board")
+        played = [g for g in board["bracket"] if g.get("home_id") and g.get("away_id") and g.get("status") != "bye"]
+        self.assertTrue(played)
+        for g in played:
+            self.assertGreater(int(g.get("home_seed") or 0), 0)
+            self.assertGreater(int(g.get("away_seed") or 0), 0)
+            self.assertNotRegex(g.get("home") or "", r"^\d+(st|nd|rd|th)")
+            self.assertNotRegex(g.get("away") or "", r"^\d+(st|nd|rd|th)")
+        game = played[0]
+        final = request(BASE, "POST", f"/api/events/{slug}/bracket/{game['id']}/score", td, {
+            "home_runs": 6,
+            "away_runs": 2,
+        })
+        self.assertEqual(final["status"], "final")
+        done = request(BASE, "GET", f"/api/event/{slug}/board")
+        moved = next(g for g in done["bracket"] if g["id"] != game["id"] and game["home"] in (g.get("home"), g.get("away")))
+        side = "home_seed" if moved.get("home") == game["home"] else "away_seed"
+        self.assertEqual(int(moved[side]), int(game["home_seed"]))
 
 
 if __name__ == "__main__":

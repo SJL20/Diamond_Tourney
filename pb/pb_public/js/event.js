@@ -1386,6 +1386,27 @@ function bracketFaceRuns(g, side) {
   return v;
 }
 
+function bracketSeedText(seed, name) {
+  const n = Number(seed) || 0;
+  const shown = String(name || "").trim();
+  if (!n || shown === "Bye" || /^\d+(st|nd|rd|th)( \([^)]+\))?$/i.test(shown)) return "";
+  return String(n);
+}
+
+function bracketSeedHtml(seed, name) {
+  const text = bracketSeedText(seed, name);
+  return text ? `<span class="bk-seed">${escapeHtml(text)}</span>` : "";
+}
+
+function winnerSeed(games, winnerId) {
+  if (!winnerId) return 0;
+  for (const g of games || []) {
+    if (g.home_id === winnerId && Number(g.home_seed) > 0) return Number(g.home_seed);
+    if (g.away_id === winnerId && Number(g.away_seed) > 0) return Number(g.away_seed);
+  }
+  return 0;
+}
+
 function matchCard(g, roster = [], plan = null) {
   const isBye = g.status === "bye" || g.is_bye || g.away === "Bye";
   const bothRuns = g.home_runs != null && g.home_runs !== "" && g.away_runs != null && g.away_runs !== "";
@@ -1432,9 +1453,9 @@ function matchCard(g, roster = [], plan = null) {
         </div>
       </form>
       ${g.home && g.away ? `<form class="bk-score" data-bk-id="${escapeHtml(g.id)}">
-        <label class="bk-score-line"><span>${escapeHtml(g.home)}</span>
+        <label class="bk-score-line"><span>${bracketSeedHtml(g.home_seed, g.home)}${escapeHtml(g.home)}</span>
           <input name="home_runs" type="number" min="0" value="${runBoxValue(g, "home")}" aria-label="${escapeHtml(g.home)} runs"></label>
-        <label class="bk-score-line"><span>${escapeHtml(g.away)}</span>
+        <label class="bk-score-line"><span>${bracketSeedHtml(g.away_seed, g.away)}${escapeHtml(g.away)}</span>
           <input name="away_runs" type="number" min="0" value="${runBoxValue(g, "away")}" aria-label="${escapeHtml(g.away)} runs"></label>
         <div class="bk-score-actions">
           <button class="btn ghost" type="button" data-live>Live</button>
@@ -1444,11 +1465,11 @@ function matchCard(g, roster = [], plan = null) {
     </details>` : "";
   return `<article class="bk-match ${escapeHtml(g.status)} ${tie ? "tie" : ""} ${isBye ? "bye" : ""} ${set ? "slot-set" : "slot-open"}">
     <div class="bk-team ${homeWin ? "winner" : ""} ${g.home ? "" : "tbd"}">
-      <span>${teamLink((currentEvent && currentEvent.slug) || "", g.home_slug, g.home || "TBD")}</span>
+      <span class="bk-name">${bracketSeedHtml(g.home_seed, g.home || "TBD")}${teamLink((currentEvent && currentEvent.slug) || "", g.home_slug, g.home || "TBD")}</span>
       <b>${homeFace === "" ? "" : homeFace}</b>
     </div>
     <div class="bk-team ${awayWin ? "winner" : ""} ${isBye ? "bye-seat" : ""} ${g.away && !isBye ? "" : "tbd"}">
-      <span>${isBye ? "Bye" : teamLink((currentEvent && currentEvent.slug) || "", g.away_slug, g.away || "TBD")}</span>
+      <span class="bk-name">${isBye ? "Bye" : `${bracketSeedHtml(g.away_seed, g.away || "TBD")}${teamLink((currentEvent && currentEvent.slug) || "", g.away_slug, g.away || "TBD")}`}</span>
       <b>${awayFace === "" ? "" : awayFace}</b>
     </div>
     ${set && !isBye ? `<div class="bk-when">
@@ -1491,6 +1512,7 @@ function renderBracketTree(games, title, blurb, showChampion, roster, plan) {
   const byRound = packed.byRound;
   if (!rounds.length && !showChampion) return "";
   const champ = games.find((g) => g.round === "F" && g.status === "final" && g.winner);
+  const champName = champ?.winner || "TBD";
   return `<section class="card bk-card ${showChampion ? "champ-side" : "cons-side"}">
     <h2>${title}</h2>
     <p class="muted">${blurb}</p>
@@ -1502,7 +1524,7 @@ function renderBracketTree(games, title, blurb, showChampion, roster, plan) {
         </div>`).join("")}
       ${showChampion ? `<div class="bk-round">
         <h3>Champion</h3>
-        <div class="bk-trophy ${champ ? "named" : "tbd"}">${escapeHtml(champ?.winner || "TBD")}</div>
+        <div class="bk-trophy ${champ ? "named" : "tbd"}"><span class="bk-name">${bracketSeedHtml(winnerSeed(games, champ?.winner_id), champName)}${escapeHtml(champName)}</span></div>
       </div>` : ""}
     </div>
   </section>`;
@@ -1513,8 +1535,8 @@ function protestSwapForm(games) {
   const seats = (games || []).filter((g) => g.id).flatMap((g) => {
     const label = ROUND_META[g.round]?.label || g.round || "Game";
     return [
-      { id: g.id, seat: "home", label: `${label} · home · ${g.home || "TBD"}` },
-      { id: g.id, seat: "away", label: `${label} · away · ${g.away || "TBD"}` },
+      { id: g.id, seat: "home", label: `${label} · home · ${[bracketSeedText(g.home_seed, g.home), g.home || "TBD"].filter(Boolean).join(" ")}` },
+      { id: g.id, seat: "away", label: `${label} · away · ${[bracketSeedText(g.away_seed, g.away), g.away || "TBD"].filter(Boolean).join(" ")}` },
     ];
   });
   if (!seats.length) return "";
@@ -1947,13 +1969,16 @@ export async function eventBracket(slug) {
   }
 }
 
+function printSide(name, seed, score) {
+  const shown = name || "TBD";
+  return `<div class="bk-sheet-line"><span class="bk-sheet-name">${bracketSeedHtml(seed, shown)}<span class="bk-sheet-team">${escapeHtml(shown)}</span></span><b>${escapeHtml(score)}</b></div>`;
+}
+
 function printMatch(g) {
   const homeScore = g.home_runs == null || g.home_runs === "" ? "" : String(g.home_runs);
   const awayScore = g.away_runs == null || g.away_runs === "" ? "" : String(g.away_runs);
-  return `<div class="bk-sheet-match">
-    <div class="bk-sheet-line"><span>${escapeHtml(g.home || "TBD")}</span><b>${escapeHtml(homeScore)}</b></div>
-    <div class="bk-sheet-line"><span>${escapeHtml(g.away || "TBD")}</span><b>${escapeHtml(awayScore)}</b></div>
-  </div>`;
+  const awayName = g.status === "bye" || g.is_bye || g.away === "Bye" ? "Bye" : (g.away || "TBD");
+  return `<div class="bk-sheet-match">${printSide(g.home || "TBD", g.home_seed, homeScore)}${printSide(awayName, g.away_seed, awayScore)}</div>`;
 }
 
 function printTree(games, title) {
@@ -1994,7 +2019,7 @@ export async function eventBracketPrint(slug) {
   eventRoot().innerHTML = eventChrome(board.event, "bracket", `
     <section class="page-head no-print">
       <h1>Printable bracket</h1>
-      <p class="muted">${escapeHtml(board.event.name)}. Team and score only, for one page on the fence.</p>
+      <p class="muted">${escapeHtml(board.event.name)}. Seed, team, and score, for one page on the fence.</p>
       <div class="actions">
         <button class="btn" type="button" id="print-sheet">Print</button>
         <a class="btn ghost" data-link href="/t/${escapeHtml(slug)}/bracket">Back to bracket</a>
