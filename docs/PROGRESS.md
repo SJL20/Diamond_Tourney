@@ -216,6 +216,14 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-29 — The page is not kept, and the scripts follow the file bytes
+
+A phone can keep using a page it already saved until it asks the server again. Signing out does not delete that copy. The page response is now `Cache-Control: no-store`, so a browser that receives it does not save the page for the next visit. The stylesheet and each script are addressed with a hash of the current files (`?v=` plus 12 hex characters). After the files change, the first response also sends `Clear-Site-Data: "cache"`, which tells the browser to delete saved files. A repeat request in that same visit does not send it. The hash cookie is `dt_shell`. Login cookies and local storage are left in place. The API, the admin dashboard, CSV templates, and the Keystone popup page are not turned into the app shell.
+
+A phone that never asks again can still show the copy it already has. Nothing on the server reaches a browser that does not make a request.
+
+Proved with headers and a 390×844 Chrome pass. `/` and a fresh `/api/health` send `Clear-Site-Data: "cache"`. The same health check with the hash cookie does not. `/css/app.css` stays `no-cache` and still 304s when unchanged. Login leaves Loading, the stylesheet URL contains the hash, and a reload keeps a sample login cookie and a local storage value. Keystone Clash home shows the champion note. The popup page stays the popup page.
+
 ### 2026-09-28 — Bracket seed sits on the team line
 
 The standard bracket and the printable sheet now put the seed number on the same line as the team name. A later round keeps that number after the team advances. A seat that is still only “1st” does not get a second number. A stored team seed is used when it is unique in the weekend, which is how Keystone Clash shows 1–8. Duplicated pool seeds, such as two pool 1s on Harbor Eight, are not printed as bracket seeds.

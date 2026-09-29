@@ -189,37 +189,92 @@ class MobileDisplayTests(unittest.TestCase):
 
 
 class StaticCacheTests(unittest.TestCase):
+    ASSETS = (
+        "css/app.css",
+        "js/app.js",
+        "js/event.js",
+        "js/flow.js",
+        "js/chrome.js",
+        "js/client.js",
+        "js/display.js",
+        "js/metrics.js",
+    )
+
+    def _asset_version(self):
+        import hashlib
+        joined = "".join(
+            hashlib.sha256((ROOT / "pb/pb_public" / name).read_bytes()).hexdigest()
+            for name in self.ASSETS
+        )
+        return hashlib.sha256(joined.encode()).hexdigest()[:12]
+
+    def _get(self, path, cookie=""):
+        headers = {"Cookie": cookie} if cookie else {}
+        req = urllib.request.Request(BASE + path, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, resp.headers, resp.read().decode("utf-8", "replace")
+
     def test_shell_assets_revalidate(self):
+        version = self._asset_version()
         index = (ROOT / "pb/pb_public/index.html").read_text()
-        self.assertIn("/css/app.css?v=", index)
+        self.assertIn("/css/app.css?v=ASSET_VERSION", index)
         self.assertIn('type="importmap"', index)
         for name in ("app.js", "event.js", "flow.js", "chrome.js", "client.js", "display.js", "metrics.js"):
-            self.assertIn(f'"/js/{name}": "/js/{name}?v=', index)
-            self.assertIn(f"/js/{name}?v=", index)
+            self.assertIn(f'"/js/{name}": "/js/{name}?v=ASSET_VERSION"', index)
         hook = (ROOT / "pb/pb_hooks/static_cache.pb.js").read_text()
+        self.assertIn('"Cache-Control", "no-store"', hook)
         self.assertIn('"Cache-Control", "no-cache"', hook)
-        self.assertIn('path.indexOf("/api/")', hook)
-        self.assertIn('path.indexOf("/_/")', hook)
+        self.assertIn('Clear-Site-Data', hook)
+        self.assertNotIn("executionContexts", hook)
+        self.assertNotIn('"cookies"', hook)
+        self.assertNotIn('"storage"', hook)
 
-        def cache_control(path):
-            req = urllib.request.Request(BASE + path, method="HEAD")
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                self.assertEqual(resp.status, 200, path)
-                return resp.headers.get("Cache-Control")
+        status, headers, body = self._get("/")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        self.assertEqual(headers.get("Clear-Site-Data"), '"cache"')
+        self.assertIn(f"dt_shell={version}", headers.get("Set-Cookie") or "")
+        self.assertNotIn("ASSET_VERSION", body)
+        self.assertIn(f"/css/app.css?v={version}", body)
+        for name in ("app.js", "event.js", "flow.js", "chrome.js", "client.js", "display.js", "metrics.js"):
+            self.assertIn(f"/js/{name}?v={version}", body)
 
-        for path in (
-            "/",
-            "/login",
-            "/css/app.css",
-            "/js/app.js",
-            "/js/chrome.js",
-            "/t/keystone-clash-2026",
-            "/popup/index.html",
-        ):
-            self.assertEqual(cache_control(path), "no-cache", path)
-        self.assertIsNone(cache_control("/api/health"))
-        self.assertIsNone(cache_control("/templates/diamond-tourney-bracket.csv"))
-        self.assertIsNone(cache_control("/_/"))
+        status, headers, body = self._get("/t/keystone-clash-2026", cookie=f"dt_shell={version}")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        self.assertIsNone(headers.get("Clear-Site-Data"))
+        self.assertIn(f"/css/app.css?v={version}", body)
+
+        status, headers, body = self._get("/api/health")
+        self.assertEqual(status, 200)
+        self.assertIn("API is healthy", body)
+        self.assertEqual(headers.get("Clear-Site-Data"), '"cache"')
+        self.assertIsNone(headers.get("Cache-Control"))
+
+        status, headers, body = self._get("/api/health", cookie=f"dt_shell={version}")
+        self.assertEqual(status, 200)
+        self.assertIsNone(headers.get("Clear-Site-Data"))
+        self.assertIsNone(headers.get("Cache-Control"))
+
+        for path in ("/css/app.css", "/js/app.js", "/js/chrome.js"):
+            status, headers, body = self._get(path)
+            self.assertEqual(status, 200, path)
+            self.assertEqual(headers.get("Cache-Control"), "no-cache", path)
+            self.assertIsNone(headers.get("Clear-Site-Data"), path)
+
+        status, headers, body = self._get("/templates/diamond-tourney-bracket.csv")
+        self.assertEqual(status, 200)
+        self.assertIsNone(headers.get("Cache-Control"))
+        self.assertIsNone(headers.get("Clear-Site-Data"))
+
+        status, headers, body = self._get("/_/")
+        self.assertEqual(status, 200)
+        self.assertIsNone(headers.get("Clear-Site-Data"))
+
+        status, headers, body = self._get("/popup/")
+        self.assertEqual(status, 200)
+        self.assertIn("Keystone Clash", body)
+        self.assertNotIn("/js/app.js?v=", body)
 
 
 class TournamentUiTests(unittest.TestCase):

@@ -1,34 +1,37 @@
 /// <reference path="../pb_data/types.d.ts" />
 
-// HTML, CSS, and JS must revalidate. A phone that stored an older stylesheet
-// with no Cache-Control kept using it after a deploy and stayed on Loading.
-// API and admin routes keep PocketBase's own headers.
-// A failure here must not turn the request into a 400.
-// The check stays inside the handler. A top-level function in a .pb.js file
-// is not visible to the router callback.
+// The page is not stored. Its stylesheet and scripts use a hash of their
+// bytes, so a saved copy from before this response cannot be the one that loads.
+// The first response after the files change tells the browser to delete its
+// HTTP cache. A later response in that same visit does not, so a weekend of
+// refreshes can still reuse an unchanged script. Login cookies and storage stay.
 
 routerUse((e) => {
   try {
+    const cache = require(__hooks + "/static_cache.js");
     const path = String((e.request && e.request.url && e.request.url.path) || "");
-    let revalidate = false;
-    if (path && path.indexOf("/api/") !== 0 && path !== "/api" && path.indexOf("/_/") !== 0 && path !== "/_") {
-      const lower = path.toLowerCase();
-      if (
-        lower.endsWith(".js") ||
-        lower.endsWith(".mjs") ||
-        lower.endsWith(".css") ||
-        lower.endsWith(".html") ||
-        lower.endsWith(".map")
-      ) {
-        revalidate = true;
-      } else {
-        const slash = lower.lastIndexOf("/");
-        const base = slash >= 0 ? lower.slice(slash + 1) : lower;
-        revalidate = base.indexOf(".") === -1;
-      }
-    }
-    if (revalidate) {
+    let kind = cache.kind(path);
+    if (kind === "document" && path !== "/" && cache.exists(path)) kind = "html";
+    if (kind === "asset") {
       e.response.header().set("Cache-Control", "no-cache");
+    } else if (kind === "html" || kind === "document" || kind === "api") {
+      const version = cache.version();
+      const stale = cache.shellCookie(e) !== version;
+      if (kind === "html" || kind === "document") {
+        e.response.header().set("Cache-Control", "no-store");
+      }
+      if (stale) {
+        e.response.header().set("Clear-Site-Data", '"cache"');
+        let cookie = "dt_shell=" + version + "; Path=/; Max-Age=34560000; HttpOnly; SameSite=Lax";
+        try {
+          if (e.isTLS()) cookie += "; Secure";
+        } catch (err) {}
+        e.response.header().add("Set-Cookie", cookie);
+      }
+      if (kind === "document") {
+        e.html(200, cache.shellHtml());
+        return;
+      }
     }
   } catch (err) {
     console.log("static-cache err", String(err));
