@@ -216,6 +216,14 @@ worth answering before the next session.
 Newest first. One entry per working session: what changed, what was proved, and
 what the next session should pick up.
 
+### 2026-09-29 — Each finished game says who won
+
+The team sheet Result column is still the home–away score. A new W/L column says whether that team won. A final game with both totals is W, L, or T. A live game, a blank total, or a held conflict stays —. The letter uses the stored runs and whether this team is home. It does not guess.
+
+The weekend Schedule does not add a column. The winning team’s name is bold on a light green chip, the same treatment as a bracket winner. The other name stays plain. A tie or a live game highlights neither name. Phone cards use that same green chip, and only after the game is final.
+
+Proved on Scarecrow Slugfest, South Hills Elite 2033 11U, without saving a score. Game 1 is L next to 2–11. Game 5 is W next to 9–2. On the schedule, Steel City Athletics is the green name on Game 1 and South Hills is not. The same letters and the green chip show at 390px. The local UI string check includes the W/L headers.
+
 ### 2026-09-29 — The page is not kept, and the scripts follow the file bytes
 
 A phone can keep using a page it already saved until it asks the server again. Signing out does not delete that copy. The page response is now `Cache-Control: no-store`, so a browser that receives it does not save the page for the next visit. The stylesheet and each script are addressed with a hash of the current files (`?v=` plus 12 hex characters). After the files change, the first response also sends `Clear-Site-Data: "cache"`, which tells the browser to delete saved files. A repeat request in that same visit does not send it. The hash cookie is `dt_shell`. Login cookies and local storage are left in place. The API, the admin dashboard, CSV templates, and the Keystone popup page are not turned into the app shell.
