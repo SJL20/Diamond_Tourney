@@ -1098,7 +1098,10 @@ button.stat-col.on { color: var(--navy); text-decoration: underline; }
   font-variant-numeric: tabular-nums;
 }
 .bk-team:last-of-type { border-bottom: 0; }
-.bk-team.winner { font-weight: 700; background: #e7f6ee; }
+.bk-team.winner,
+.team-winner,
+.game-card-side.winner { font-weight: 700; background: #e7f6ee; }
+.team-winner { display: inline-block; padding: 0 4px; border-radius: 4px; }
 .bk-team.tbd { color: var(--muted); }
 .bk-team b { min-width: 1.2em; text-align: right; }
 .bk-name {
@@ -1254,7 +1257,7 @@ button.stat-col.on { color: var(--navy); text-decoration: underline; }
   font-variant-numeric: tabular-nums;
   font-size: 1.2rem;
 }
-.game-card-side.winner { font-weight: 700; }
+.game-card-side.winner { padding: 2px 6px; border-radius: 4px; }
 .game-card-foot {
   display: flex;
   flex-wrap: wrap;

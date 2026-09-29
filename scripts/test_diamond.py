@@ -186,6 +186,13 @@ class MobileDisplayTests(unittest.TestCase):
         self.assertIn("function boxReviewCard", event)
         self.assertIn("function deskTable", event)
         self.assertIn("phone-stat-list", event)
+        self.assertIn('["Game", "When", "Field", "Opponent", "W/L", "Result", "Box"]', event)
+        self.assertIn('["Game", "Round", "Opponent", "W/L", "Score", "When"]', event)
+        self.assertIn("function teamResultMark", event)
+        self.assertIn("function decidedRuns", event)
+        self.assertIn('g.status !== "final"', event)
+        self.assertIn("namedSide(slug, g.home_slug, g.home, sideWins(g, \"home\"))", event)
+        self.assertIn("class=\"team-winner\"", event)
 
 
 class StaticCacheTests(unittest.TestCase):
