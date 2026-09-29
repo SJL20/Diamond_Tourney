@@ -26,7 +26,7 @@ The running answer to "where is this thing?" Read this before you read code.
 | Stack | PocketBase 0.40.4, one box, serves `pb/pb_public/` |
 | Local URL | `bash scripts/local-server.sh` → http://127.0.0.1:8097 |
 | Live URL | https://www.diamondtourney.com (Fly app `diamond-tourney`) |
-| Tests | 148 unit/integration cases + 13 acceptance checks |
+| Tests | 149 unit/integration cases + 13 acceptance checks |
 | CI | `.github/workflows/ci.yml` → `scripts/ci.sh`, on every push and PR |
 | Deploy | `.github/workflows/fly.yml` → `flyctl deploy --app diamond-tourney` on push to `main` |
 
@@ -221,6 +221,16 @@ what the next session should pick up.
 The standard bracket and the printable sheet now put the seed number on the same line as the team name. A later round keeps that number after the team advances. A seat that is still only “1st” does not get a second number. A stored team seed is used when it is unique in the weekend, which is how Keystone Clash shows 1–8. Duplicated pool seeds, such as two pool 1s on Harbor Eight, are not printed as bracket seeds.
 
 Proved by `test_bracket_seed_stays_on_the_team_line` and `scripts/test_brackets.mjs`. `bash scripts/ci.sh` passed: 148 tests and the acceptance checks. A browser pass on Keystone Clash showed “1 All American Prady” with the score on that line in the tree, the champion box, and the printable sheet, including a 390px width. No score was saved.
+
+### 2026-09-28 — Pages and stylesheets recheck after a deploy
+
+Deleting browsing history and signing out leaves the saved stylesheet and scripts in place. Those copies were stored with no freshness rule, so a normal Chrome tab kept the stylesheet that froze Loading. A private window has no saved copy, so it loaded the fix.
+
+HTML, CSS, and JavaScript now send `Cache-Control: no-cache`. That includes `/`, `/login`, and tournament addresses such as `/t/keystone-clash-2026`. The API, the PocketBase dashboard, and CSV templates are left alone. An unchanged file still answers 304. `index.html` loads the stylesheet and `app.js` from `?v=20260928c`, and an import map sends the other scripts to that same token.
+
+A phone that already stored the old files does not ask the server again until that copy expires or cached images and files are cleared. The server cannot delete a copy the browser has not requested. After one fresh page load, later deploys are rechecked.
+
+Proved with headers: `/css/app.css`, `/js/app.js`, `/`, `/login`, and `/t/keystone-clash-2026` send `no-cache`. `/api/health`, `/_/`, and the bracket CSV do not. A conditional CSS request returns 304 and still sends `no-cache`. At 390×844 the login page leaves Loading, and each script request uses `?v=20260928c` with `no-cache`. The account API response has no cache header. Keystone Clash home shows the champion note. `bash scripts/ci.sh` is green: 148 tests and the acceptance checks.
 
 ### 2026-09-28 — Phone no longer sticks on Loading
 

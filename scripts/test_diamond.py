@@ -188,6 +188,40 @@ class MobileDisplayTests(unittest.TestCase):
         self.assertIn("phone-stat-list", event)
 
 
+class StaticCacheTests(unittest.TestCase):
+    def test_shell_assets_revalidate(self):
+        index = (ROOT / "pb/pb_public/index.html").read_text()
+        self.assertIn("/css/app.css?v=", index)
+        self.assertIn('type="importmap"', index)
+        for name in ("app.js", "event.js", "flow.js", "chrome.js", "client.js", "display.js", "metrics.js"):
+            self.assertIn(f'"/js/{name}": "/js/{name}?v=', index)
+            self.assertIn(f"/js/{name}?v=", index)
+        hook = (ROOT / "pb/pb_hooks/static_cache.pb.js").read_text()
+        self.assertIn('"Cache-Control", "no-cache"', hook)
+        self.assertIn('path.indexOf("/api/")', hook)
+        self.assertIn('path.indexOf("/_/")', hook)
+
+        def cache_control(path):
+            req = urllib.request.Request(BASE + path, method="HEAD")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                self.assertEqual(resp.status, 200, path)
+                return resp.headers.get("Cache-Control")
+
+        for path in (
+            "/",
+            "/login",
+            "/css/app.css",
+            "/js/app.js",
+            "/js/chrome.js",
+            "/t/keystone-clash-2026",
+            "/popup/index.html",
+        ):
+            self.assertEqual(cache_control(path), "no-cache", path)
+        self.assertIsNone(cache_control("/api/health"))
+        self.assertIsNone(cache_control("/templates/diamond-tourney-bracket.csv"))
+        self.assertIsNone(cache_control("/_/"))
+
+
 class TournamentUiTests(unittest.TestCase):
     def test_standings_tab_game_numbers_and_save_toast(self):
         chrome = (ROOT / "pb/pb_public/js/chrome.js").read_text()
